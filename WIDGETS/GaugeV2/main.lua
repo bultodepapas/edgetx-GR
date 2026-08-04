@@ -8,16 +8,27 @@
 ---- # License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html               #
 ---- #########################################################################
 
+-- Option types: SOURCE/VALUE are the firmware constants (etxcst); Bool=2
+-- and Choice=9 are only exposed as plain numbers (widget.h WidgetOption::Type).
+local function findSourceId(names)
+  -- GaugeRotary pattern: default to the first sensor that actually exists
+  for i = 1, #names do
+    local info = getFieldInfo(names[i])
+    if info then return info.id end
+  end
+  return 0
+end
+
 local options = {
-  { "Source", 1, 0 },
-  { "Min", 0, 0, -10000, 10000 },
-  { "Max", 0, 100, -10000, 10000 },
-  { "Warn", 0, 55, -10000, 10000 },
-  { "Crit", 0, 35, -10000, 10000 },
+  { "Source", SOURCE, findSourceId({ "RSSI", "RQly", "RxBt", "Cels", "TxBt" }) },
+  { "Min", VALUE, 0, -10000, 10000 },
+  { "Max", VALUE, 100, -10000, 10000 },
+  { "Warn", VALUE, 55, -10000, 10000 },
+  { "Crit", VALUE, 35, -10000, 10000 },
   { "HighGood", 2, 1 },
   { "Style", 9, 0, { "Auto", "Needle", "Arc" } },
   { "ColorMode", 9, 1, { "Static", "Threshold", "Sections" } },
-  { "Precision", 9, 0, { "0", "1", "2" } },
+  { "Precision", 9, 0, { "Auto", "0", "1", "2" } },
   { "ShowMinMax", 2, 1 },
 }
 
@@ -93,7 +104,7 @@ local function update(widget, options)
     highGood = options.HighGood == 1,
     style = choiceIndex(options.Style, STYLE_CHOICES),
     colorMode = choiceIndex(options.ColorMode, COLOR_CHOICES),
-    precision = tonumber(options.Precision) or 0,
+    precision = 0,  -- resolved after source metadata is known
     showMinMax = options.ShowMinMax == 1,
   }
 
@@ -136,6 +147,15 @@ local function update(widget, options)
     widget.history.max = nil
     widget.data.lastValue = nil  -- never show old source data with a new source
   end
+
+  -- Precision: "Auto" follows the sensor precision (getFieldInfo does not
+  -- expose prec, so telemetry.lua caches it from model.getSensor).
+  if options.Precision == "Auto" or tonumber(options.Precision) == nil then
+    cfg.precision = src.prec or 0
+    if src.name == "tx-voltage" then cfg.precision = 1 end
+  else
+    cfg.precision = tonumber(options.Precision)
+  end
   widget.config = cfg
   widget.ranges = mods.ranges.build(cfg.min, cfg.max, cfg.warn, cfg.crit,
                                     cfg.highGood)
@@ -171,27 +191,11 @@ local function refresh(widget, event, touch)
   widget.mods.renderer.update(widget)
 end
 
-local function background(widget)
-  if not widget.mods then return end
-  local data = widget.data
-  if data.availability == "valid" and data.value ~= nil then
-    local h = widget.history
-    if h.min == nil then
-      h.min = data.value
-      h.max = data.value
-    else
-      if data.value < h.min then h.min = data.value end
-      if data.value > h.max then h.max = data.value end
-    end
-  end
-end
-
 return {
   name = "GaugeV2",
   options = options,
   create = create,
   update = update,
   refresh = refresh,
-  background = background,
   useLvgl = true,
 }

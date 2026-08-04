@@ -11,14 +11,20 @@ local mock = dofile(widgetDir .. "tests/mock_env.lua")
 -- ---- controllable firmware state -------------------------------------
 
 local sim = {
-  timeMs = 0,
+  timeMs = 0,             -- getTime() returns 10 ms ticks on the radio
+  rssi = 0,               -- getRSSI()
   sourceValues = {},      -- id -> value | table | nil
   sourceCurrent = {},     -- id -> isCurrent
   fieldInfo = {},         -- id -> {name=, unit=}
+  sensors = {},           -- model.getSensor(i) -> {name=, prec=, unit=}
 }
 
 local function getTime()
   return sim.timeMs
+end
+
+local function getRSSI()
+  return sim.rssi
 end
 
 local function getSourceValue(id)
@@ -30,8 +36,20 @@ local function getSourceValue(id)
 end
 
 local function getFieldInfo(id)
+  if type(id) == "string" then
+    for _, info in pairs(sim.fieldInfo) do
+      if info.name == id then return info end
+    end
+    return nil
+  end
   return sim.fieldInfo[id]
 end
+
+local model = {
+  getSensor = function(i)
+    return sim.sensors[i]
+  end,
+}
 
 -- module loader: loadScript(path, mode) contract
 local function loadScript(path)
@@ -42,8 +60,10 @@ end
 local env = _ENV or _G
 mock.install(env)
 env.getTime = getTime
+env.getRSSI = getRSSI
 env.getSourceValue = getSourceValue
 env.getFieldInfo = getFieldInfo
+env.model = model
 env.loadScript = loadScript
 
 -- ---- test harness -----------------------------------------------------
@@ -98,11 +118,13 @@ end
 
 local function setupSim()
   sim.timeMs = 0
+  sim.rssi = 100
   sim.sourceValues = {}
   sim.sourceCurrent = {}
+  sim.sensors = {}
   sim.fieldInfo = {
-    [TELEM_RSSI] = { name = "RSSI", unit = 17 },
-    [LOCAL_STICK] = { name = "Thr" },
+    [TELEM_RSSI] = { id = TELEM_RSSI, name = "RSSI", unit = 17 },
+    [LOCAL_STICK] = { id = LOCAL_STICK, name = "Thr" },
   }
   sim.sourceValues[TELEM_RSSI] = 70
   sim.sourceCurrent[TELEM_RSSI] = true
@@ -300,19 +322,18 @@ test("custom ranges defeat preset", function()
   assertEq(widget.config.max, 100, "user max kept")
 end)
 
--- 15. history min/max markers
+-- 15. history min/max markers (history is tracked in refresh, since
+-- background() does not run while the widget is visible)
 test("history markers update", function()
   setupSim()
   sim.sourceValues[TELEM_RSSI] = 60
   local widget = newWidget({ x = 0, y = 0, w = 480, h = 272 }, baseOptions(),
     widgetDir)
   widget.mod.update(widget, widget.options)
-  widget.mod.refresh(widget, nil, nil)         -- data = 60
-  widget.mod.background(widget)                -- 60 recorded
+  widget.mod.refresh(widget, nil, nil)         -- data = 60, history = 60
   sim.sourceValues[TELEM_RSSI] = 20
   sim.timeMs = sim.timeMs + 100
-  widget.mod.refresh(widget, nil, nil)         -- data = 20
-  widget.mod.background(widget)                -- 20 recorded
+  widget.mod.refresh(widget, nil, nil)         -- data = 20, history = 20..60
   widget.mod.refresh(widget, nil, nil)         -- markers rendered
   assertEq(widget.history.min, 20, "min history")
   assertEq(widget.history.max, 60, "max history")
@@ -373,7 +394,6 @@ test("fullscreen size composition", function()
   assertEq(widget.layout.orientation, "horizontal", "horizontal")
   assertTrue(widget.ui.minText ~= nil, "min/max text labels")
   widget.mod.refresh(widget, nil, nil)
-  widget.mod.background(widget)
   widget.mod.refresh(widget, nil, nil)
   assertEq(widget.ui.minText.props.text, "MIN 50", "min text")
   assertEq(widget.ui.maxText.props.text, "MAX 50", "max text")
@@ -420,6 +440,57 @@ test("balanced layout fits name label", function()
   assertTrue(widget.layout.nameY + widget.layout.nameH <= 150,
     "name label inside zone")
   assertTrue(widget.layout.stateY >= 0, "state label inside zone")
+end)
+
+-- 23. default source is discovered from available sensors
+test("default source discovery", function()
+  setupSim()
+  sim.sourceValues[TELEM_RSSI] = 70
+  local mod = dofile(widgetDir .. "main.lua")
+  assertEq(mod.options[1][3], TELEM_RSSI, "RSSI discovered as default")
+end)
+
+-- 24. Auto precision follows the sensor precision
+test("auto precision from sensor", function()
+  setupSim()
+  sim.sourceValues[TELEM_RSSI] = 70
+  sim.sensors[0] = { name = "RSSI", prec = 1, unit = 17 }
+  local widget = newWidget({ x = 0, y = 0, w = 480, h = 272 },
+    baseOptions({ Precision = "Auto" }), widgetDir)
+  widget.mod.update(widget, widget.options)
+  assertEq(widget.config.precision, 1, "auto precision")
+  widget.mod.refresh(widget, nil, nil)
+  assertEq(widget.ui.valueLabel.props.text, "70.0", "one decimal")
+end)
+
+-- 25. timers display as hh:mm:ss
+test("timer source formatting", function()
+  setupSim()
+  local TIMER = 500
+  sim.fieldInfo[TIMER] = { name = "timer1" }
+  sim.sourceValues[TIMER] = 3661
+  local widget = newWidget({ x = 0, y = 0, w = 480, h = 272 },
+    baseOptions({ Source = TIMER }), widgetDir)
+  widget.mod.update(widget, widget.options)
+  widget.mod.refresh(widget, nil, nil)
+  assertEq(widget.ui.valueLabel.props.text, "01:01:01", "hms format")
+  assertEq(widget.ui.unitLabel.props.text, "", "no unit for timers")
+end)
+
+-- 26. telemetry link state: disconnected vs unavailable
+test("telemetry link state detection", function()
+  setupSim()
+  sim.sourceValues[TELEM_RSSI] = nil
+  sim.rssi = 0
+  local widget = newWidget({ x = 0, y = 0, w = 480, h = 272 }, baseOptions(),
+    widgetDir)
+  widget.mod.update(widget, widget.options)
+  widget.mod.refresh(widget, nil, nil)
+  assertEq(widget.data.availability, "disconnected", "link down")
+
+  sim.rssi = 100
+  widget.mod.refresh(widget, nil, nil)
+  assertEq(widget.data.availability, "unavailable", "sensor missing, link up")
 end)
 
 print(string.format("-- %d passed, %d failed", passed, failed))

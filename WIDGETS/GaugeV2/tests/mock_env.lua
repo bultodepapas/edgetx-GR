@@ -147,6 +147,23 @@ local function install(env)
   env.COLOR_THEME_ACTIVE = 0x3003
   env.COLOR_THEME_WARNING = 0x4001
   env.COLOR_THEME_DISABLED = 0x5001
+  -- etcxcst constants (radio/src/lua/api_general.cpp)
+  env.STDSIZE = 0x000
+  env.BOLD = 0x100
+  env.TINSIZE = 0x200
+  env.SMLSIZE = 0x300
+  env.MIDSIZE = 0x400
+  env.DBLSIZE = 0x500
+  env.XXLSIZE = 0x600
+  env.XLSIZE = 0x700
+  env.VALUE = 0
+  env.SOURCE = 1
+  env.LEFT = 0
+  env.RIGHT = 0x0004
+  env.CENTER = 0x0002
+  env.VCENTER = 0x0008
+  env.VTOP = 0x0010
+  env.VBOTTOM = 0x0020
   -- Simulate EdgeTX Lua: the string metatable is NOT installed (the firmware
   -- only builds it with LUA_ENABLE_STRLIB_MT), so "s:method()" must fail
   -- exactly like it does on the radio.

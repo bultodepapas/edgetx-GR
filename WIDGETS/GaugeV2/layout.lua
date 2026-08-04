@@ -17,10 +17,12 @@ local M = {}
 
 local floor, min, max = math.floor, math.min, math.max
 
--- Font flags: index << 8 (fonts.h: STD=0, BOLD, XXS, XS, L, XL, XXL, LXL)
+-- Font flags come from the firmware's etcxcst Lua constants
+-- (radio/src/lua/api_general.cpp): STDSIZE/BOLD/TINSIZE/SMLSIZE/MIDSIZE/
+-- DBLSIZE/XXLSIZE/XLSIZE map to font index << 8.
 local FONTS = {
-  STD = 0x000, BOLD = 0x100, XXS = 0x200, XS = 0x300,
-  L = 0x400, XL = 0x500, XXL = 0x600, LXL = 0x700,
+  STD = STDSIZE, BOLD = BOLD, XXS = TINSIZE, XS = SMLSIZE,
+  L = MIDSIZE, XL = DBLSIZE, XXL = XXLSIZE, LXL = XLSIZE,
 }
 M.FONTS = FONTS
 

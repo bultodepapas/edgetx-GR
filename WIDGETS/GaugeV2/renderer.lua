@@ -58,6 +58,21 @@ local function formatValue(v, precision)
 end
 M.formatValue = formatValue
 
+-- Timers report seconds; display as hh:mm:ss (Dashboard pattern).
+local function formatHMS(v)
+  if type(v) ~= "number" or v ~= v then return "--:--" end
+  local n = math.abs(v)
+  local sign = (v < 0) and "-" or ""
+  return sign .. string.format("%02d:%02d:%02d", math.floor(n / 3600),
+    math.floor((n % 3600) / 60), n % 60)
+end
+
+-- Value string for the current source (timer vs numeric).
+local function displayString(widget, v)
+  if widget.source.isTimer then return formatHMS(v) end
+  return formatValue(v, widget.config.precision)
+end
+
 local function angleOf(widget, value)
   local cfg = widget.config
   return floor(G.valueToAngle(value, cfg.min, cfg.max, 135, 270) + 0.5)
@@ -74,7 +89,8 @@ local function smoothedValue(widget, target)
     sm.time = getTime()
     return target
   end
-  local now = getTime()
+  -- getTime() returns 10 ms ticks (get_tmr10ms), convert to milliseconds
+  local now = getTime() * 10
   local dt = now - sm.time
   if dt <= 0 then dt = 1 elseif dt > 1000 then dt = 1000 end
   sm.time = now
@@ -259,13 +275,12 @@ local function updateValueLabel(widget)
   local ui, L = widget.ui, widget.layout
   local frame = widget.frame
   local data = widget.data
-  local p = widget.config.precision
 
   local str
   if data.availability == "unset" then
     str = "-"
   elseif data.displayValue ~= nil then
-    str = formatValue(data.displayValue, p)
+    str = displayString(widget, data.displayValue)
   else
     str = "-"
   end
@@ -374,10 +389,9 @@ local function updateMinMaxText(widget)
   if not ui.minText then return end
   local frame = widget.frame
   local h = widget.history
-  local p = widget.config.precision
 
-  local minStr = h.min and ("MIN " .. formatValue(h.min, p)) or ""
-  local maxStr = h.max and ("MAX " .. formatValue(h.max, p)) or ""
+  local minStr = h.min and ("MIN " .. displayString(widget, h.min)) or ""
+  local maxStr = h.max and ("MAX " .. displayString(widget, h.max)) or ""
   if minStr == frame.minStr and maxStr == frame.maxStr then return end
   frame.minStr, frame.maxStr = minStr, maxStr
 

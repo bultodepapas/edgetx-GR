@@ -6,6 +6,9 @@
 ---- # unit fallback for telemetry sources. Presets only initialize values   #
 ---- # while the user range options still hold their global defaults.        #
 ---- #                                                                       #
+---- # Range table expanded from GaugeRotary's DEFAULT_MIN_MAX plus the      #
+---- # TxBat alias for the built-in tx-voltage source.                       #
+---- #                                                                       #
 ---- # License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html               #
 ---- #########################################################################
 
@@ -20,17 +23,34 @@ local PRESETS = {
     minimum = 0, maximum = 100, warning = 55, critical = 35, highIsGood = true,
   },
   {
+    names = { "1RSS", "2RSS" },
+    units = { 29 },
+    minimum = -120, maximum = 0, warning = -80, critical = -95,
+    highIsGood = true,
+  },
+  {
+    names = { "RQly", "RQly%", "VFR%", "VFR" },
+    units = { 13 },
+    minimum = 0, maximum = 100, warning = 55, critical = 35, highIsGood = true,
+  },
+  {
     names = { "RxBt", "RxBatt", "Batt" },
     units = { 1 },
     minimum = 0, maximum = 8.4, warning = 3.7, critical = 3.5, highIsGood = true,
   },
   {
-    names = { "TxBat", "TxBatt", "Battery" },
+    names = { "TxBat", "TxBatt", "Battery", "tx-voltage" },
     units = { 1 },
     minimum = 0, maximum = 8.4, warning = 6.8, critical = 6.4, highIsGood = true,
   },
   {
-    names = { "Tmp", "Temp", "T1", "T2", "Temperature" },
+    names = { "Cell", "Cells", "Cels" },
+    units = { 1 },
+    minimum = 3.5, maximum = 4.2, warning = 3.7, critical = 3.5,
+    highIsGood = true,
+  },
+  {
+    names = { "Tmp", "Temp", "T1", "T2", "Temperature", "Tmp1", "Tmp2" },
     units = { 11, 12 },
     minimum = 0, maximum = 120, warning = 70, critical = 90, highIsGood = false,
   },
@@ -39,6 +59,16 @@ local PRESETS = {
     units = { 18 },
     minimum = 0, maximum = 20000, warning = 16000, critical = 18000,
     highIsGood = false,
+  },
+  {
+    names = { "Fuel" },
+    units = { 13 },
+    minimum = 0, maximum = 100, warning = 30, critical = 15, highIsGood = true,
+  },
+  {
+    names = { "Vibr", "Vibration" },
+    units = { 13 },
+    minimum = 0, maximum = 100, warning = 40, critical = 60, highIsGood = false,
   },
 }
 
