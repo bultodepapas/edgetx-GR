@@ -158,6 +158,16 @@ local function install(env)
   env.XLSIZE = 0x700
   env.VALUE = 0
   env.SOURCE = 1
+  env.BOOL = 2
+  env.STRING = 3
+  env.TEXT_SIZE = 4
+  env.TIMER = 5
+  env.SWITCH = 6
+  env.COLOR = 7
+  env.ALIGNMENT = 8
+  env.SLIDER = 9
+  env.CHOICE = 10
+  env.FILE = 11
   env.LEFT = 0
   env.RIGHT = 0x0004
   env.CENTER = 0x0002

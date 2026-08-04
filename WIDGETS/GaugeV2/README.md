@@ -34,7 +34,7 @@ widget to a color-LCD screen.
 
 | Option | Type | Default | Notes |
 |---|---|---|---|
-| Source | source | auto | first available of RSSI/RQly/RxBt/Cels/TxBt |
+| Source | source | auto | first available of RSSI/RQly/RxBt/Cels/TxBt (firmware-resolved) |
 | Min / Max | integer | 0 / 100 | |
 | Warn / Crit | integer | 55 / 35 | |
 | HighGood | bool | on | higher is better |
@@ -42,6 +42,10 @@ widget to a color-LCD screen.
 | ColorMode | choice | Threshold | Static / Threshold / Sections |
 | Precision | choice | Auto | Auto = sensor precision, or 0/1/2 decimals |
 | ShowMinMax | bool | on | history markers; text in large mode |
+
+Option display names in the settings dialog are localized via the
+`translate` callback. The Source default is a name list resolved by the
+firmware ("first available", the official mechanism).
 
 Presets initialize ranges only when the source changes and the range options
 are still at their defaults; explicit user values are never overridden.

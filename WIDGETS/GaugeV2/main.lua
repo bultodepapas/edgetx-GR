@@ -8,29 +8,39 @@
 ---- # License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html               #
 ---- #########################################################################
 
--- Option types: SOURCE/VALUE are the firmware constants (etxcst); Bool=2
--- and Choice=9 are only exposed as plain numbers (widget.h WidgetOption::Type).
-local function findSourceId(names)
-  -- GaugeRotary pattern: default to the first sensor that actually exists
-  for i = 1, #names do
-    local info = getFieldInfo(names[i])
-    if info then return info.id end
-  end
-  return 0
-end
-
+-- Option types use the official constants (api_general.cpp etcxcst):
+-- SOURCE/VALUE/BOOL/CHOICE map to WidgetOption::Type (widget.h).
+-- A table as the Source default is resolved natively by the firmware:
+-- "find first available" (lua_widget_factory.cpp sourceValue()).
 local options = {
-  { "Source", SOURCE, findSourceId({ "RSSI", "RQly", "RxBt", "Cels", "TxBt" }) },
+  { "Source", SOURCE, { "RSSI", "RQly", "RxBt", "Cels", "TxBt" } },
   { "Min", VALUE, 0, -10000, 10000 },
   { "Max", VALUE, 100, -10000, 10000 },
   { "Warn", VALUE, 55, -10000, 10000 },
   { "Crit", VALUE, 35, -10000, 10000 },
-  { "HighGood", 2, 1 },
-  { "Style", 9, 0, { "Auto", "Needle", "Arc" } },
-  { "ColorMode", 9, 1, { "Static", "Threshold", "Sections" } },
-  { "Precision", 9, 0, { "Auto", "0", "1", "2" } },
-  { "ShowMinMax", 2, 1 },
+  { "HighGood", BOOL, 1 },
+  { "Style", CHOICE, 0, { "Auto", "Needle", "Arc" } },
+  { "ColorMode", CHOICE, 1, { "Static", "Threshold", "Sections" } },
+  { "Precision", CHOICE, 0, { "Auto", "0", "1", "2" } },
+  { "ShowMinMax", BOOL, 1 },
 }
+
+-- Option display names for the settings UI (BattAnalog pattern)
+local function translate(name)
+  local translations = {
+    Source = "Source",
+    Min = "Minimum",
+    Max = "Maximum",
+    Warn = "Warning",
+    Crit = "Critical",
+    HighGood = "High is good",
+    Style = "Style",
+    ColorMode = "Colors",
+    Precision = "Precision",
+    ShowMinMax = "Show min/max",
+  }
+  return translations[name]
+end
 
 local STYLE_CHOICES = { "Auto", "Needle", "Arc" }
 local COLOR_CHOICES = { "Static", "Threshold", "Sections" }
@@ -194,6 +204,7 @@ end
 return {
   name = "GaugeV2",
   options = options,
+  translate = translate,
   create = create,
   update = update,
   refresh = refresh,

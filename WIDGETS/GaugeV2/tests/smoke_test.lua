@@ -442,12 +442,35 @@ test("balanced layout fits name label", function()
   assertTrue(widget.layout.stateY >= 0, "state label inside zone")
 end)
 
--- 23. default source is discovered from available sensors
+-- 23. default source uses the firmware's native table default
+-- (lua_widget_factory sourceValue(): first available source wins)
 test("default source discovery", function()
   setupSim()
-  sim.sourceValues[TELEM_RSSI] = 70
   local mod = dofile(widgetDir .. "main.lua")
-  assertEq(mod.options[1][3], TELEM_RSSI, "RSSI discovered as default")
+  local names = mod.options[1][3]
+  assertEq(type(names), "table", "source default is a name list")
+  local found = 0
+  for i = 1, #names do
+    local info = getFieldInfo(names[i])
+    if info then
+      found = info.id
+      break
+    end
+  end
+  assertEq(found, TELEM_RSSI, "first available source resolved")
+end)
+
+-- 24. option types use the official WidgetOption enum values
+-- (regression: Choice is 10, not 9 - Slider would break the settings UI)
+test("option types are official constants", function()
+  setupSim()
+  local mod = dofile(widgetDir .. "main.lua")
+  assertEq(mod.options[1][2], SOURCE, "Source type")
+  assertEq(mod.options[2][2], VALUE, "Min type")
+  assertEq(mod.options[6][2], BOOL, "HighGood type")
+  assertEq(mod.options[7][2], CHOICE, "Style type")
+  assertEq(mod.options[9][2], CHOICE, "Precision type")
+  assertEq(type(mod.translate), "function", "translate callback present")
 end)
 
 -- 24. Auto precision follows the sensor precision

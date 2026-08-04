@@ -124,3 +124,61 @@ Source: https://edgetx.org/lua-scripts (gallery manifest)
 - `luaGetSourceValue` returns (value, isCurrent, isFresh); telemetry sources
   return no value when the sensor is unavailable — the availability model is
   built on that.
+
+## 14. Widget review — mahRe2 (fdm225)
+
+Source: https://github.com/fdm225/mahRe2
+
+- Legacy lcd-drawn widget; battery domain logic: voltage->percent lookup
+  tables, per-zone-size refresh tiers (Tiny..XLarge), sensor-derived `+`/`-`
+  min/max values (`getValue("Cels+")`), GV read/write, `playFile` sound
+  announcements, graduated green->red color. Ideas banked for V2.1:
+  optional WARN/CRIT sound alerts, GV export of min/max, sensor min/max
+  markers (`<name>+`/`<name>-`).
+
+## 15. Widget review — ExpressLRS ELRS Telem (ExpressLRS/ElrsTelemWidget)
+
+Source: https://github.com/ExpressLRS/ElrsTelemWidget
+
+- **Simulator detection**: `getVersion()` revision ends with "-simu" —
+  used to fake telemetry in the simulator (useful for screenshots).
+- **Fullscreen detection**: in `refresh`, `event ~= nil` means fullscreen —
+  no need for `lvgl.isFullScreen()`.
+- **Value ID cache with 0 sentinel**: never re-look-up a missing source.
+- Background = data maintenance (GPS kept after link loss); refresh displays.
+- Theme-consistent `COLOR_THEME_*` usage; background overlay with a
+  Transparency option.
+
+## 16. Widget review — BattAnalog (offer-shmuely)
+
+Source: https://github.com/offer-shmuely/edgetx-x10-widgets
+
+- **Official SOURCE table default**: `{ "sensor", SOURCE, {name1, name2, ...} }`
+  — the firmware resolves the first available source natively
+  (`lua_widget_factory.cpp` `sourceValue()`). GaugeV2's default source now
+  uses this instead of a hand-rolled lookup.
+- **`translate(name)` callback** — option display names in the settings UI.
+- Dynamic LVGL properties as functions (`color/pos/size/visible/text =
+  function()`), evaluated per callRefs — the documented idiom; GaugeV2 keeps
+  explicit sets for instruction economy.
+- Zone thresholds multiplied by `lvgl.LCD_SCALE` — GaugeV2 mode thresholds
+  are now scale-aware.
+- `package.searchers` polyfill to enable `require()`; `setTelemetryValue`
+  sensor emulation.
+- Battery chemistry percent curves (LiPo/HV/LiIon/LiFePO4) — future preset
+  knowledge.
+
+## 17. Widget review — SpiderFI TXBatt / MicroValues (offer-shmuely)
+
+- **Font auto-fit** (SpiderFI): pick the largest font whose measured height
+  fits the available area — GaugeV2's value font now fits the value area
+  instead of a fixed per-mode choice.
+- MicroValues confirms `translate()` and table defaults as standard practice.
+
+## 18. Option-type constant bug found by the review
+
+`widget.h` `WidgetOption::Type`: Integer=0, Source=1, Bool=2, String=3,
+TextSize=4, Timer=5, Switch=6, Color=7, Align=8, Slider=9, **Choice=10**,
+File=11. GaugeV2 previously used `9` for Choice options (that is Slider) —
+the settings UI would have rendered sliders. All option types now use the
+official constants (SOURCE/VALUE/BOOL/CHOICE), with a regression test.

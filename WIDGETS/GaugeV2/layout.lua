@@ -43,12 +43,15 @@ end
 
 -- mode: micro (<64), compact (<105), normal (<180), large (>=180)
 -- orientation: horizontal (>1.4), vertical (<0.8), balanced
+-- Thresholds scale with LCD_SCALE so modes represent physical size
+-- (BattAnalog pattern: zone thresholds multiplied by lvgl.LCD_SCALE).
 function M.classify(w, h)
+  local scale = lvgl.LCD_SCALE or 1
   local side = min(w, h)
   local mode
-  if side < 64 then mode = "micro"
-  elseif side < 105 then mode = "compact"
-  elseif side < 180 then mode = "normal"
+  if side < 64 * scale then mode = "micro"
+  elseif side < 105 * scale then mode = "compact"
+  elseif side < 180 * scale then mode = "normal"
   else mode = "large" end
   local ratio = w / h
   local orientation
@@ -71,21 +74,16 @@ function M.calculate(widget, cfg)
   local L = { mode = mode, orientation = orientation }
   local pad = px(6)
 
-  -- typography
-  if mode == "micro" then L.valueFont = FONTS.XS
-  elseif mode == "compact" then L.valueFont = FONTS.L
-  elseif mode == "large" then L.valueFont = (side >= 220) and FONTS.XXL or FONTS.XL
-  else L.valueFont = FONTS.XL end
+  -- fixed typography
   L.unitFont = (mode == "compact") and FONTS.XXS or FONTS.XS
   L.nameFont = FONTS.XS
   L.stateFont = FONTS.XS
   L.minMaxFont = FONTS.XXS
 
-  local vh = fontHeight(L.valueFont)
   local uh = fontHeight(L.unitFont)
   local nh = fontHeight(L.nameFont)
   local sh = fontHeight(L.stateFont)
-  L.valueH, L.unitH, L.nameH, L.stateH = vh, uh, nh, sh
+  L.unitH, L.nameH, L.stateH = uh, nh, sh
 
   -- visibility
   L.showName = (mode == "normal" or mode == "large")
@@ -114,6 +112,33 @@ function M.calculate(widget, cfg)
     cy = floor(h / 2) - px(1)
   end
   L.cx, L.cy, L.radius = floor(cx), floor(cy), floor(radius)
+
+  -- value font: the largest candidate that fits the value area
+  -- (SpiderFI pattern: pick the biggest font that fits the available space)
+  local vcands
+  local fit
+  if orientation == "horizontal" then
+    vcands = { FONTS.XXL, FONTS.XL, FONTS.L, FONTS.XS }
+    fit = h * 0.38
+  elseif orientation == "vertical" then
+    vcands = { FONTS.XXL, FONTS.XL, FONTS.L, FONTS.XS }
+    fit = h - (L.cy + L.radius + px(4))
+  else
+    if mode == "micro" then vcands = { FONTS.XS, FONTS.XXS }
+    elseif mode == "large" then vcands = { FONTS.XXL, FONTS.XL, FONTS.L, FONTS.XS }
+    else vcands = { FONTS.XL, FONTS.L, FONTS.XS } end
+    fit = h - (L.cy + floor(L.radius * 0.45))
+  end
+  local vf = vcands[#vcands]
+  for i = 1, #vcands do
+    if fontHeight(vcands[i]) <= fit then
+      vf = vcands[i]
+      break
+    end
+  end
+  L.valueFont = vf
+  local vh = fontHeight(vf)
+  L.valueH = vh
 
   L.trackThickness = clamp(floor(side / 16), px(2), px(10))
   L.arcThickness = clamp(floor(side / 14), px(2), px(12))
