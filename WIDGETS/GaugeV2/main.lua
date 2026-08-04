@@ -3,210 +3,159 @@
 ---- # Gauge V2 - responsive analog-digital telemetry widget                 #
 ---- #                                                                       #
 ---- # LVGL-only Lua widget for EdgeTX 2.11+ (developed against 3.0).        #
----- # Modules are loaded from the widget folder with loadScript().          #
+---- #                                                                       #
+---- # main.lua is executed at radio startup for EVERY widget on the SD      #
+---- # card, used or not, so it stays data-only: the option declarations,    #
+---- # a compatibility guard, and a loadScript of app.lua on first use.      #
+---- #                                                                       #
+---- # OPTION CONTRACT (details and firmware references in options.lua):     #
+---- #   * CHOICE values are integers, stored 1-BASED - never strings.       #
+---- #   * Option slots are positional; options may only be APPENDED.        #
+---- #   * 2.11 provides ten slots, 2.12+ provides fifty. The first ten      #
+---- #     declarations below are therefore the ones that must matter, and   #
+---- #     the rest are only declared when the firmware can store them.      #
 ---- #                                                                       #
 ---- # License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html               #
 ---- #########################################################################
 
--- Option types use the official constants (api_general.cpp etcxcst):
--- SOURCE/VALUE/BOOL/CHOICE map to WidgetOption::Type (widget.h).
--- A table as the Source default is resolved natively by the firmware:
--- "find first available" (lua_widget_factory.cpp sourceValue()).
-local options = {
-  { "Source", SOURCE, { "RSSI", "RQly", "RxBt", "Cels", "TxBt" } },
-  { "Min", VALUE, 0, -10000, 10000 },
-  { "Max", VALUE, 100, -10000, 10000 },
-  { "Warn", VALUE, 55, -10000, 10000 },
-  { "Crit", VALUE, 35, -10000, 10000 },
-  { "HighGood", BOOL, 1 },
-  { "Style", CHOICE, 0, { "Auto", "Needle", "Arc" } },
-  { "ColorMode", CHOICE, 1, { "Static", "Threshold", "Sections" } },
-  { "Precision", CHOICE, 0, { "Auto", "0", "1", "2" } },
-  { "ShowMinMax", BOOL, 1 },
+local NAME = "GaugeV2"
+local DEFAULT_PATH = "/WIDGETS/GaugeV2/"
+
+-- Compatibility guard (rotorflight RfStats pattern): a widget that cannot
+-- draw must still register, or it vanishes from the model with no
+-- explanation. Raising an error here would show a firmware error box.
+if lvgl == nil then
+  return {
+    name = NAME,
+    options = {},
+    create = function(zone) return { zone = zone } end,
+    update = function() end,
+    refresh = function()
+      lcd.drawText(3, 3, "GaugeV2 needs EdgeTX 2.11+", SMLSIZE)
+    end,
+  }
+end
+
+-- Option declarations. `since` 212 marks options that only exist where the
+-- firmware has more than ten slots. `field` is the name the parsed config
+-- uses; entries without one are not consumed by the widget code.
+local DEFS = {
+  -- ---- core ten: identical positions to 1.0, available on 2.11 ----------
+  { key = "Source", label = "Source", type = SOURCE, field = "source",
+    since = 211, default = { "RSSI", "RQly", "RxBt", "Cels", "TxBt" } },
+  { key = "Min", label = "Minimum", type = VALUE, field = "min",
+    since = 211, default = 0, min = -10000, max = 10000 },
+  { key = "Max", label = "Maximum", type = VALUE, field = "max",
+    since = 211, default = 100, min = -10000, max = 10000 },
+  { key = "Warn", label = "Warning", type = VALUE, field = "warn",
+    since = 211, default = 55, min = -10000, max = 10000 },
+  { key = "Crit", label = "Critical", type = VALUE, field = "crit",
+    since = 211, default = 35, min = -10000, max = 10000 },
+  { key = "HighGood", label = "High is good", type = BOOL, field = "highGood",
+    since = 211, default = 1 },
+  { key = "Style", label = "Style", type = CHOICE, field = "style",
+    since = 211, default = 1, choices = { "Auto", "Needle", "Arc", "Bar" } },
+  { key = "ColorMode", label = "Colours", type = CHOICE, field = "colorMode",
+    since = 211, default = 3,
+    choices = { "Static", "Threshold", "Rail", "Gradient", "Sections" } },
+  { key = "Precision", label = "Decimals", type = CHOICE, field = "precision",
+    since = 211, default = 1, choices = { "Auto", "0", "1", "2" } },
+  { key = "ShowMinMax", label = "Min / max", type = CHOICE,
+    field = "showMinMax", since = 211, default = 2,
+    choices = { "Off", "Markers", "Markers + text" } },
+
+  -- ---- appended: 2.12+ only (fifty slots) -------------------------------
+  { key = "Accent", label = "Accent colour", type = COLOR, field = "accent",
+    since = 212, default = COLOR_THEME_PRIMARY1 },
+  { key = "Label", label = "Name override", type = STRING, field = "label",
+    since = 212, default = "" },
+  { key = "Suffix", label = "Unit override", type = STRING, field = "suffix",
+    since = 212, default = "" },
+  { key = "Scale", label = "Scale", type = CHOICE, field = "scale",
+    since = 212, default = 1, choices = { "Auto", "Manual" } },
+  { key = "Sweep", label = "Dial sweep", type = CHOICE, field = "sweep",
+    since = 212, default = 1, choices = { "270 deg", "180 deg", "360 deg" } },
+  { key = "Damping", label = "Needle damping", type = SLIDER,
+    field = "damping", since = 212, default = 4, min = 0, max = 9 },
+  { key = "Cells", label = "Cell reading", type = CHOICE, field = "cells",
+    since = 212, default = 1, choices = { "Lowest", "Total", "Average" } },
+  { key = "Battery", label = "Battery percent", type = CHOICE,
+    field = "battery", since = 212, default = 1,
+    choices = { "Off", "Li-Po", "Li-Ion" } },
+  { key = "Alerts", label = "Alerts", type = CHOICE, field = "alerts",
+    since = 212, default = 1,
+    choices = { "Off", "Critical", "Warning + critical" } },
+  { key = "AlertSw", label = "  Alert switch", type = SWITCH,
+    field = "alertSw", since = 212, default = 0 },
+  { key = "Delay", label = "  Startup delay (s)", type = VALUE,
+    field = "delay", since = 212, default = 4, min = 0, max = 30 },
+  { key = "Vibrate", label = "  Vibrate", type = BOOL, field = "vibrate",
+    since = 212, default = 0 },
+  { key = "ResetSw", label = "Reset min/max", type = SWITCH,
+    field = "resetSw", since = 212, default = 0 },
 }
 
--- Option display names for the settings UI (BattAnalog pattern)
+-- Firmware option array. Built inline (rather than in options.lua) so boot
+-- costs exactly one file read per widget; options.lua owns everything else.
+local CORE, EXTENDED = 10, 50
+local capacity = CORE
+if type(getVersion) == "function" then
+  local _, _, maj, minor = getVersion()
+  maj, minor = tonumber(maj), tonumber(minor)
+  if maj and (maj > 2 or (maj == 2 and (minor or 0) >= 12)) then
+    capacity = EXTENDED
+  end
+end
+
+local options = {}
+local labels = { [NAME] = "Gauge V2" }
+for i = 1, #DEFS do
+  local d = DEFS[i]
+  labels[d.key] = d.label
+  local needs = (d.since == 212) and EXTENDED or CORE
+  if needs <= capacity and #options < capacity then
+    if d.type == CHOICE then
+      options[#options + 1] = { d.key, d.type, d.default, d.choices }
+    elseif d.type == VALUE or d.type == SLIDER then
+      options[#options + 1] = { d.key, d.type, d.default, d.min, d.max }
+    else
+      options[#options + 1] = { d.key, d.type, d.default }
+    end
+  end
+end
+
 local function translate(name)
-  local translations = {
-    Source = "Source",
-    Min = "Minimum",
-    Max = "Maximum",
-    Warn = "Warning",
-    Crit = "Critical",
-    HighGood = "High is good",
-    Style = "Style",
-    ColorMode = "Colors",
-    Precision = "Precision",
-    ShowMinMax = "Show min/max",
-  }
-  return translations[name]
+  return labels[name]
 end
 
-local STYLE_CHOICES = { "Auto", "Needle", "Arc" }
-local COLOR_CHOICES = { "Static", "Threshold", "Sections" }
-
-local function choiceIndex(value, choices)
-  for i = 1, #choices do
-    if choices[i] == value then return i - 1 end
-  end
-  return 0
-end
-
-local function isDefaultConfig(cfg)
-  return cfg.min == 0 and cfg.max == 100 and cfg.warn == 55 and cfg.crit == 35
-end
-
-local function loadModule(widget, name)
-  local chunk, err = loadScript(widget.path .. name .. ".lua", "bt")
+local function create(zone, opts, path)
+  path = path or DEFAULT_PATH
+  local chunk, err = loadScript(path .. "app.lua", "bt")
   if not chunk then
-    error("GaugeV2: cannot load " .. name .. " (" .. tostring(err) .. ")")
+    error("GaugeV2: cannot load app.lua (" .. tostring(err) .. ")")
   end
-  local ok, mod = pcall(chunk)
-  if not ok or type(mod) ~= "table" then
-    error("GaugeV2: bad module " .. name)
-  end
-  return mod
-end
-
-local function create(zone, options, path)
-  if not lvgl then
-    error("GaugeV2 requires EdgeTX 2.11+ (LVGL)")
-  end
-  local widget = {
-    zone = zone,
-    options = options,
-    path = path or "/WIDGETS/GaugeV2/",
-    mods = {},
-    source = { id = -1, name = "", unit = nil, unitName = "",
-               isTelemetry = false, resolved = false },
-    data = { availability = "unset", value = nil, displayValue = nil,
-             lastValue = nil, state = nil },
-    history = { min = nil, max = nil },
-    smooth = { value = nil, time = 0 },
-    ranges = nil,
-    rangeSig = nil,
-    config = nil,
-    layout = nil,
-    layoutSig = nil,
-    ui = {},
-    frame = {},
-  }
-  widget.mods.geometry = loadModule(widget, "geometry")
-  widget.mods.ranges = loadModule(widget, "ranges")
-  widget.mods.presets = loadModule(widget, "presets")
-  widget.mods.telemetry = loadModule(widget, "telemetry")
-  widget.mods.layout = loadModule(widget, "layout")
-  widget.mods.renderer = loadModule(widget, "renderer")
-  widget.mods.renderer.setup(widget.mods.geometry)
+  local app = chunk(DEFS)
+  local widget = app.create(zone, opts, path)
+  widget.app = app
   return widget
 end
 
-local function update(widget, options)
-  if not widget.mods then return end
-  widget.options = options
-  local mods = widget.mods
-
-  local cfg = {
-    min = options.Min,
-    max = options.Max,
-    warn = options.Warn,
-    crit = options.Crit,
-    highGood = options.HighGood == 1,
-    style = choiceIndex(options.Style, STYLE_CHOICES),
-    colorMode = choiceIndex(options.ColorMode, COLOR_CHOICES),
-    precision = 0,  -- resolved after source metadata is known
-    showMinMax = options.ShowMinMax == 1,
-  }
-
-  -- Source resolution is cached in telemetry.resolveSource. Presets apply
-  -- when the source changed and the range options still hold their global
-  -- defaults; the applied values are kept so later updates (resize,
-  -- fullscreen, settings screen visits) do not revert to the defaults.
-  local prevId = widget.source.id
-  local src = mods.telemetry.resolveSource(widget)
-  if isDefaultConfig(cfg) then
-    if widget.preset and widget.presetSourceId == src.id then
-      local p = widget.preset
-      cfg.min = p.minimum
-      cfg.max = p.maximum
-      cfg.warn = p.warning
-      cfg.crit = p.critical
-      cfg.highGood = p.highIsGood
-    elseif src.id ~= prevId then
-      local p = mods.presets.find(src)
-      if p then
-        widget.preset = { minimum = p.minimum, maximum = p.maximum,
-                          warning = p.warning, critical = p.critical,
-                          highIsGood = p.highIsGood }
-        widget.presetSourceId = src.id
-        cfg.min = p.minimum
-        cfg.max = p.maximum
-        cfg.warn = p.warning
-        cfg.crit = p.critical
-        cfg.highGood = p.highIsGood
-      end
-    end
-  else
-    -- user customized the ranges: no preset may interfere
-    widget.preset = nil
-    widget.presetSourceId = nil
-  end
-  if src.id ~= prevId then
-    widget.smooth.value = nil
-    widget.history.min = nil
-    widget.history.max = nil
-    widget.data.lastValue = nil  -- never show old source data with a new source
-  end
-
-  -- Precision: "Auto" follows the sensor precision (getFieldInfo does not
-  -- expose prec, so telemetry.lua caches it from model.getSensor).
-  if options.Precision == "Auto" or tonumber(options.Precision) == nil then
-    cfg.precision = src.prec or 0
-    if src.name == "tx-voltage" then cfg.precision = 1 end
-  else
-    cfg.precision = tonumber(options.Precision)
-  end
-  widget.config = cfg
-  widget.ranges = mods.ranges.build(cfg.min, cfg.max, cfg.warn, cfg.crit,
-                                    cfg.highGood)
-
-  local rangeSig = table.concat(
-    { cfg.min, cfg.max, cfg.warn, cfg.crit, cfg.highGood and 1 or 0 }, ":")
-  if rangeSig ~= widget.rangeSig then
-    widget.rangeSig = rangeSig
-    widget.history.min = nil
-    widget.history.max = nil
-    widget.smooth.value = nil
-  end
-
-  -- Rebuild only when the layout structure actually changed.
-  local L = mods.layout.calculate(widget, cfg)
-  widget.layout = L
-  local sig = table.concat(
-    { L.mode, L.orientation, L.showNeedle and 1 or 0, cfg.colorMode,
-      cfg.showMinMax and 1 or 0 }, ":")
-  if sig ~= widget.layoutSig then
-    widget.layoutSig = sig
-    lvgl.clear()
-    widget.ui = {}
-    mods.renderer.build(widget)
-  elseif src.id ~= prevId then
-    mods.renderer.updateSourceLabels(widget)
-  end
+local function update(widget, opts)
+  if widget.app then widget.app.update(widget, opts) end
 end
 
 local function refresh(widget, event, touch)
-  if not widget.mods or not widget.ui.built then return end
-  widget.mods.telemetry.refresh(widget)
-  widget.mods.renderer.update(widget)
+  if widget.app then widget.app.refresh(widget, event, touch) end
 end
 
 return {
-  name = "GaugeV2",
+  name = NAME,
   options = options,
   translate = translate,
   create = create,
   update = update,
   refresh = refresh,
   useLvgl = true,
+  -- exposed for the headless contract tests; the firmware ignores extra keys
+  defs = DEFS,
 }

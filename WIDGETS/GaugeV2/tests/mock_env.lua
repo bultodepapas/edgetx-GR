@@ -1,13 +1,23 @@
--- Mock EdgeTX firmware environment for headless GaugeV2 testing.
--- Provides lvgl/lcd/telemetry/script globals as plain Lua (Lua 5.3).
+-- Mock EdgeTX firmware environment for headless GaugeV2 testing (Lua 5.3).
 --
--- Fidelity rules enforced here (verified against radio/src/lua):
---   * lvgl.obj / lvgl.set reject unknown property keys, like the C++
---     parseParam chain does ("Invalid property" luaL_error).
---   * line/triangle pts must be arrays of {x, y} pairs (getPt reads
---     rawgeti(1) and rawgeti(2)).
---   * the string metatable is removed (LUA_ENABLE_STRLIB_MT is not
---     defined in the firmware build).
+-- Fidelity rules enforced here, each verified against radio/src:
+--
+--  * Per-object property allow-lists exactly as the C++ parseParam chains
+--    accept them (lua_lvgl_widget.cpp / .h). In particular:
+--      - lvgl.triangle takes ONLY pts + base params (LvglSimpleWidgetObject);
+--        no filled / thickness / rounded.
+--      - dashGap / dashWidth live on LvglWidgetLineBase (hline, vline), NOT
+--        on the free-angle LvglWidgetLine.
+--      - lvgl.circle has no bgColor / bgOpacity.
+--  * pts must be arrays of {x, y} pairs (getPt reads rawgeti 1 and 2);
+--    a triangle must carry exactly three points.
+--  * The string metatable is absent (the firmware builds without
+--    LUA_ENABLE_STRLIB_MT), so "s:lower()" must fail here too.
+--  * getTime() counts 10 ms ticks; getSourceValue() returns three values.
+--  * Widget options reach Lua as NUMBERS (lua_widget.cpp updateWithoutRefresh)
+--    and CHOICE values are 1-based (widget_settings.cpp). makeOptions()
+--    below converts readable test input into that wire format, so tests stay
+--    legible without lying about the contract.
 
 local M = {}
 
@@ -21,14 +31,21 @@ local BASE_KEYS = {
 }
 
 local KEYS = {
+  -- LvglWidgetArc : RoundObject (radius, thickness, filled) + Rounded
   arc = { startAngle = true, endAngle = true, bgStartAngle = true,
           bgEndAngle = true, bgColor = true, bgOpacity = true,
-          radius = true, thickness = true, filled = true,
-          align = true, rounded = true },
+          radius = true, thickness = true, filled = true, rounded = true },
+  -- LvglWidgetLine : Rounded + Thickness (no dash params)
   line = { pts = true, thickness = true, rounded = true },
-  hline = { thickness = true, rounded = true },
-  vline = { thickness = true, rounded = true },
-  circle = { radius = true, thickness = true, filled = true, align = true },
+  -- LvglWidgetLineBase : Rounded + dash params
+  hline = { thickness = true, rounded = true, dashGap = true,
+            dashWidth = true },
+  vline = { thickness = true, rounded = true, dashGap = true,
+            dashWidth = true },
+  -- LvglWidgetTriangle : LvglSimpleWidgetObject + pts only
+  triangle = { pts = true },
+  circle = { radius = true, thickness = true, filled = true },
+  rectangle = { rounded = true, thickness = true, filled = true },
   label = { text = true, font = true, align = true },
   box = { align = true, flexFlow = true, flexPad = true, borderPad = true,
           active = true },
@@ -41,6 +58,24 @@ local function allowedKeys(kind)
   return t
 end
 
+local function checkPts(kind, pts)
+  local n = #pts
+  if kind == "triangle" then
+    if n ~= 3 then
+      error("mock: triangle needs exactly 3 points, got " .. n, 4)
+    end
+  elseif n < 2 then
+    error("mock: pts must have at least 2 points", 4)
+  end
+  for i = 1, n do
+    local pt = pts[i]
+    if type(pt) ~= "table" or #pt < 2
+       or type(pt[1]) ~= "number" or type(pt[2]) ~= "number" then
+      error(string.format("mock: pts[%d] must be {x, y}", i), 4)
+    end
+  end
+end
+
 local function checkParams(kind, params)
   local allowed = allowedKeys(kind)
   for k in pairs(params) do
@@ -48,20 +83,7 @@ local function checkParams(kind, params)
       error(string.format("mock: invalid property '%s' for %s", k, kind), 3)
     end
   end
-  if params.pts then
-    -- binding reads points as arrays: lua_rawgeti(point, 1) and rawgeti(2)
-    local n = #params.pts
-    if n < 2 then
-      error("mock: pts must have at least 2 points", 3)
-    end
-    for i = 1, n do
-      local pt = params.pts[i]
-      if type(pt) ~= "table" or #pt < 2
-         or type(pt[1]) ~= "number" or type(pt[2]) ~= "number" then
-        error(string.format("mock: pts[%d] must be {x, y}", i), 3)
-      end
-    end
-  end
+  if params.pts then checkPts(kind, params.pts) end
 end
 
 local function makeObject(kind, params)
@@ -74,8 +96,8 @@ local function makeObject(kind, params)
     params = params or {},
     props = props,
     sets = {},
+    setCount = 0,
     visible = true,
-    hiddenByMe = false,
   }
   objects[objectCount] = obj
   return obj
@@ -89,53 +111,187 @@ local function recordSet(obj, params)
     obj.props[k] = v
   end
   obj.sets[#obj.sets + 1] = entry
+  obj.setCount = obj.setCount + 1
 end
 
 local lvgl = {
   LCD_SCALE = 1.0,
+  FLOW_ROW = 0, FLOW_COLUMN = 1,
   _objects = objects,
-  _count = function() return objectCount end,
   arc = function(p) return makeObject("arc", p) end,
   line = function(p) return makeObject("line", p) end,
   hline = function(p) return makeObject("hline", p) end,
   vline = function(p) return makeObject("vline", p) end,
+  triangle = function(p) return makeObject("triangle", p) end,
   circle = function(p) return makeObject("circle", p) end,
+  rectangle = function(p) return makeObject("rectangle", p) end,
   label = function(p) return makeObject("label", p) end,
   box = function(p) return makeObject("box", p) end,
-  rectangle = function(p) return makeObject("rectangle", p) end,
-  triangle = function(p) return makeObject("triangle", p) end,
   set = function(obj, params) recordSet(obj, params) end,
-  show = function(obj) obj.visible = true; obj.hiddenByMe = false end,
-  hide = function(obj) obj.visible = false; obj.hiddenByMe = true end,
+  show = function(obj) obj.visible = true end,
+  hide = function(obj) obj.visible = false end,
+  isFullScreen = function() return false end,
   clear = function(obj)
     if obj then
       obj.props = {}
     else
-      objects = {}
+      for i = 1, objectCount do objects[i] = nil end
       objectCount = 0
-      lvgl._objects = objects
-      lvgl._count = function() return objectCount end
     end
   end,
 }
 
+function M.objectCount() return objectCount end
+
+function M.objects() return objects end
+
+-- All objects of a kind, in creation order.
+function M.byKind(kind)
+  local out = {}
+  for i = 1, objectCount do
+    if objects[i] and objects[i].kind == kind then out[#out + 1] = objects[i] end
+  end
+  return out
+end
+
+function M.totalSets()
+  local n = 0
+  for i = 1, objectCount do
+    if objects[i] then n = n + objects[i].setCount end
+  end
+  return n
+end
+
 local lcd = {
+  -- Rough but monotonic metrics: width scales with the font height, which is
+  -- what the layout code reasons about.
   sizeText = function(text, flags)
-    local n = #tostring(text)
     local h = 16
-    if flags and flags >= 0x400 then h = 22 end
-    if flags and flags >= 0x500 then h = 32 end
-    if flags and flags >= 0x600 then h = 48 end
-    return n * (h / 2), h
+    if flags then
+      if flags >= 0x600 then h = 48
+      elseif flags >= 0x500 then h = 32
+      elseif flags >= 0x400 then h = 24
+      elseif flags >= 0x300 then h = 13
+      elseif flags >= 0x200 then h = 11
+      end
+    end
+    return math.floor(#tostring(text) * (h * 0.55)), h
   end,
-  RGB = function(r, g, b) return 0x10000 + r * 0x10000 + g * 0x100 + b end,
+  RGB = function(r, g, b) return 0x100000 + r * 0x10000 + g * 0x100 + b end,
+  drawText = function() end,
 }
+
+-- ---- simulated radio state ----------------------------------------------
+
+local sim = {
+  ticks = 0,                 -- getTime(), 10 ms ticks
+  rssi = 100,
+  version = { "3.0.0", "sim", 3, 0, 0, "edgetx" },
+  values = {},               -- source id -> number | table | nil
+  current = {},              -- source id -> bool
+  fresh = {},
+  fields = {},               -- id -> { id, name, unit }
+  byName = {},               -- name -> id
+  sensors = {},              -- index -> { name, prec, unit }
+  tones = {},
+  haptics = {},
+}
+M.sim = sim
+
+function M.reset()
+  lvgl.clear()
+  sim.ticks = 0
+  sim.rssi = 100
+  sim.values = {}
+  sim.current = {}
+  sim.fresh = {}
+  sim.fields = {}
+  sim.byName = {}
+  sim.sensors = {}
+  sim.tones = {}
+  sim.haptics = {}
+end
+
+-- Register a source in the simulated radio.
+function M.addField(id, name, unit)
+  sim.fields[id] = { id = id, name = name, unit = unit }
+  sim.byName[name] = id
+  return id
+end
+
+function M.setValue(id, value, current, fresh)
+  sim.values[id] = value
+  sim.current[id] = (current == nil) and true or current
+  sim.fresh[id] = fresh
+end
+
+function M.advance(ms)
+  sim.ticks = sim.ticks + math.floor(ms / 10)
+end
+
+-- ---- option wire format --------------------------------------------------
+
+-- Convert readable overrides into the integer wire format the firmware uses.
+--   makeOptions(defs, { Style = "Needle", Min = 0 })
+-- Choice values may be given as a label or as a 1-based index.
+function M.makeOptions(defs, overrides)
+  overrides = overrides or {}
+  local out = {}
+  for i = 1, #defs do
+    local d = defs[i]
+    local given = overrides[d.key]
+    if d.type == CHOICE then
+      local v = d.default
+      if type(given) == "string" then
+        for j = 1, #d.choices do
+          if d.choices[j] == given then v = j end
+        end
+      elseif given ~= nil then
+        v = given
+      end
+      out[d.key] = v
+    elseif d.type == STRING then
+      out[d.key] = (given ~= nil) and given or (d.default or "")
+    elseif d.type == SOURCE then
+      out[d.key] = tonumber(given) or 0
+    elseif d.type == BOOL then
+      if given == nil then out[d.key] = d.default
+      elseif given == true then out[d.key] = 1
+      elseif given == false then out[d.key] = 0
+      else out[d.key] = given end
+    else
+      out[d.key] = (given ~= nil) and given or d.default
+    end
+  end
+  return out
+end
+
+-- Only the options a given firmware capacity would deliver.
+function M.limitOptions(defs, options, capacity)
+  local out, n = {}, 0
+  for i = 1, #defs do
+    local d = defs[i]
+    local needs = (d.since == 212) and 50 or 10
+    if needs <= capacity and n < capacity then
+      n = n + 1
+      out[d.key] = options[d.key]
+    end
+  end
+  return out
+end
+
+-- ---- installation --------------------------------------------------------
 
 local function install(env)
   env.lvgl = lvgl
   env.lcd = lcd
+
+  -- colours (api_colorlcd.cpp COLOR2FLAGS values; only identity matters here)
   env.RED = 0x2000
   env.GREEN = 0x4000
+  env.WHITE = 0x5000
+  env.BLACK = 0x5001
+  env.YELLOW = 0x5002
   env.COLOR_THEME_PRIMARY1 = 0x1001
   env.COLOR_THEME_PRIMARY2 = 0x1002
   env.COLOR_THEME_PRIMARY3 = 0x1003
@@ -147,7 +303,8 @@ local function install(env)
   env.COLOR_THEME_ACTIVE = 0x3003
   env.COLOR_THEME_WARNING = 0x4001
   env.COLOR_THEME_DISABLED = 0x5001
-  -- etcxcst constants (radio/src/lua/api_general.cpp)
+
+  -- font flags (etcxcst): font index << 8
   env.STDSIZE = 0x000
   env.BOLD = 0x100
   env.TINSIZE = 0x200
@@ -156,6 +313,8 @@ local function install(env)
   env.DBLSIZE = 0x500
   env.XXLSIZE = 0x600
   env.XLSIZE = 0x700
+
+  -- widget option types (widget.h WidgetOption::Type)
   env.VALUE = 0
   env.SOURCE = 1
   env.BOOL = 2
@@ -168,15 +327,59 @@ local function install(env)
   env.SLIDER = 9
   env.CHOICE = 10
   env.FILE = 11
+
+  -- alignment flags
   env.LEFT = 0
-  env.RIGHT = 0x0004
   env.CENTER = 0x0002
+  env.RIGHT = 0x0004
   env.VCENTER = 0x0008
-  env.VTOP = 0x0010
-  env.VBOTTOM = 0x0020
-  -- Simulate EdgeTX Lua: the string metatable is NOT installed (the firmware
-  -- only builds it with LUA_ENABLE_STRLIB_MT), so "s:method()" must fail
-  -- exactly like it does on the radio.
+  env.MAX_SENSORS = 60
+
+  env.getTime = function() return sim.ticks end
+  env.getRSSI = function() return sim.rssi end
+  env.getVersion = function() return table.unpack(sim.version) end
+
+  env.getSourceValue = function(id)
+    local v = sim.values[id]
+    if v == nil then return nil end
+    local cur = sim.current[id]
+    if cur == nil then cur = true end
+    local fr = sim.fresh[id]
+    if fr == nil then fr = cur end
+    return v, cur, fr
+  end
+  env.getValue = function(id) return sim.values[id] end
+
+  env.getFieldInfo = function(idOrName)
+    if type(idOrName) == "string" then
+      local id = sim.byName[idOrName]
+      return id and sim.fields[id] or nil
+    end
+    return sim.fields[idOrName]
+  end
+  env.getSourceIndex = function(name) return sim.byName[name] end
+  env.getSourceName = function(id)
+    local f = sim.fields[id]
+    return f and f.name or nil
+  end
+
+  env.model = {
+    getSensor = function(i) return sim.sensors[i] end,
+  }
+
+  env.playTone = function(f, len, pause)
+    sim.tones[#sim.tones + 1] = { f, len, pause }
+  end
+  env.playHaptic = function(len, pause)
+    sim.haptics[#sim.haptics + 1] = { len, pause }
+  end
+  env.playNumber = function() end
+  env.playFile = function() end
+  env.getUsage = function() return 5 end
+
+  env.loadScript = function(path) return loadfile(path) end
+
+  -- EdgeTX Lua has no string metatable: "s:lower()" must fail here too.
   if debug and debug.setmetatable then
     debug.setmetatable("", nil)
   end

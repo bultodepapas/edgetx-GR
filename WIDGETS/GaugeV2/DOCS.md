@@ -1,7 +1,7 @@
 # Gauge V2 — User & Technical Reference
 
-**Version:** 1.0 (matches widget code on branch `feat/gauge-v2`)
-**Target:** EdgeTX 2.11+ color radios (LVGL), developed against EdgeTX 3.0
+**Version:** 1.1 (branch `feat/gauge-v2`)
+**Target:** EdgeTX 2.11+ color radios (LVGL); developed against EdgeTX 3.0
 **Language:** Lua (LVGL rendering path, no legacy `lcd` renderer)
 **License:** GPLv2
 
@@ -10,435 +10,518 @@
 ## 1. Overview
 
 Gauge V2 is a responsive analog-digital telemetry instrument for EdgeTX
-color-LCD radios. It renders a 270-degree dial with an active progress arc,
-an optional line needle and pivot, adaptive tick marks, semantic
-normal/warning/critical coloring, and a value readout. It is a modern,
-documented, tested successor to the community `GaugeRotary` widget.
+color-LCD radios. It renders a dial with a threshold rail, an active progress
+arc, a tapered needle, adaptive ticks, semantic normal/warning/critical
+colouring, peak-hold history and a value readout — or, where a dial cannot
+work, the same instrument as a linear bar.
 
-The widget is written entirely in Lua against the LVGL Lua binding and works
-with any numeric telemetry source, timers, and numeric sources in general
-(sticks, channels, gvars, TX battery). The same folder tree that lives in
-this repository is the folder that goes on the SD card — there is no build
-step.
+It is the only widget in the EdgeTX ecosystem that draws with the **LVGL
+retained-object API** (`lvgl.arc`, `lvgl.triangle`, `lvgl.line`): every other
+gauge, including the community `GaugeRotary` it succeeds and the built-in C++
+`Gauge`, paints with the legacy `lcd` API. That is why it scales to any screen
+size from one folder with no per-resolution assets.
+
+The widget works with any numeric source — telemetry sensors, timers, sticks,
+channels, gvars, TX battery. The folder in this repository is the SD-card
+payload; there is no build step.
 
 ## 2. Requirements
 
 - EdgeTX **2.11 or later** (the LVGL Lua API). On older firmware the widget
-  raises an error during creation instead of failing silently.
+  still registers and draws a "needs EdgeTX 2.11+" message instead of
+  disappearing from the model.
 - A color-LCD radio or the Companion Simulator.
-- No dependencies besides the firmware's standard Lua API.
+- No dependencies beyond the firmware's standard Lua API.
 
 ## 3. Installation
 
-1. Copy the `GaugeV2` folder (containing `main.lua` and the companion
-   modules) to the SD card's `WIDGETS/` directory, so the radio sees
-   `/WIDGETS/GaugeV2/main.lua`.
-2. In Companion: place the folder inside the SD-card content structure
-   (model settings → SD card, `WIDGETS/GaugeV2`), or enable a real SD card
-   and copy the folder onto it.
+1. Copy the `GaugeV2` folder to the SD card's `WIDGETS/` directory, so the
+   radio sees `/WIDGETS/GaugeV2/main.lua`.
+2. In Companion: place the folder inside the SD-card content structure, or
+   copy it onto a real SD card.
 3. Power the radio (or restart the Simulator) so the widget list refreshes.
-4. On a main screen: **long-press** an empty widget slot → **Widgets** →
-   add a widget → pick **GaugeV2** → configure it.
+4. On a main screen: **long-press** an empty widget slot → **Widgets** → add a
+   widget → pick **Gauge V2** → configure it.
 
 ## 4. Usage
 
 ### 4.1 Options
 
-The widget exposes ten options (the maximum the 2.11+ widget settings UI is
-designed for; the firmware data structure allows up to 50).
+Option availability depends on the firmware, because the number of option
+slots does:
 
-| Option | Type | Default | Range / Choices | Meaning |
-|---|---|---|---|---|
-| **Source** | Source | *auto* | any radio source | Telemetry sensor, timer, or local source. Default resolves to the first available of RSSI, RQly, RxBt, Cels, TxBt (firmware-resolved). |
-| **Minimum** | Integer | 0 | −10000 … 10000 | Dial scale minimum. |
-| **Maximum** | Integer | 100 | −10000 … 10000 | Dial scale maximum. |
-| **Warning** | Integer | 55 | −10000 … 10000 | Warning threshold. |
-| **Critical** | Integer | 35 | −10000 … 10000 | Critical threshold. |
-| **High is good** | Bool | On | On / Off | Direction: higher = better (Off inverts the state bands). |
-| **Style** | Choice | Auto | Auto, Needle, Arc | Needle visibility (see 4.3). |
-| **Colors** | Choice | Threshold | Static, Threshold, Sections | Color behavior (see 4.4). |
-| **Precision** | Choice | Auto | Auto, 0, 1, 2 | Decimals. Auto follows the sensor's precision (see 6.5). |
-| **Show min/max** | Bool | On | On / Off | Flight history markers; large mode also shows MIN/MAX text. |
+| Firmware | Slots | Source |
+|---|---|---|
+| 2.11.x (radio **and** Companion) | 10 | `widgets_container.h` `MAX_WIDGET_OPTIONS 10` |
+| 2.12+ / 3.0 | 50 | `datastructs_screen.h`; dynamic allocation since commit `5c96b1e15` |
+
+The widget declares its **core ten** on every firmware, in fixed positions,
+and appends the rest only when the firmware can store them. Options are never
+inserted or reordered: widget option data is positional and typed, and a model
+that travels between versions or through an older Companion must not have its
+settings shifted.
+
+**Core ten (all firmware):**
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| **Source** | Source | *auto* | Telemetry sensor, timer, or local source. Defaults to the first available of RSSI, RQly, RxBt, Cels, TxBt (resolved by the firmware). |
+| **Minimum** | Integer | 0 | Scale minimum. |
+| **Maximum** | Integer | 100 | Scale maximum. |
+| **Warning** | Integer | 55 | Warning threshold. |
+| **Critical** | Integer | 35 | Critical threshold. |
+| **High is good** | Bool | On | Direction: higher = better (Off inverts the bands). |
+| **Style** | Choice | Auto | Auto / Needle / Arc / Bar (see 4.4). |
+| **Colours** | Choice | Rail | Static / Threshold / Rail / Gradient / Sections (see 4.5). |
+| **Decimals** | Choice | Auto | Auto follows the sensor precision, or 0 / 1 / 2. |
+| **Min / max** | Choice | Markers | Off / Markers / Markers + text. |
+
+**Appended on 2.12+:**
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| **Accent colour** | Color | theme primary | Native colour picker; overrides the normal-state colour. Lets four gauges on one screen be colour-coded. |
+| **Name override** | String | "" | Custom label ("PACK", "MOTOR"); empty uses the sensor name. |
+| **Unit override** | String | "" | Custom unit; empty uses the sensor unit. |
+| **Scale** | Choice | Auto | Auto uses a known-sensor preset; Manual always uses your Min/Max/Warning/Critical. |
+| **Dial sweep** | Choice | 270° | 270° / 180° / 360°. |
+| **Needle damping** | Slider | 4 | 0 = raw, 9 = heavy (see 6.6). |
+| **Cell reading** | Choice | Lowest | How a `CELLS` table is reduced: Lowest / Total / Average. |
+| **Battery percent** | Choice | Off | Off / Li-Po / Li-Ion — show state of charge instead of volts (see 4.8). |
+| **Alerts** | Choice | Off | Off / Critical / Warning + critical (see 4.9). |
+| **Alert switch** | Switch | none | Alerts only fire while this switch is on (e.g. armed). |
+| **Startup delay** | Integer | 4 s | No alerts until the model has settled. |
+| **Vibrate** | Bool | Off | Haptic pulse on critical. |
+| **Reset min/max** | Switch | none | Clears the tracked history in flight. |
 
 Notes:
 
-- Option names shown in the settings dialog are the friendly names above
-  (provided through the `translate` callback).
-- **Warning/Critical are clamped into [Minimum, Maximum]**; if they are
-  equal, the warning band collapses to zero width and the scale shows only
-  normal and critical bands.
-- If **Minimum > Maximum**, the two are swapped automatically (the scale is
-  always ascending). Full mirroring of inverted ranges is planned (see 9).
-- Setting any range option away from its default permanently disables
-  presets for that source until the ranges are restored to defaults.
+- Option **names** are ≤ 10 characters without spaces (a firmware
+  convention); the friendly labels above come from the `translate` callback,
+  which also indents the alert sub-options so they read as a group.
+- Warning/Critical are clamped into [Minimum, Maximum].
+- If Minimum > Maximum the scale is **mirrored**, not swapped: a descending
+  scale works (0 at the right).
 
-### 4.2 Source presets
+### 4.2 Scale: presets vs your values
 
-When the **Source** changes and the four range options (Min/Max/Warn/Crit)
-still hold their global defaults, the widget applies a known-sensor profile.
-Explicitly customized ranges are never overridden.
+With **Scale = Auto** (or on 2.11, where the option does not exist and the
+range values are still at their defaults) a known-sensor profile supplies the
+range:
 
 | Sensor name(s) | Unit | Min | Max | Warn | Crit | Direction |
 |---|---|---|---|---|---|---|
-| RSSI, RSSI1–3 | dB / dBm | 0 | 100 | 55 | 35 | high-good |
-| 1RSS, 2RSS | dBm | −120 | 0 | −80 | −95 | high-good |
-| RQly, RQly%, VFR, VFR% | % | 0 | 100 | 55 | 35 | high-good |
-| RxBt, RxBatt, Batt | V | 0 | 8.4 | 3.7 | 3.5 | high-good |
-| TxBat, TxBatt, Battery, tx-voltage | V | 0 | 8.4 | 6.8 | 6.4 | high-good |
-| Cell, Cells, Cels | V | 3.5 | 4.2 | 3.7 | 3.5 | high-good |
-| Tmp, Temp, T1, T2, Temperature, Tmp1, Tmp2 | °C / °F | 0 | 120 | 70 | 90 | low-good |
-| RPM, RPMs, Turbine | rpm | 0 | 20000 | 16000 | 18000 | low-good |
-| Fuel | % | 0 | 100 | 30 | 15 | high-good |
-| Vibr, Vibration | % | 0 | 100 | 40 | 60 | low-good |
+| RSSI, RSSI1–3 | dB | 0 | 100 | 55 | 35 | high-good |
+| 1RSS, 2RSS, TRSS | dBm | −120 | 0 | −80 | −95 | high-good |
+| RQly, TQly, VFR | % | 0 | 100 | 55 | 35 | high-good |
+| SNR | dB | −20 | 20 | 2 | −5 | high-good |
+| RxBt, Vbat, VFAS, Batt | V | 0 | 8.4 * | 3.7 | 3.5 | high-good |
+| TxBat, tx-voltage | V | 6 | 8.4 | 6.8 | 6.4 | high-good |
+| Cell, Cels | V | 3.0 | 4.2 | 3.7 | 3.5 | high-good |
+| Tmp, T1/T2, TFET, TBEC | °C/°F | 0 | 120 | 70 | 90 | low-good |
+| RPM, Hspd | rpm | 0 | 20000 | 16000 | 18000 | low-good |
+| Curr | A | 0 | 100 | 70 | 85 | low-good |
+| Capa | mAh | 0 | 5000 | 3500 | 4500 | low-good |
+| Fuel, Bat% | % | 0 | 100 | 30 | 15 | high-good |
+| Thr | % | 0 | 100 | 80 | 95 | low-good |
+| Alt, GAlt | m | 0 | 400 | 300 | 380 | low-good |
+| GSpd, ASpd | km/h | 0 | 150 | 120 | 140 | low-good |
+| Dist | km | 0 | 1000 | 700 | 900 | low-good |
+| Sats | — | 0 | 24 | 8 | 5 | high-good |
+| Vibr | % | 0 | 100 | 40 | 60 | low-good |
 
-Matching is by normalized sensor name first (case- and punctuation-
-insensitive), then by unit as a fallback for telemetry sources. Preset values
-are kept across later updates (resize, fullscreen, settings visits) so they
-never revert to the global defaults mid-flight.
+\* Voltage sources marked as battery presets are **rescaled to the detected
+pack** on the first reading: a 4S pack turns 0–8.4 V into 12.0–16.8 V (see
+4.8). Matching is by normalized sensor name first, then by unit.
 
-### 4.3 Style (needle)
+With **Scale = Manual** your four range values are always used.
 
-- **Auto** — a needle is drawn in compact, normal, and large zones; micro
-  zones use the progress arc only (no needle, no pivot).
-- **Needle** — always draw the needle and pivot.
-- **Arc** — never draw the needle; the active progress arc alone indicates
-  the value.
+### 4.3 States and colours
 
-### 4.4 Color modes
+A value maps onto three bands (normal / warning / critical, ordered by the
+direction option):
 
-- **Static** — the dial, arc, needle, and value text always use the theme
-  primary color; state bands are ignored for coloring.
-- **Threshold** (default) — colors reflect the semantic state (see 4.6).
-- **Sections** — the track is drawn as three separate arcs colored by the
-  state bands (normal/warning/critical); the needle/value colors still
-  reflect the current state.
+- **NORMAL** — the accent colour (theme primary, or your Accent option).
+- **WARN** — `COLOR_THEME_WARNING`, chip text "WARN".
+- **CRIT** — high-contrast red, chip text "CRIT", and the value arc **pulses**
+  at ~1 Hz so the state is visible without relying on colour.
+- **No data** — everything dims to `COLOR_THEME_DISABLED`; the chip reads
+  `NO LINK`, `STALE`, `NO DATA` or `NO SOURCE` (see 4.10), and the last known
+  value stays on screen.
 
-### 4.5 Responsive layouts
+State changes are **hysteretic**: a worse state is adopted immediately, a
+better one only once the value has cleared the threshold by 2 % of the range.
+A value resting on a threshold therefore cannot flicker — and cannot
+machine-gun the alerts.
 
-The widget classifies the widget zone by size and aspect ratio (thresholds
-are multiplied by `lvgl.LCD_SCALE`, so "micro" always means the same physical
-size on every screen):
+### 4.4 Styles
 
-| Mode | Zone side (min(w,h)) | Behavior |
+- **Auto** — dial with a needle; no needle in micro zones; automatically a
+  **bar** when the zone is more than 2.6× wider than tall.
+- **Needle** — always draw the needle.
+- **Arc** — never draw the needle; the progress arc alone shows the value.
+- **Bar** — linear instrument: rounded track, threshold marks, fill, peak
+  mark, value + unit, name and state.
+
+### 4.5 Colour modes
+
+- **Static** — everything uses the accent colour.
+- **Threshold** — the arc, needle and value take the state colour.
+- **Rail** *(default)* — as Threshold, plus a thin outer rail that permanently
+  marks the warning and critical zones. The value arc keeps the foreground;
+  the scale stays readable.
+- **Gradient** — the arc/needle/value colour interpolates green → amber → red
+  across the **thresholds** (red at critical, green once inside the normal
+  band). Uses fixed RGB, so it does not follow the theme.
+- **Sections** — the track is drawn as three arcs coloured by band.
+
+### 4.6 Responsive layouts
+
+Zone classification (thresholds scale with `lvgl.LCD_SCALE`, so "micro" is the
+same physical size on every radio):
+
+| Mode | min(w, h) | Behaviour |
 |---|---|---|
-| micro | < 64 px | Dial + value only. No needle, unit, state text, name, or markers. |
-| compact | < 105 px | Adds unit. Value font is fit to the available space. |
-| normal | < 180 px | Adds source name and state text. |
-| large | ≥ 180 px | Adds MIN/MAX text row. More ticks (7 vs 5 vs 3). |
+| micro | < 64 px | Dial + value only. |
+| compact | < 105 px | Adds the unit and state chip. |
+| normal | < 180 px | Adds the source name. |
+| large | ≥ 180 px | Adds scale end labels, minor ticks, optional min/max text. |
 
-Orientation by aspect ratio: **horizontal** (w/h > 1.4) places the dial left
-and the text block right; **vertical** (w/h < 0.8) places the dial on top and
-the text below; **balanced** centers the dial with the name below the dial
-and the value inside the lower part of the dial circle.
+Orientation: **horizontal** (w/h > 1.4) puts the dial left and the text right;
+**vertical** (w/h < 0.8) puts the dial on top; **balanced** centres the dial
+with the value inside it. Beyond w/h > 2.6 the bar style takes over.
 
-### 4.6 States and colors
+### 4.7 History
 
-A value is mapped onto the configured bands:
+For telemetry sensors the minimum and maximum come from the radio's own
+`<sensor>-` and `<sensor>+` sources — the same values the rest of the UI
+shows, and the ones cleared by the standard *Reset telemetry* function. For
+sources without those siblings (sticks, channels, gvars) the widget tracks
+them itself. Either way the history drives:
 
-- **NORMAL** — theme primary color.
-- **WARN** — `COLOR_THEME_WARNING`; text label "WARN".
-- **CRIT** — fixed high-contrast red (`RED`); text label "CRIT".
-- **NO DATA** — `COLOR_THEME_DISABLED` at reduced opacity; text label
-  "NO DATA"; the needle hides; the last known value stays on screen.
+- two marker lines on the dial (hidden until data exists),
+- a **peak-hold ghost** arc segment,
+- an optional `min … max` text row in large zones,
+- and is cleared by a source change, a range change or the Reset switch.
 
-Boundary comparison is first-match-wins over the ordered bands
-(normal/warning/critical or the inverted order for low-is-good sources),
-which is deliberately conservative. Values outside [Min, Max] take the state
-of the nearest boundary band.
+### 4.8 Batteries
 
-### 4.7 Special sources
+- **Cell reading** decides how a `CELLS` table is reduced. Default **Lowest**:
+  the cell that sags first is the one that matters. Total gives pack voltage,
+  Average the mean.
+- **Pack detection**: for a voltage source with a battery preset the cell
+  count is derived from the first reading (`floor(V / 4.35) + 1`) and latched
+  — a pack sags under load, so re-deriving it later would step the scale down
+  mid-flight. The scale is rebuilt once, to `cells × [3.0 … 4.2] V`.
+- **Battery percent** turns the reading into state of charge on a 0–100 %
+  scale using a Li-Po or Li-Ion discharge curve, with warning at 30 % and
+  critical at 15 %. Voltage alone is a poor charge indicator; the curve makes
+  the dial mean something.
 
-- **Timers** (sources named `timer1`…`timer3`, `T1`–`T3`) and **tx-time**
-  display as `hh:mm:ss`; a negative value (an elapsed countdown timer) is
-  prefixed with `-` and colors the whole gauge **warning** (matching the
-  official EdgeTX Value widget).
-- **tx-voltage** shows the unit **V** and forces one decimal.
-- **Table sources** such as `CELLS` are aggregated by averaging their
-  numeric entries; non-numeric tables (e.g. GPS, date/time) show NO DATA.
-- **Local sources** (sticks, channels, gvars, TX battery) are always
-  current and keep working without telemetry enabled.
+### 4.9 Alerts
 
-### 4.8 No-data behavior
+Alerts fire on a **transition** into a state, never continuously, and only
+when: the startup delay has elapsed, the optional alert switch is on, and the
+data is live. A held state re-alerts at most every 5 s. Critical plays a
+two-tone alert and (optionally) a haptic pulse; warning plays a single tone.
 
-The widget distinguishes:
+### 4.10 No-data behaviour
 
-| Availability | Meaning | Value display |
-|---|---|---|
-| `unset` | no source configured | `-` |
-| `invalid` | source id does not resolve | last known, else `-` |
-| `valid` | fresh, current data | live value |
-| `stale` | sensor reported but no longer current (link alive) | last known |
-| `disconnected` | telemetry link down (`getRSSI() == 0`) | last known |
-| `unavailable` | no value at all (link alive) | last known |
+| Availability | Meaning | Chip | Value display |
+|---|---|---|---|
+| `unset` | no source configured | NO SOURCE | `-` |
+| `invalid` | source id does not resolve | NO DATA | last known, else `-` |
+| `valid` | fresh, current data | — | live value |
+| `stale` | sensor reported but is no longer current | STALE | last known |
+| `disconnected` | telemetry link down (`getRSSI() == 0`) | NO LINK | last known |
+| `unavailable` | no value at all (link alive) | NO DATA | last known |
 
-The last known value is retained across `stale` / `disconnected` /
-`unavailable` frames and is cleared when the source or the ranges change, so
-a new source never shows old data. After reconnection the needle snaps to
-the current value instead of animating from zero.
+The last known value is cleared when the source or the ranges change, so a new
+source never shows old data. After reconnection the needle snaps to the
+current value instead of sweeping up from zero.
 
 ## 5. Technical reference
 
 ### 5.1 Architecture
 
-The widget is split into small modules so that geometry, state, and layout
-math are pure Lua and testable off-radio; only `main.lua` and `renderer.lua`
-touch firmware APIs.
-
 | File | Responsibility |
 |---|---|
-| `main.lua` | Registration, options, `translate`, lifecycle (`create`/`update`/`refresh`), module loading, config/ranges/layout signatures. |
-| `geometry.lua` | Clamp/normalize, value→angle, point-on-circle, line/tick point builders. Pure Lua. |
-| `ranges.lua` | Band ordering and state detection. Pure Lua. |
-| `presets.lua` | Known-sensor profiles and matching. Pure Lua. |
-| `telemetry.lua` | Source metadata cache, value reading, table aggregation, availability model, flight history. |
-| `layout.lua` | Mode/aspect classification, dial geometry, typography, element visibility. |
-| `renderer.lua` | Retained LVGL object tree; per-frame property-only updates. |
+| `main.lua` | **Boot-weight only**: option declarations, version gate, `lvgl` guard, and a `loadScript` of `app.lua` on first use. Every widget's `main.lua` is executed at radio startup, used or not (see 6.1). |
+| `app.lua` | Lifecycle: create / update / refresh, config → ranges → layout, rebuild decisions. |
+| `options.lua` | The option wire format: capacity, declaration building, and typed parsing. Pure Lua. |
+| `theme.lua` | Design tokens (colour roles, opacity, spacing, ratios) and memoized text metrics. |
+| `geometry.lua` | Clamp/normalize, value→angle, circle points, line/tick/triangle builders, bar fill. Pure Lua. |
+| `ranges.lua` | Band ordering, state detection, hysteresis. Pure Lua. |
+| `presets.lua` | Known-sensor profiles, cell detection, discharge curves. Pure Lua. |
+| `format.lua` | Value/timer formatting and the widest-sample measurement. Pure Lua. |
+| `smoothing.lua` | Frame-rate independent needle damping. |
+| `telemetry.lua` | Source metadata cache, value reading, cell aggregation, availability model, history. |
+| `layout.lua` | Mode/orientation/style classification, dial and bar geometry, typography, regions. |
+| `renderer.lua` | Retained LVGL dial tree; per-frame property-only updates. |
+| `bar.lua` | Linear renderer sharing the same state model. |
+| `alerts.lua` | Transition alerts with startup delay, switch gate and rate limiting. |
+| `dev/preview.lua` | Renders the real object tree to SVG for off-radio design review. |
 | `dev/api_spike.lua` | LVGL API feasibility widget for Companion/hardware. |
-| `dev/RESEARCH.md` | Web/ecosystem research notes behind the design decisions. |
-| `tests/` | Headless test suites (see 7). |
+| `dev/RESEARCH.md` | Research notes behind the design decisions. |
+| `tests/` | Headless suites (see 7). |
 
-Modules are loaded with `loadScript(widget.path .. name .. ".lua", "bt")` —
-the officially documented pattern for widget-folder modules; each module
-returns a table. `renderer.lua` receives the geometry module through an
-explicit `setup()` call.
+### 5.2 The option contract
 
-### 5.2 Lifecycle
+This is the part that most Lua widgets get wrong, so it is spelled out:
 
-The widget registers `{ name, options, translate, create, update, refresh,
-useLvgl = true }`.
+- The firmware delivers options to Lua as **numbers**, never strings, except
+  `String`/`File` options (`lua_widget.cpp` `updateWithoutRefresh`:
+  `String/File → lua_pushstring`, `Integer/Switch → lua_pushinteger` signed,
+  everything else → `lua_pushinteger` unsigned). Comparing a `CHOICE` option
+  against its label string can never match.
+- `CHOICE` values are stored **1-based**: the settings dialog reads
+  `getUnsignedValue(i) - 1` and writes `newValue + 1`
+  (`widget_settings.cpp`). Declared defaults are 1-based too; a stored `0`
+  means "never edited" and falls back to the declared default.
+- Option slots are **positional and typed**; `setDefault()` resets a slot only
+  when the stored type differs. Options may only ever be appended.
+- Capacity is version dependent (see 4.1). Extra declarations are silently
+  truncated (`lua_widget_factory.cpp`).
 
-- **`create(zone, options, path)`** — validates `lvgl` availability, builds
-  the state tables (source, data, history, smoothing, ranges, config,
-  layout, UI object refs, per-frame cache), and loads all modules. Errors on
-  missing modules instead of failing silently.
-- **`update(widget, options)`** — runs on every options or size change:
-  1. Parse options into `config` (choice strings are mapped to indices via
-     the official `etxcst` constants).
-  2. Resolve the source (cached metadata, see 6.4) and apply presets if the
-     ranges are still at defaults.
-  3. Resolve precision (Auto → sensor precision).
-  4. Build the semantic ranges; if the range signature changed, reset
-     history and smoothing.
-  5. Compute the layout; if the layout signature changed (mode,
-     orientation, needle visibility, color mode, markers), clear LVGL and
-     rebuild the whole object tree; if only the source changed, update the
-     source/unit labels in place.
-- **`refresh(widget, event, touch)`** — per frame: read telemetry, then
-  update only the LVGL properties that changed. Returns immediately when the
-  UI has not been built.
-- **`background()` is intentionally not provided.** The firmware only calls
-  `background()` while the widget is **off-screen**, so flight history and
-  data maintenance run in `refresh()` (see 6.6).
+### 5.3 Lifecycle
 
-### 5.3 Rendering model
+Registration is `{ name, options, translate, create, update, refresh,
+useLvgl = true }`. `destroy` is **not** a widget callback — the firmware never
+calls it (`widgets.cpp` reads exactly those keys).
 
-`renderer.lua` uses **retained objects**: `build()` creates every LVGL
-object once via individual constructor calls (`lvgl.arc{…}`, `lvgl.line{…}`,
-`lvgl.circle{…}`, `lvgl.label{…}` — deliberately not `lvgl.build()` tables,
-to avoid luac nesting pitfalls), and `update()` mutates only properties that
-actually changed, guarded by a per-frame cache (`widget.frame`). This keeps
-per-frame work minimal and well inside the firmware's instruction budget.
+- **`create(zone, options, path)`** — loads `app.lua`, which loads the twelve
+  modules and builds the state tables.
+- **`update(widget, options)`** — on every option or size change: parse
+  options into a typed config, resolve the source, apply the scale (preset or
+  manual), resolve precision and the displayed unit/name, build the bands and
+  the layout, and rebuild the LVGL tree **only when the structural signature
+  changed** (style, mode, orientation, visibility flags, colour mode, sweep,
+  value font, radius, zone size, unit text).
+- **`refresh(widget, event, touch)`** — per frame: check the reset switch,
+  read telemetry, run alerts, then write only the properties that changed.
+- **`background()` is intentionally absent.** The firmware only calls it while
+  the widget is **off-screen**, so history and data maintenance live in
+  `refresh()`.
 
-Object tree per zone:
+### 5.4 Rendering model
+
+`build()` creates every object once; `update()` mutates only properties that
+actually changed, guarded by a per-object cache, and writes through a single
+reused table so `refresh()` allocates nothing.
+
+Dial object tree (large mode, worst case ≈ 30 objects; the tests assert ≤ 40):
 
 | Object | Count | Created when |
 |---|---|---|
 | Track arc (or 3 section arcs) | 1 (3) | always |
-| Tick lines | 3 / 5 / 7 | always |
+| Rail arcs (warning, critical) | 2 | Colours = Rail |
+| Major tick lines | 3 / 5 / 7 | always |
+| Minor tick lines | 6 | large mode |
+| Peak-hold ghost arc | 1 | ≥ compact |
 | Value arc | 1 | always |
-| Needle line + pivot circle | 2 | layout shows needle |
-| Min/max marker lines | 2 | Show min/max and mode ≥ compact |
-| Value label | 1 | always |
-| Unit label | 1 | mode ≥ compact |
-| Name label | 1 | mode ≥ normal |
-| State label | 1 | mode ≥ compact |
-| Min/max text labels | 2 | Show min/max and mode = large |
+| Needle + counterweight triangles | 2 | needle shown |
+| Pivot ring + dot circles | 2 | needle shown |
+| Min/max marker lines | 2 | markers on |
+| Value / unit / name labels | 3 | by mode |
+| State chip + label | 2 | ≥ compact |
+| Min/max text labels | 2 | large + "Markers + text" |
+| Scale end labels | 2 | large, sweep < 360 |
 
-Per-frame changes: arc `endAngle`, needle `pts` (only when the angle
-changed), object `color`/`opacity`, label `text`/`x`/`w`/`h` (only when the
-string changed), and hide/show for the needle on data loss.
+Per-frame writes: arc `endAngle`, needle/tail `pts` (only when the angle
+changed), `color`/`opacity` on a state change, label `text` when the string
+changed, and show/hide on data loss.
 
-### 5.4 Dial geometry
+### 5.5 Dial geometry
 
-- Angle convention matches LVGL: **0° = 3 o'clock, angles increase
-  clockwise** (screen y points down).
-- The dial spans **135° to 405°** (a 270° sweep starting at 7:30 through
-  12:00 to 1:30). The binding auto-normalizes 405° to 45°; the code uses the
-  absolute form so intermediate values stay exact.
-- Value → angle: `135 + clamp((v − min) / (max − min), 0, 1) * 270`,
-  rounded to the nearest integer degree (minimum == maximum maps to 0).
-- Tick angles are distributed evenly across the sweep; tick count is 3
-  (micro), 5 (compact/normal), or 7 (large), including both ends.
-- Lines are described by `{x, y}` point-pair arrays — the exact format the
-  EdgeTX binding reads (`rawgeti(pt, 1)` / `rawgeti(pt, 2)`); named
-  `{x = …}` points fail on the radio.
-- All physical sizes are multiplied by `lvgl.LCD_SCALE` (0.8 on 320 px-wide
-  screens, 1.0 on 480 px, 1.375 on 800 px) via `px()`, so the gauge looks
-  proportionally identical across radio classes.
+- LVGL angles: **0° = 3 o'clock, increasing clockwise** (screen y grows down).
+- Sweeps: 270° from 135°, 180° from 180°, 360° from 270°. A full ring clamps
+  its end angle to `start + 359` so it can never close onto its own start
+  (which would render nothing).
+- Value → angle: `start + clamp((v − min) / (max − min), 0, 1) × sweep`,
+  rounded to the nearest degree.
+- The **radius is derived last**: ring thickness, rail, gap and tick length
+  are computed from the zone, then the radius is whatever remains inside the
+  dial box. Deriving the radius from the box first pushes ticks outside the
+  zone (a real bug caught by the layout tests).
+- Lines and triangles take `{x, y}` point pairs — the exact format the binding
+  reads; named `{x = …}` points fail on the radio. A triangle must have
+  exactly three points.
+- All physical sizes pass through `theme.px()` (`lvgl.LCD_SCALE` = 0.8 / 1.0 /
+  1.375 for 320 / 480 / 800 px wide screens).
 
-### 5.5 Typography
+### 5.6 Typography
 
-Fonts are `LcdFlags` with the font index in bits 8–11 — the same convention
-the firmware itself uses (`getFont(index << 8)` in the official widgets):
+Fonts are `LcdFlags` with the font index in bits 8–11 — the convention the
+firmware itself uses. Text is **never positioned by measuring it at runtime**:
+every label gets a region (`x`, `y`, `w`) plus an alignment, and LVGL centres
+or right-aligns inside it (`lvgl.label` supports `align`). Consequences:
 
-| Alias | LcdFlag | Used for |
-|---|---|---|
-| STD | `STDSIZE` (0) | — |
-| BOLD | `BOLD` (0x100) | — |
-| XXS | `TINSIZE` | unit (compact), min/max text |
-| XS | `SMLSIZE` | unit (≥ compact), name, state, value (micro) |
-| L | `MIDSIZE` | value candidates |
-| XL | `DBLSIZE` | value candidates |
-| XXL | `XXLSIZE` | value candidates |
-| LXL | `XLSIZE` | — |
+- the value cannot shift its neighbours as digits change,
+- the unit sits at a fixed offset on the value baseline,
+- `refresh()` makes no `lcd.sizeText` calls at all.
 
-The value font is **auto-fit**: the renderer picks the largest candidate
-whose measured height fits the value area for the current orientation and
-mode. Text is horizontally centered with `lcd.sizeText()` measurements
-(cached per change).
+The value font is auto-fit: the largest font whose **height and width** fit
+the value region, measured once per layout against the widest string the
+configured scale can produce (e.g. `100.0`), so the digits never move.
 
-### 5.6 Range and state math (`ranges.lua`)
-
-`build(min, max, warn, crit, highGood)` returns three ordered bands with
-thresholds clamped into [min, max]:
-
-- high-is-good: `critical [min…lo]`, `warning [lo…hi]`, `normal [hi…max]`
-- low-is-good: `normal [min…lo]`, `warning [lo…hi]`, `critical [hi…max]`
-
-where `lo = min(warn, crit)` and `hi = max(warn, crit)`.
-`determineState(value, bands)` returns the first band containing the value,
-else the nearest boundary band.
-
-### 5.7 Telemetry engine (`telemetry.lua`)
+### 5.7 Telemetry engine
 
 **Source resolution** (cached, runs only when the source id changes):
 
 - `getFieldInfo(id)` → name (cleaned of leading invalid bytes), unit,
-  telemetry flag; timer flag from the name.
-- Unit display strings come from a table covering the common
-  `TelemetryUnit` values (V, A, mA, kts, m/s, ft/s, km/h, mph, m, ft, C, F,
-  %, mAh, W, mW, dB, rpm, g, deg, rad, ml, floz, ml/min, Hz, ms, us, km,
-  dBm); unknown units display no unit text.
-- Sensor precision (`prec`) is not exposed by `getFieldInfo`; it is looked
-  up once through `model.getSensor(i)` (sensors 0–31) and cached.
+  telemetry flag. `unit` is present **only** for telemetry sources, which is
+  what distinguishes them from sticks, timers and gvars.
+- Timers are detected by **source id**, from `getSourceIndex("timer1")` — not
+  by name. `T1`/`T2`/`T3` are common temperature sensor labels, and reading a
+  temperature as `hh:mm:ss` was a real defect in 1.0.
+- Sensor precision is looked up once through `model.getSensor(i)` over
+  `MAX_SENSORS` entries (40/60/99 by target — scanning a fixed 32 misses
+  sensors on large radios).
+- Sibling `<name>-` / `<name>+` sources are resolved for history.
 
-**Value reading** per frame:
+**Per frame:**
 
-- `getSourceValue(id)` → number, table, or nil.
-- Tables: numeric entries are averaged (CELLS-style aggregation);
-  non-numeric tables yield NO DATA.
-- `current == false` with a telemetry source ⇒ `stale`.
-- `value == nil` ⇒ `disconnected` if `getRSSI() == 0`, else `unavailable`.
-
-**Flight history** — `min`/`max` of the displayed value since the last
-source/range change, maintained in `refresh()` because `background()` only
-runs while the widget is off-screen.
-
-**Smoothing** — the needle is smoothed with an exponential filter
-(`factor = 1 − exp(−dt/140 ms)`, `getTime()` converted from 10 ms ticks to
-milliseconds, dt clamped to 1–1000 ms) so it glides while the digital value
-updates instantly. The smoothed value is reset on source/range change and
-snapped on reconnection.
+- `getSourceValue(id)` returns **three** values: `value, current, fresh`.
+  Telemetry values arrive already scaled by the sensor precision.
+- Tables (`CELLS`) are reduced by the Cell reading mode; non-numeric tables
+  (GPS, date/time) report no data.
+- `current == false` on a telemetry source ⇒ `stale`; a nil value ⇒
+  `disconnected` when `getRSSI() == 0`, else `unavailable`.
 
 ### 5.8 Performance discipline
 
-- Per-callback instruction budget: **20,000 instructions** (firmware
-  `MAX_INSTRUCTIONS`, `lua_widget_factory.cpp`).
-- `refresh()` never creates objects, never allocates per-frame tables, and
-  skips `lvgl.set` calls when the cached value/string/angle is unchanged.
-- `update()` rebuilds the object tree only when the layout signature
-  changes; label-only changes are applied in place.
-- The whole large-mode object tree stays well under 60 LVGL objects.
+- Per-callback budget: the firmware sets a count hook every 200 VM
+  instructions and errors past 100 hooks — **20,000 instructions per
+  callback** (`widgets.cpp` `luaHook`, `lua_widget_factory.cpp`).
+- `refresh()` creates no objects, allocates no tables, makes no text
+  measurements, and skips `lvgl.set` when the cached value is unchanged.
+- `update()` rebuilds only when the structural signature changes.
+- Text metrics and font heights are memoized for the life of the widget.
 
 ### 5.9 Binding compatibility notes
 
-Facts verified against `radio/src/lua` (this fork, EdgeTX 3.0):
+Verified against `radio/src/lua` in this fork:
 
-- `lvgl.arc` accepts absolute `startAngle`/`endAngle` plus
-  `bgStartAngle`/`bgEndAngle`, `color`/`bgColor`, `bgOpacity`/`opacity`,
-  `thickness`, `rounded`; angle 405 auto-normalizes to 45.
-- `lvgl.line` re-applies `pts` via `lvgl.set`; points must be `{x, y}`
-  pairs (see 5.4).
-- `lvgl.circle` does **not** accept `bgColor`/`bgOpacity`; the pivot uses
-  `filled = 1` with `color`.
-- `lvgl.label` accepts `text`, `color`, `font` (index `<< 8`), `x`, `y`,
-  `w`, `h`.
-- **String methods are unavailable** (`s:lower()` fails on builds without
-  the string metatable); the code always uses `string.lower()`,
-  `string.gsub()`, etc.
-- `getTime()` returns **10 ms ticks**; all time math converts explicitly.
-- Option types use the official constants (`SOURCE`, `VALUE`, `BOOL`,
-  `CHOICE`); `CHOICE` is **10** in `WidgetOption::Type` (9 is Slider).
-- A **table as the Source option default** (name list) is resolved natively
-  by the firmware as "first available" (`lua_widget_factory.cpp`
-  `sourceValue()`).
-- Colors are theme roles (`COLOR_THEME_PRIMARY1`, `COLOR_THEME_WARNING`,
-  `COLOR_THEME_DISABLED`, `COLOR_THEME_SECONDARY1..3`, `RED`), so the gauge
-  follows dark/light/high-contrast themes automatically.
+- `lvgl.arc` accepts absolute `startAngle`/`endAngle` plus `bgStartAngle`/
+  `bgEndAngle`, `color`/`bgColor`, `opacity`/`bgOpacity`, `radius`,
+  `thickness`, `rounded`, `filled`. **`thickness` and `rounded` are
+  build-time only** (no setter), so options that change them force a rebuild.
+- `lvgl.triangle` accepts **only `pts`** plus the base object properties — no
+  `filled`, `thickness` or `rounded`; it always fills.
+- `dashGap`/`dashWidth` exist on `hline`/`vline` (`LvglWidgetLineBase`) but
+  **not** on the free-angle `lvgl.line`.
+- `lvgl.circle` does not accept `bgColor`/`bgOpacity`; `filled = 1` fills with
+  `color`.
+- `lvgl.label` accepts `text`, `color`, `font`, `align`, `x`, `y`, `w`, `h`.
+- Object properties may also be **functions**, which the firmware re-evaluates
+  every frame (`callRefs`). This widget deliberately does not use them: an
+  explicit `lvgl.set` on change is cheaper than a Lua call per property per
+  frame.
+- **String methods are unavailable** (no string metatable in the firmware
+  build); always `string.lower(s)`, never `s:lower()`.
+- `getTime()` returns **10 ms ticks**; all time maths converts explicitly.
+- Documented arc angles are 0–360; this fork also normalises 405 → 45, but the
+  widget clamps its own angles rather than relying on that.
 
-## 6. Data flow (per frame)
+## 6. Notes on decisions
 
-```
-refresh()
- └─ telemetry.refresh(widget)
- │    └─ getSourceValue(source) → value / table / nil
- │    └─ availability model (valid/stale/disconnected/unavailable/unset)
- │    └─ determineState(value, ranges) → normal|warning|critical
- │    └─ flight history min/max update
- └─ renderer.update(widget)
-      └─ color key (muted|static|normal|warning|critical, timers < 0 ⇒ warning)
-      └─ applyColors only when the key changed
-      └─ value label (hms for timers, precision for numbers) when changed
-      └─ state label ("WARN"/"CRIT"/"NO DATA") when changed
-      └─ needle angle (smoothed) when changed; hide/show on data loss
-      └─ min/max markers when their angles changed
-      └─ MIN/MAX text row when changed (large mode)
-```
+### 6.1 Boot weight
+
+Every `main.lua` under `/WIDGETS/` is executed at radio startup for every
+model, whether the widget is placed or not. `main.lua` therefore contains
+option data and a guard, and nothing else; the twelve modules load on first
+use, inside `create()`.
+
+### 6.2 Why a rail instead of coloured sections
+
+Recolouring the whole track (Sections) destroys the figure/ground
+relationship — the value arc stops being distinguishable from the scale. A
+thin outer rail marks the bands permanently while the thick inner arc keeps
+the foreground. Sections remains available.
+
+### 6.3 Why a triangle needle
+
+A one-pixel line reads as a construction guide. Both the widget this one
+succeeds (`GaugeRotary`, `lcd.drawFilledTriangle`) and the ecosystem
+benchmark (`yaapu`, a three-line triangle) draw a tapered needle.
+
+### 6.4 Why no bitmap dial face
+
+`yaapu` and FlightDash render a pre-drawn dial-face PNG. That buys crisp
+ticks, and costs a per-resolution asset set, theme adaptation and the ability
+to recolour for warn/crit. Vectors plus `LCD_SCALE` are the point of this
+widget.
+
+### 6.5 Why alerts have a startup delay
+
+A model powering up reports nonsense for a second or two. Without a delay,
+every power-on is a critical alarm — the lesson from `ePowerbar`.
+
+### 6.6 Damping
+
+`factor = 1 − exp(−dt / tau)` with `tau = damping × 40 ms`, `dt` clamped to
+1–1000 ms and measured in **milliseconds** (`getTime() × 10`). The digital
+value updates instantly; only the needle glides. Damping 0 disables the
+filter — right for RSSI, wrong for a noisy current sensor.
 
 ## 7. Testing
 
-Headless suites run with stock Lua 5.3 (the version EdgeTX embeds) — no
-firmware or simulator needed:
+Headless suites run with stock Lua 5.3 (the version EdgeTX embeds):
 
 ```sh
-lua5.3 tests/run_tests.lua  <widget-dir>/   # geometry + ranges unit tests (14)
-lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle vs mock lvgl (29)
+lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (36 tests)
+lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle      (46 tests)
+lua5.3 dev/preview.lua      <widget-dir>/   # writes dev/preview.html
 ```
 
-The smoke suite drives the real widget code through create/update/refresh
-against a mock EdgeTX environment that enforces the real binding's property
-allow-lists, `{x, y}` point arrays, the missing string metatable, and 10 ms
-`getTime()` ticks. Coverage: rendering, state colors, no-data, table
-aggregation, precision, all layout modes, resize, presets, custom-range
-defeat, history markers, smoothing, fullscreen, timer formatting, link-state
-detection, elapsed-timer warning color, and tx-voltage/tx-time handling.
+The mock environment enforces the firmware's real behaviour: per-object
+property allow-lists (including the triangle and dash-parameter restrictions
+in 5.9), `{x, y}` point arrays, the missing string metatable, 10 ms
+`getTime()` ticks, the three-value `getSourceValue`, and — most importantly —
+the **integer option wire format** with 1-based choices. Test input is written
+in readable form (`Style = "Needle"`) and converted to the wire format by
+`mock.makeOptions`, so the tests stay legible without lying about the
+contract.
+
+Coverage includes: the option contract (positions, name lengths, 1-based
+defaults, the 2.11 ten-slot build and the 2.12 full build), all colour modes
+and styles reaching the objects, cell aggregation modes, pack detection,
+battery percent, timer vs temperature disambiguation, every availability
+state, needle hide/snap on reconnect, hysteresis on a noisy ramp, alerts and
+their startup delay, the reset switch, a golden layout matrix over eight zone
+shapes (every object inside the zone, object count ≤ 40), and a 200-frame
+flight that must produce zero object churn.
+
+`dev/preview.lua` renders the actual object tree — same coordinates, angles,
+fonts and theme roles — as SVG in both dark and light palettes. It is the
+fastest way to review a visual change, and it is how the layout, chip sizing
+and gradient mapping in this version were checked.
 
 ## 8. Distribution
 
 - The widget ships from this repository; the folder is the SD-card payload.
-- To list it in the official EdgeTX gallery (edgetx.org/lua-scripts), open
-  an "Add a Lua App or Widget to the Gallery" issue at
-  https://github.com/EdgeTX/lua-scripts with a description and screenshots.
-- A patch to the `EdgeTX/edgetx-sdcard` repository (`dev/WIDGETS/GaugeV2/`)
-  is the ecosystem path for firmware-adjacent Lua widgets.
+- To list it in the official EdgeTX gallery, open an "Add a Lua App or Widget
+  to the Gallery" issue at https://github.com/EdgeTX/lua-scripts with a
+  description and screenshots.
+- A patch to `EdgeTX/edgetx-sdcard` (`dev/WIDGETS/GaugeV2/`) is the ecosystem
+  path for firmware-adjacent Lua widgets.
 
 ## 9. Known limitations and roadmap
 
-- "Sensor lost" staleness relies on `getSourceValue()`'s `current` flag; the
-  exact timeout is firmware-defined.
-- Threshold boundary coloring is first-match-wins (conservative).
-- Unit text covers the common TelemetryUnit values; unknown units show none.
-- The 10-option settings-UI limit is reached; new options must replace an
-  existing one.
-- Inverted ranges swap min/max but do not mirror the value (the official
-  gauge's mirror transform is degenerate for asymmetric ranges; proper
-  mirroring is planned).
-- Optional label shadows and alignment options (present in the official
-  Value widget) are not implemented — shadows are not exposed by the Lua
-  binding, and alignment would need an option slot.
-- Planned: trend/peak hold, selectable needle shapes, segmented arc,
-  neutral-value fill, interactive min/max reset, inverted-range mirroring
-  (see `PLAN.md`).
+- Presets adjust the scale internally; the settings dialog still shows the
+  values you typed (a Lua widget cannot write back to persistent option
+  storage). Scale = Manual makes the relationship explicit.
+- Pack cell-count detection assumes the first reading is a reasonably charged
+  pack, and latches. Powering the radio on mid-flight can mis-detect.
+- Unit text covers the common `TelemetryUnit` values; unknown units show none
+  (the Unit override option covers the rest).
+- Alert sounds are tones, not spoken values; `/SOUNDS` playback is a
+  candidate for a later version.
+- Not yet implemented: the fullscreen detail view (stat row, history
+  sparkline, reset button), optional label shadows (a second offset label, as
+  the official Value widget does), and a background fill colour.
+- On 2.11 the widget is limited to its core ten options; the rest require
+  2.12+ on both the radio **and** Companion.
 
 ## 10. License
 

@@ -1,8 +1,9 @@
-# Gauge V2 — EdgeTX responsive analog-digital telemetry widget
+# Gauge V2 — EdgeTX responsive telemetry instrument
 
 > **Full user & technical reference: [`DOCS.md`](DOCS.md)**
+> **Design & engineering plan: [`IMPROVEMENT_PLAN.md`](IMPROVEMENT_PLAN.md)**
 
-A modern successor to the community `GaugeRotary` widget: a responsive
+A modern successor to the community `GaugeRotary`: a responsive
 analog-digital instrument for EdgeTX color radios (LVGL, EdgeTX 2.11+,
 developed against EdgeTX 3.0).
 
@@ -10,107 +11,85 @@ developed against EdgeTX 3.0).
 `WIDGETS/` directory (or into the Companion simulator SD content) and add the
 widget to a color-LCD screen.
 
+It is the only EdgeTX widget that draws with the **LVGL retained-object API**
+(`lvgl.arc`, `lvgl.triangle`, `lvgl.line`) rather than the legacy `lcd`
+renderer, so one folder serves every screen size with no per-resolution
+assets.
+
 ## Features
 
-- Configurable telemetry source (numeric and battery-cell `CELLS` tables)
-- Auto source discovery: defaults to the first available of RSSI/RQly/RxBt/Cels/TxBt
-- Manual minimum, maximum, warning and critical values
-- High-is-good / low-is-good direction
-- 270-degree dial: track, active progress arc, line needle, pivot, adaptive ticks
-- Semantic states: `NORMAL` / `WARN` / `CRIT` with color + text redundancy
-- Color modes: Static, Threshold (default), Sections
-- Styles: Auto, Needle, Arc
-- Responsive layouts: micro, compact, normal, large + square, horizontal, vertical, fullscreen
-- Historical minimum/maximum markers and (large mode) text
-- Precision: Auto (sensor precision) or 0/1/2 decimals
-- Timer sources display as hh:mm:ss; elapsed countdown timers color the
-  gauge warning (official Value widget behavior); tx-voltage shows "V"
-- Source-aware availability: local sources keep working without telemetry;
-  distinguishes link-down (`disconnected`), sensor-lost (`stale`),
-  missing sensor (`unavailable`), and retains the last known value
-- Frame-independent needle smoothing (digital value updates instantly)
-- Known-sensor presets (RSSI, 1RSS/2RSS, RQly, RxBatt, TxBatt, cell, temperature,
-  RPM, fuel, vibration)
-- Theme integration: colors derive from `COLOR_THEME_*` roles
+- Any numeric source: telemetry sensors, timers, sticks, channels, gvars, TX
+  battery — with auto-discovery of the first available of RSSI/RQly/RxBt/
+  Cels/TxBt
+- Dial with threshold rail, progress arc, **tapered triangle needle**, pivot
+  ring, adaptive major/minor ticks, scale end labels
+- **Linear bar style** for wide/short zones, chosen automatically where a dial
+  cannot work
+- Colour modes: Static, Threshold, **Rail** (default), **Gradient**, Sections
+- Sweeps: 270°, 180°, 360°
+- Semantic states with **hysteresis** (no flicker on a threshold), a state
+  chip, and a critical pulse that survives greyscale
+- **Peak-hold ghost** plus min/max markers, sourced from the radio's own
+  `<sensor>-` / `<sensor>+` sensors where they exist
+- **Battery intelligence**: cell-count detection, per-cell / total / average
+  cell readings, and Li-Po/Li-Ion state-of-charge percentage
+- **Alerts**: tone and haptic on state transitions, gated by a switch, a
+  startup delay and a rate limit
+- Reset min/max from a switch, in flight
+- Accent colour, custom name and unit, needle damping
+- Responsive: micro / compact / normal / large × horizontal / vertical /
+  balanced / fullscreen
+- Availability model: distinguishes no source, stale sensor, link down and
+  missing data; keeps the last known value; snaps the needle on reconnect
+- Theme integration: colours are `COLOR_THEME_*` roles
 
 ## Options
 
-| Option | Type | Default | Notes |
-|---|---|---|---|
-| Source | source | auto | first available of RSSI/RQly/RxBt/Cels/TxBt (firmware-resolved) |
-| Min / Max | integer | 0 / 100 | |
-| Warn / Crit | integer | 55 / 35 | |
-| HighGood | bool | on | higher is better |
-| Style | choice | Auto | Auto: needle ≥ compact size, arc in micro |
-| ColorMode | choice | Threshold | Static / Threshold / Sections |
-| Precision | choice | Auto | Auto = sensor precision, or 0/1/2 decimals |
-| ShowMinMax | bool | on | history markers; text in large mode |
-
-Option display names in the settings dialog are localized via the
-`translate` callback. The Source default is a name list resolved by the
-firmware ("first available", the official mechanism).
-
-Presets initialize ranges only when the source changes and the range options
-are still at their defaults; explicit user values are never overridden.
-
-## Compatibility
-
-- Requires EdgeTX 2.11 or later (LVGL Lua API). On older firmware the widget
-  reports an error instead of failing silently.
-- No legacy `lcd` renderer is provided.
-- Developed against EdgeTX 3.0 on this fork (`radio/src/lua`).
+Ten options on EdgeTX 2.11 (the firmware limit there, in both the radio and
+Companion), and up to 24 on 2.12+. The core ten keep fixed positions on every
+firmware, so a model can move between versions without its settings shifting.
+See [`DOCS.md` §4.1](DOCS.md).
 
 ## Architecture
 
+`main.lua` is boot-weight only — it is executed at radio startup for every
+widget on the card, used or not. Everything else loads on first use:
+
 | File | Responsibility |
 |---|---|
-| `main.lua` | registration, options, lifecycle, module loading, config/ranges/layout signatures |
-| `geometry.lua` | clamp/normalize, value-to-angle, circle points, tick/line points (pure Lua) |
-| `ranges.lua` | threshold ordering and state detection (pure Lua) |
-| `presets.lua` | known-sensor profiles (pure Lua) |
-| `telemetry.lua` | source metadata cache, value reading, table aggregation, availability model, flight history |
-| `layout.lua` | responsive mode/aspect classification, geometry, typography, visibility |
-| `renderer.lua` | retained LVGL objects, per-frame property-only updates |
-| `dev/api_spike.lua` | LVGL API feasibility widget for Companion/hardware |
-| `dev/RESEARCH.md` | web/ecosystem research notes behind the design decisions |
-
-Modules are loaded with `loadScript()` from the widget folder (the officially
-documented memory pattern). The renderer creates objects once in `update()` and
-changes only properties that actually changed in `refresh()`.
-
-## Distribution
-
-The widget lives in this repo; to list it in the official EdgeTX gallery
-(edgetx.org/lua-scripts), open an "Add a Lua App or Widget to the Gallery"
-issue at https://github.com/EdgeTX/lua-scripts with a description and
-screenshots (same process used for the Recovery QR widget).
+| `main.lua` | option declarations, version gate, `lvgl` guard |
+| `app.lua` | lifecycle, config → ranges → layout, rebuild decisions |
+| `options.lua` | the option wire format (integers, 1-based choices, capacity) |
+| `theme.lua` | design tokens and memoized text metrics |
+| `geometry.lua`, `ranges.lua`, `presets.lua`, `format.lua`, `smoothing.lua` | pure Lua domain logic |
+| `telemetry.lua` | sources, values, availability, history |
+| `layout.lua` | classification, geometry, typography, regions |
+| `renderer.lua`, `bar.lua` | retained LVGL trees, property-only updates |
+| `alerts.lua` | transition alerts |
 
 ## Testing
 
-Headless tests run with stock Lua 5.3 (the same version EdgeTX embeds) —
-no firmware needed:
+Stock Lua 5.3, no radio needed:
 
 ```sh
-lua5.3 tests/run_tests.lua  <widget-dir>/     # geometry + ranges unit tests
-lua5.3 tests/smoke_test.lua <widget-dir>/     # full lifecycle vs mock lvgl
+lua5.3 tests/run_tests.lua  ./     # pure modules   (36 tests)
+lua5.3 tests/smoke_test.lua ./     # lifecycle      (46 tests)
+lua5.3 dev/preview.lua      ./     # writes dev/preview.html
 ```
 
-The smoke test drives the real widget code through `create`/`update`/
-`refresh` against a mock EdgeTX environment that enforces the real binding's
-property allow-lists, `{x,y}` point arrays, missing string metatable, and
-10 ms `getTime()` ticks: build, states, no-data, table aggregation, presets,
-history, resize, smoothing, fullscreen, timers, link-state detection.
+The mock enforces the firmware's real contract — property allow-lists per
+object type, `{x, y}` point arrays, the missing string metatable, 10 ms
+`getTime()` ticks, and the **integer option wire format with 1-based
+choices**. `dev/preview.lua` renders the real object tree to SVG in dark and
+light palettes, so a visual change can be reviewed in a browser
+(`dev/preview.html` is generated — regenerate it rather than editing it).
 
-## Known limitations
+## Compatibility
 
-- "Sensor lost" window handling: `getSourceValue()`'s `isCurrent` flag decides
-  staleness; the exact timeout is firmware-defined.
-- Threshold boundary coloring is first-match-wins (conservative).
-- Unit display covers the common TelemetryUnit values; unknown units show none.
-- Widget options are at the 2.11+ limit of 10; new options must replace one.
-- Trend, peak hold, selectable needle shapes, segmented arc, neutral-value
-  fill and interactive min/max reset are planned for later versions
-  (see `PLAN.md`).
+- EdgeTX 2.11+ (LVGL Lua API). On older firmware the widget registers and
+  shows a compatibility message instead of vanishing from the model.
+- No legacy `lcd` renderer.
+- `destroy` is not a widget callback in EdgeTX and is not used.
 
 ## License
 
