@@ -1,13 +1,72 @@
 -- Mock EdgeTX firmware environment for headless GaugeV2 testing.
 -- Provides lvgl/lcd/telemetry/script globals as plain Lua (Lua 5.3).
+--
+-- Fidelity rules enforced here (verified against radio/src/lua):
+--   * lvgl.obj / lvgl.set reject unknown property keys, like the C++
+--     parseParam chain does ("Invalid property" luaL_error).
+--   * line/triangle pts must be arrays of {x, y} pairs (getPt reads
+--     rawgeti(1) and rawgeti(2)).
+--   * the string metatable is removed (LUA_ENABLE_STRLIB_MT is not
+--     defined in the firmware build).
 
 local M = {}
 
 local objects = {}
 local objectCount = 0
 
+local BASE_KEYS = {
+  x = true, y = true, w = true, h = true, color = true, opacity = true,
+  visible = true, size = true, pos = true, floating = true,
+  children = true, type = true, name = true,
+}
+
+local KEYS = {
+  arc = { startAngle = true, endAngle = true, bgStartAngle = true,
+          bgEndAngle = true, bgColor = true, bgOpacity = true,
+          radius = true, thickness = true, filled = true,
+          align = true, rounded = true },
+  line = { pts = true, thickness = true, rounded = true },
+  hline = { thickness = true, rounded = true },
+  vline = { thickness = true, rounded = true },
+  circle = { radius = true, thickness = true, filled = true, align = true },
+  label = { text = true, font = true, align = true },
+  box = { align = true, flexFlow = true, flexPad = true, borderPad = true,
+          active = true },
+}
+
+local function allowedKeys(kind)
+  local t = {}
+  for k in pairs(BASE_KEYS) do t[k] = true end
+  for k in pairs(KEYS[kind] or {}) do t[k] = true end
+  return t
+end
+
+local function checkParams(kind, params)
+  local allowed = allowedKeys(kind)
+  for k in pairs(params) do
+    if not allowed[k] then
+      error(string.format("mock: invalid property '%s' for %s", k, kind), 3)
+    end
+  end
+  if params.pts then
+    -- binding reads points as arrays: lua_rawgeti(point, 1) and rawgeti(2)
+    local n = #params.pts
+    if n < 2 then
+      error("mock: pts must have at least 2 points", 3)
+    end
+    for i = 1, n do
+      local pt = params.pts[i]
+      if type(pt) ~= "table" or #pt < 2
+         or type(pt[1]) ~= "number" or type(pt[2]) ~= "number" then
+        error(string.format("mock: pts[%d] must be {x, y}", i), 3)
+      end
+    end
+  end
+end
+
 local function makeObject(kind, params)
   objectCount = objectCount + 1
+  checkParams(kind, params)
   local props = {}
   for k, v in pairs(params or {}) do props[k] = v end
   local obj = {
@@ -23,6 +82,7 @@ local function makeObject(kind, params)
 end
 
 local function recordSet(obj, params)
+  checkParams(obj.kind, params)
   local entry = {}
   for k, v in pairs(params) do
     entry[k] = v
@@ -37,6 +97,8 @@ local lvgl = {
   _count = function() return objectCount end,
   arc = function(p) return makeObject("arc", p) end,
   line = function(p) return makeObject("line", p) end,
+  hline = function(p) return makeObject("hline", p) end,
+  vline = function(p) return makeObject("vline", p) end,
   circle = function(p) return makeObject("circle", p) end,
   label = function(p) return makeObject("label", p) end,
   box = function(p) return makeObject("box", p) end,

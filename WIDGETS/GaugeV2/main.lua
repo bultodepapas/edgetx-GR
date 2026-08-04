@@ -97,17 +97,27 @@ local function update(widget, options)
     showMinMax = options.ShowMinMax == 1,
   }
 
-  -- Source resolution is cached in telemetry.resolveSource; presets apply
-  -- only when the source changed and the user still has default ranges.
+  -- Source resolution is cached in telemetry.resolveSource. Presets apply
+  -- when the source changed and the range options still hold their global
+  -- defaults; the applied values are kept so later updates (resize,
+  -- fullscreen, settings screen visits) do not revert to the defaults.
   local prevId = widget.source.id
   local src = mods.telemetry.resolveSource(widget)
-  if src.id ~= prevId then
-    widget.smooth.value = nil
-    widget.history.min = nil
-    widget.history.max = nil
-    if isDefaultConfig(cfg) then
+  if isDefaultConfig(cfg) then
+    if widget.preset and widget.presetSourceId == src.id then
+      local p = widget.preset
+      cfg.min = p.minimum
+      cfg.max = p.maximum
+      cfg.warn = p.warning
+      cfg.crit = p.critical
+      cfg.highGood = p.highIsGood
+    elseif src.id ~= prevId then
       local p = mods.presets.find(src)
       if p then
+        widget.preset = { minimum = p.minimum, maximum = p.maximum,
+                          warning = p.warning, critical = p.critical,
+                          highIsGood = p.highIsGood }
+        widget.presetSourceId = src.id
         cfg.min = p.minimum
         cfg.max = p.maximum
         cfg.warn = p.warning
@@ -115,6 +125,16 @@ local function update(widget, options)
         cfg.highGood = p.highIsGood
       end
     end
+  else
+    -- user customized the ranges: no preset may interfere
+    widget.preset = nil
+    widget.presetSourceId = nil
+  end
+  if src.id ~= prevId then
+    widget.smooth.value = nil
+    widget.history.min = nil
+    widget.history.max = nil
+    widget.data.lastValue = nil  -- never show old source data with a new source
   end
   widget.config = cfg
   widget.ranges = mods.ranges.build(cfg.min, cfg.max, cfg.warn, cfg.crit,

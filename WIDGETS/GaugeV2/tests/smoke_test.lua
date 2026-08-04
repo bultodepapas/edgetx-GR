@@ -379,5 +379,48 @@ test("fullscreen size composition", function()
   assertEq(widget.ui.maxText.props.text, "MAX 50", "max text")
 end)
 
+-- 20. preset values survive a resize (regression: applied presets reverted)
+test("preset survives resize", function()
+  setupSim()
+  sim.sourceValues[TELEM_RSSI] = 45
+  sim.fieldInfo[TELEM_RSSI] = { name = "Temp", unit = 11 }
+  local zone = { x = 0, y = 0, w = 480, h = 272 }
+  local widget = newWidget(zone, baseOptions(), widgetDir)
+  widget.mod.update(widget, widget.options)
+  assertEq(widget.config.max, 120, "preset applied")
+  zone.w, zone.h = 200, 200          -- resize -> update without option change
+  widget.mod.update(widget, widget.options)
+  assertEq(widget.config.max, 120, "preset kept after resize")
+  assertEq(widget.config.crit, 90, "preset crit kept")
+end)
+
+-- 21. user changes defeat the preset permanently
+test("user option change clears preset", function()
+  setupSim()
+  sim.sourceValues[TELEM_RSSI] = 45
+  sim.fieldInfo[TELEM_RSSI] = { name = "Temp", unit = 11 }
+  local widget = newWidget({ x = 0, y = 0, w = 480, h = 272 }, baseOptions(),
+    widgetDir)
+  widget.mod.update(widget, widget.options)
+  assertEq(widget.config.max, 120, "preset applied")
+  widget.mod.update(widget, baseOptions({ Warn = 60 }))
+  assertEq(widget.config.max, 100, "preset cleared after user change")
+  assertEq(widget.config.warn, 60, "user warn kept")
+end)
+
+-- 22. balanced normal zone keeps the name label inside the zone
+test("balanced layout fits name label", function()
+  setupSim()
+  sim.sourceValues[TELEM_RSSI] = 50
+  local widget = newWidget({ x = 0, y = 0, w = 150, h = 150 }, baseOptions(),
+    widgetDir)
+  widget.mod.update(widget, widget.options)
+  assertEq(widget.layout.orientation, "balanced", "orientation")
+  assertEq(widget.layout.mode, "normal", "mode")
+  assertTrue(widget.layout.nameY + widget.layout.nameH <= 150,
+    "name label inside zone")
+  assertTrue(widget.layout.stateY >= 0, "state label inside zone")
+end)
+
 print(string.format("-- %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

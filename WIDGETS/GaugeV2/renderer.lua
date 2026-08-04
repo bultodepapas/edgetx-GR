@@ -174,10 +174,11 @@ function M.build(widget)
       thickness = L.needleThickness, rounded = 1,
       color = STATE_COLORS.normal,
     }
+    -- circle accepts only x/y/w/h/color/opacity/radius/thickness/filled
+    -- (no bgColor/bgOpacity); filled=1 makes `color` fill the circle
     ui.pivot = lvgl.circle{
       x = L.cx, y = L.cy, radius = L.pivotRadius,
-      color = STATE_COLORS.normal, bgColor = STATE_COLORS.normal,
-      bgOpacity = 255, thickness = 0,
+      filled = 1, color = STATE_COLORS.normal,
     }
   end
 
@@ -244,7 +245,7 @@ local function applyColors(widget, key)
   local opa = (key == "muted") and 96 or 255
   lvgl.set(ui.valueArc, { color = c, opacity = opa })
   if ui.needle then lvgl.set(ui.needle, { color = c }) end
-  if ui.pivot then lvgl.set(ui.pivot, { color = c, bgColor = c }) end
+  if ui.pivot then lvgl.set(ui.pivot, { color = c }) end
   lvgl.set(ui.valueLabel, { color = c })
   if ui.stateLabel then
     local sc = TEXT_SOFT

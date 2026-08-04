@@ -35,10 +35,12 @@ function M.pointOnCircle(cx, cy, radius, angle)
   return cx + radius * cos(a), cy + radius * sin(a)
 end
 
+-- Line points in the format the EdgeTX Lua binding expects:
+-- a table of {x, y} pairs (LvglWidgetLine::getPt reads rawgeti 1 and 2).
 function M.linePoints(cx, cy, r1, r2, angle)
   local x1, y1 = M.pointOnCircle(cx, cy, r1, angle)
   local x2, y2 = M.pointOnCircle(cx, cy, r2, angle)
-  return { { x = x1, y = y1 }, { x = x2, y = y2 } }
+  return { { x1, y1 }, { x2, y2 } }
 end
 
 function M.tickPoints(cx, cy, r1, r2, angle)

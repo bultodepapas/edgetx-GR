@@ -69,42 +69,6 @@ function M.calculate(widget, cfg)
   local L = { mode = mode, orientation = orientation }
   local pad = px(6)
 
-  local radius
-  local cx, cy
-  if orientation == "horizontal" then
-    local d = min(w * 0.42, h - pad * 2)
-    radius = max(d / 2 - px(2), px(10))
-    cx = pad + radius
-    cy = floor(h / 2)
-  elseif orientation == "vertical" then
-    radius = max(min(w / 2 - pad, h * 0.34), px(10))
-    cx = floor(w / 2)
-    cy = pad + radius
-  else
-    radius = max(min(w, h) / 2 - pad - px(1), px(10))
-    cx = floor(w / 2)
-    cy = floor(h / 2) - px(1)
-  end
-  L.cx, L.cy, L.radius = floor(cx), floor(cy), floor(radius)
-
-  L.trackThickness = clamp(floor(side / 16), px(2), px(10))
-  L.arcThickness = clamp(floor(side / 14), px(2), px(12))
-
-  -- ticks (outside the track)
-  L.tickCount = mode == "micro" and 3 or (mode == "large" and 7 or 5)
-  L.tickThickness = clamp(floor(side / 90), 1, px(3))
-  L.tickInner = L.radius + px(1)
-  L.tickOuter = L.tickInner + clamp(floor(side / 40), px(2), px(6))
-
-  -- needle / pivot
-  L.showNeedle = (cfg.style == 1) or (cfg.style == 0 and mode ~= "micro")
-  if L.showNeedle then
-    L.needleInner = clamp(floor(L.radius * 0.18), px(4), 24)
-    L.needleOuter = L.tickInner - px(2)
-    L.needleThickness = clamp(floor(side / 60), 1, px(4))
-    L.pivotRadius = clamp(floor(L.radius * 0.05), 2, px(6))
-  end
-
   -- typography
   if mode == "micro" then L.valueFont = FONTS.XS
   elseif mode == "compact" then L.valueFont = FONTS.L
@@ -128,6 +92,45 @@ function M.calculate(widget, cfg)
   L.showMarkers = cfg.showMinMax and mode ~= "micro"
   L.showMinMaxText = cfg.showMinMax and mode == "large"
 
+  -- dial geometry (balanced dials leave room for the name row)
+  local nameSpace = 0
+  if L.showName then nameSpace = nh + pad end
+  local radius
+  local cx, cy
+  if orientation == "horizontal" then
+    local d = min(w * 0.42, h - pad * 2)
+    radius = max(d / 2 - px(2), px(10))
+    cx = pad + radius
+    cy = floor(h / 2)
+  elseif orientation == "vertical" then
+    radius = max(min(w / 2 - pad, h * 0.34), px(10))
+    cx = floor(w / 2)
+    cy = pad + radius
+  else
+    radius = max(min(w, h - nameSpace) / 2 - pad - px(1), px(10))
+    cx = floor(w / 2)
+    cy = floor(h / 2) - px(1)
+  end
+  L.cx, L.cy, L.radius = floor(cx), floor(cy), floor(radius)
+
+  L.trackThickness = clamp(floor(side / 16), px(2), px(10))
+  L.arcThickness = clamp(floor(side / 14), px(2), px(12))
+
+  -- ticks (outside the track)
+  L.tickCount = mode == "micro" and 3 or (mode == "large" and 7 or 5)
+  L.tickThickness = clamp(floor(side / 90), 1, px(3))
+  L.tickInner = L.radius + px(1)
+  L.tickOuter = L.tickInner + clamp(floor(side / 40), px(2), px(6))
+
+  -- needle / pivot
+  L.showNeedle = (cfg.style == 1) or (cfg.style == 0 and mode ~= "micro")
+  if L.showNeedle then
+    L.needleInner = clamp(floor(L.radius * 0.18), px(4), 24)
+    L.needleOuter = L.tickInner - px(2)
+    L.needleThickness = clamp(floor(side / 60), 1, px(4))
+    L.pivotRadius = clamp(floor(L.radius * 0.05), 2, px(6))
+  end
+
   -- text placement (x/y are the top-left of each text; centered layouts set
   -- x in the renderer from the measured text width)
   if orientation == "horizontal" then
@@ -147,7 +150,7 @@ function M.calculate(widget, cfg)
     L.nameX = 0
     L.nameY = h - nh - pad
     L.stateX = 0
-    L.stateY = L.cy - L.radius - sh - px(2)
+    L.stateY = max(L.cy - L.radius - sh - px(2), pad)
     L.minMaxY = L.valueY + vh + px(6)
   else
     L.valueX = 0  -- centered by renderer
@@ -157,7 +160,7 @@ function M.calculate(widget, cfg)
     L.nameX = 0
     L.nameY = L.cy + L.radius + px(2)
     L.stateX = 0
-    L.stateY = L.cy - L.radius + px(2)
+    L.stateY = max(L.cy - L.radius + px(2), pad)
     L.minMaxY = L.valueY + vh + px(6)
   end
 

@@ -62,8 +62,7 @@ local function refresh(spike, event, touch)
     }
     spike.ui.pivot = lvgl.circle{
       x = cx, y = cy, radius = 5,
-      color = COLOR_THEME_PRIMARY1, bgColor = COLOR_THEME_PRIMARY1,
-      bgOpacity = 255, thickness = 0,
+      filled = 1, color = COLOR_THEME_PRIMARY1,
     }
     spike.ui.lbl = lvgl.label{
       x = cx - 60, y = cy - 20, w = 120, h = 16,
