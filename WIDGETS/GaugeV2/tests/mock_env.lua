@@ -85,6 +85,12 @@ local function install(env)
   env.COLOR_THEME_ACTIVE = 0x3003
   env.COLOR_THEME_WARNING = 0x4001
   env.COLOR_THEME_DISABLED = 0x5001
+  -- Simulate EdgeTX Lua: the string metatable is NOT installed (the firmware
+  -- only builds it with LUA_ENABLE_STRLIB_MT), so "s:method()" must fail
+  -- exactly like it does on the radio.
+  if debug and debug.setmetatable then
+    debug.setmetatable("", nil)
+  end
 end
 
 M.lvgl = lvgl

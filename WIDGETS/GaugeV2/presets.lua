@@ -44,7 +44,9 @@ local PRESETS = {
 
 local function normName(s)
   if type(s) ~= "string" then return "" end
-  return (s:lower():gsub("[^%w]", ""))
+  -- string methods (s:lower()) are unavailable on EdgeTX Lua builds without
+  -- LUA_ENABLE_STRLIB_MT, so use the string library functions explicitly
+  return (string.gsub(string.lower(s), "[^%w]", ""))
 end
 
 -- Find a preset for a resolved source { name=..., unit=... }.

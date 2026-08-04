@@ -52,7 +52,7 @@ local passed, failed = 0, 0
 
 local function assertEq(actual, expected, label)
   if actual ~= expected then
-    error(("%s: expected %s, got %s"):format(label or "assertEq",
+    error(string.format("%s: expected %s, got %s", label or "assertEq",
       tostring(expected), tostring(actual)), 2)
   end
 end
@@ -379,5 +379,5 @@ test("fullscreen size composition", function()
   assertEq(widget.ui.maxText.props.text, "MAX 50", "max text")
 end)
 
-print(("-- %d passed, %d failed"):format(passed, failed))
+print(string.format("-- %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

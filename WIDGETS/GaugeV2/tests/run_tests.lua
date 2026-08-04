@@ -11,13 +11,13 @@ local failed = 0
 local function assertNear(actual, expected, epsilon)
   epsilon = epsilon or 0.0001
   if math.abs(actual - expected) > epsilon then
-    error(("expected %s, got %s"):format(tostring(expected), tostring(actual)), 2)
+    error(string.format("expected %s, got %s", tostring(expected), tostring(actual)), 2)
   end
 end
 
 local function assertEq(actual, expected)
   if actual ~= expected then
-    error(("expected %s, got %s"):format(tostring(expected), tostring(actual)), 2)
+    error(string.format("expected %s, got %s", tostring(expected), tostring(actual)), 2)
   end
 end
 
@@ -159,5 +159,5 @@ test("determineState outside range", function()
   assertEq(ranges.determineState(150, r2), "critical")
 end)
 
-print(("-- %d passed, %d failed"):format(passed, failed))
+print(string.format("-- %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)
