@@ -34,10 +34,11 @@ local UNIT_NAMES = {
 }
 
 -- Timers report seconds; the renderer formats them as hh:mm:ss.
+-- tx-time is the radio's own clock (hh:mm:ss too, official Value widget).
 local function isTimerName(name)
   if type(name) ~= "string" then return false end
   if string.sub(name, 1, 5) == "timer" then return true end
-  return name == "T1" or name == "T2" or name == "T3"
+  return name == "T1" or name == "T2" or name == "T3" or name == "tx-time"
 end
 
 function M.unitName(unit)
@@ -76,6 +77,9 @@ function M.resolveSource(widget)
       s.name = cleanName(info.name or "")
       s.unit = info.unit
       s.unitName = M.unitName(info.unit)
+      -- tx-voltage is not a telemetry source, but the official Value widget
+      -- appends "V" to it (value.cpp MIXSRC_TX_VOLTAGE case)
+      if s.name == "tx-voltage" then s.unitName = "V" end
       s.isTelemetry = (info.unit ~= nil)
       s.isTimer = isTimerName(s.name)
       -- sensor precision is not in getFieldInfo; look it up once via the

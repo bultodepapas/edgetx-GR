@@ -21,7 +21,8 @@ widget to a color-LCD screen.
 - Responsive layouts: micro, compact, normal, large + square, horizontal, vertical, fullscreen
 - Historical minimum/maximum markers and (large mode) text
 - Precision: Auto (sensor precision) or 0/1/2 decimals
-- Timer sources display as hh:mm:ss
+- Timer sources display as hh:mm:ss; elapsed countdown timers color the
+  gauge warning (official Value widget behavior); tx-voltage shows "V"
 - Source-aware availability: local sources keep working without telemetry;
   distinguishes link-down (`disconnected`), sensor-lost (`stale`),
   missing sensor (`unavailable`), and retains the last known value

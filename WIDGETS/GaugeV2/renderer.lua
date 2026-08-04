@@ -415,6 +415,9 @@ function M.update(widget)
     key = "muted"
   elseif data.availability ~= "valid" then
     key = "muted"
+  elseif widget.source.isTimer and data.value and data.value < 0 then
+    -- elapsed countdown timer: warning color (official Value widget behavior)
+    key = "warning"
   elseif widget.config.colorMode == 0 then
     key = "static"
   else

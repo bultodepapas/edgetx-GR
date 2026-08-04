@@ -516,5 +516,43 @@ test("telemetry link state detection", function()
   assertEq(widget.data.availability, "unavailable", "sensor missing, link up")
 end)
 
+-- 27. elapsed countdown timer shows the warning color (official Value widget)
+test("elapsed timer warning color", function()
+  setupSim()
+  local TIMER = 600
+  sim.fieldInfo[TIMER] = { id = TIMER, name = "timer1" }
+  sim.sourceValues[TIMER] = -5
+  local widget = newWidget({ x = 0, y = 0, w = 480, h = 272 },
+    baseOptions({ Source = TIMER, ColorMode = "Threshold" }), widgetDir)
+  widget.mod.update(widget, widget.options)
+  widget.mod.refresh(widget, nil, nil)
+  assertEq(widget.ui.valueArc.props.color, env.COLOR_THEME_WARNING,
+    "warning color for elapsed timer")
+  assertEq(widget.ui.valueLabel.props.text, "-00:00:05", "negative hms")
+end)
+
+-- 28. tx-voltage shows a V unit and tx-time formats hh:mm:ss
+test("tx-voltage unit and tx-time format", function()
+  setupSim()
+  local TXV = 700
+  sim.fieldInfo[TXV] = { id = TXV, name = "tx-voltage" }
+  sim.sourceValues[TXV] = 8.2
+  local widget = newWidget({ x = 0, y = 0, w = 480, h = 272 },
+    baseOptions({ Source = TXV }), widgetDir)
+  widget.mod.update(widget, widget.options)
+  assertEq(widget.source.unitName, "V", "tx-voltage unit")
+  widget.mod.refresh(widget, nil, nil)
+  assertEq(widget.ui.unitLabel.props.text, "V", "unit label text")
+
+  local TXT = 710
+  sim.fieldInfo[TXT] = { id = TXT, name = "tx-time" }
+  sim.sourceValues[TXT] = 3661
+  local w2 = newWidget({ x = 0, y = 0, w = 480, h = 272 },
+    baseOptions({ Source = TXT }), widgetDir)
+  w2.mod.update(w2, w2.options)
+  w2.mod.refresh(w2, nil, nil)
+  assertEq(w2.ui.valueLabel.props.text, "01:01:01", "tx-time hms")
+end)
+
 print(string.format("-- %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

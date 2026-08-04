@@ -182,3 +182,51 @@ TextSize=4, Timer=5, Switch=6, Color=7, Align=8, Slider=9, **Choice=10**,
 File=11. GaugeV2 previously used `9` for Choice options (that is Slider) —
 the settings UI would have rendered sliders. All option types now use the
 official constants (SOURCE/VALUE/BOOL/CHOICE), with a regression test.
+
+## 19. Official firmware widgets review
+
+Sources: `radio/src/gui/colorlcd/widgets/` (gauge.cpp, value.cpp, text.cpp,
+timer.cpp, outputs.cpp, radio_info.cpp, modelbmp.cpp)
+
+**Official Gauge (gauge.cpp)** — the built-in bar gauge:
+- Inverted ranges (`min > max`) swap AND mirror the value
+  (`value = value - min - max`) — a reversed-scale feature; GaugeV2 swaps
+  only (mirroring is a V2.1 candidate, the official transform is degenerate
+  for asymmetric ranges).
+- `divRoundClosest(100*(v-min), max-min)` — nearest rounding (GaugeV2 uses
+  floor(x+0.5), equivalent).
+- `limit(min, v, max)` clamping, label via `getSourceString()`.
+- `foreground()` updates only when the value changed (GaugeV2's frame
+  compare is the same discipline).
+- `LAYOUT_VAL_SCALED` constants — GaugeV2's `px()` is the equivalent.
+- Options: source, min (-RESX), max (RESX), color — no thresholds/states;
+  GaugeV2's state model goes beyond the official widget.
+
+**Official Value (value.cpp)** — applied to GaugeV2:
+- **Elapsed countdown timer → WARNING color** (`ETX_STATE_TIMER_ELAPSED`) —
+  implemented: a negative timer value colors the gauge warning.
+- **tx-voltage appends "V"** — implemented as a unit-name fallback.
+- **tx-time formats hh:mm:ss** — implemented (`isTimerName` + hms).
+- Stale telemetry = `!isAvailable() || isOld()` → `COLOR_THEME_DISABLED` —
+  GaugeV2's `isCurrent`/`getRSSI` model is equivalent.
+- Optional shadow labels at (+1,+1) — not exposed by the Lua binding.
+- ALIGN options and per-source font selection — candidates if GaugeV2 ever
+  gets option slots.
+
+**Official Text (text.cpp)** — confirmed the font convention:
+`getFont(index << 8)` — GaugeV2's font flags (STDSIZE..XLSIZE = index << 8)
+match the official mechanism exactly.
+
+**Widget base class (widget.cpp)** — `setFullScreen()` calls
+`updateWithoutRefresh()`; the zone is resized to the full screen. GaugeV2's
+layout signature rebuild handles this.
+
+## 20. Official widget conventions checklist (GaugeV2 status)
+
+- change-only redraws: DONE (frame compares)
+- theme role colors everywhere: DONE
+- scaled layout constants (LCD_SCALE): DONE
+- inverted-range mirroring: TODO V2.1 (documented)
+- optional shadows: n/a (binding limitation)
+- alignment options: TODO if option slots free up
+- sensor-dependent font sizing: n/a (gauge context)
