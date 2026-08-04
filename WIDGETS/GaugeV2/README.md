@@ -46,7 +46,7 @@ assets.
 ## Options
 
 Ten options on EdgeTX 2.11 (the firmware limit there, in both the radio and
-Companion), and up to 24 on 2.12+. The core ten keep fixed positions on every
+Companion), and 23 on 2.12+. The core ten keep fixed positions on every
 firmware, so a model can move between versions without its settings shifting.
 See [`DOCS.md` §4.1](DOCS.md).
 

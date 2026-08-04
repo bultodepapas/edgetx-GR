@@ -660,7 +660,7 @@ Delivered on this branch. Test counts are the headless suites; run them with
 | P0 defects 1–12 | All fixed. Timer detection by source id, cell aggregation modes, `MAX_SENSORS` scan, sibling `<name>-`/`<name>+` history, millisecond smoothing, markers hidden until data, no-data dedup, `lvgl == nil` stub widget instead of `error()` |
 | Architecture | `main.lua` reduced to declarations + guard (boot weight); `app.lua`, `options.lua`, `theme.lua`, `format.lua`, `smoothing.lua`, `bar.lua`, `alerts.lua` added; `setProp` writes through one reused table so `refresh()` allocates nothing |
 | Visual | Threshold rail (new default), triangle needle + counterweight + pivot ring, peak-hold ghost, state chip that hugs its text, critical pulse, scale end labels, minor ticks, alignment-based text with a fixed value box, linear bar style |
-| Options | 24 declared (10 core + 14 appended): accent colour, name/unit override, scale mode, sweep, damping slider, cell reading, battery percent, alerts + switch + delay + vibrate, reset switch |
+| Options | 23 declared (10 core + 13 appended): accent colour, name/unit override, scale mode, sweep, damping slider, cell reading, battery percent, alerts + switch + delay + vibrate, reset switch |
 | Data | Hysteresis, cell-count latching with pack rescale, Li-Po/Li-Ion discharge curves, expanded preset table (Curr, Capa, Alt, GSpd, Dist, Sats, Thr, SNR, TQly …) |
 | Tests | 36 unit + 46 lifecycle, including the option-contract golden list, the 2.11/2.12 capacity split, a golden layout matrix over eight zone shapes, alert and hysteresis scenarios, and a 200-frame flight asserting zero object churn |
 | Tooling | `dev/preview.lua` renders the real object tree to SVG (dark + light) → `dev/preview.html` |
