@@ -1,5 +1,7 @@
 # Gauge V2 — EdgeTX responsive analog-digital telemetry widget
 
+> **Full user & technical reference: [`DOCS.md`](DOCS.md)**
+
 A modern successor to the community `GaugeRotary` widget: a responsive
 analog-digital instrument for EdgeTX color radios (LVGL, EdgeTX 2.11+,
 developed against EdgeTX 3.0).
