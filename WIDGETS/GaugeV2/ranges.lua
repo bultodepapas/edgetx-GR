@@ -62,6 +62,28 @@ function M.deadband(minimum, maximum, fraction)
   return span * (fraction or 0.02)
 end
 
+-- If BOTH configured thresholds fall outside the effective range on the same
+-- side, the clamp in build() collapses them onto the same endpoint and the
+-- whole dial becomes one giant critical band - a manual -120..0 dBm scale
+-- with the 0..100 defaults (55/35) is born permanently red, with zero-width
+-- warning and normal bands (AUDIT.md G-4). Detect that case and derive the
+-- thresholds at the proportions the built-in presets use (35 % / 55 % of the
+-- span, mirrored for low-is-good) instead. An equal pair INSIDE the range is
+-- a deliberate sharp cliff and is left alone.
+-- Returns (warning, critical).
+function M.saneThresholds(minimum, maximum, warning, critical, highIsGood)
+  local wl = math.min(warning, critical)
+  local wh = math.max(warning, critical)
+  if wh < minimum or wl > maximum then
+    local span = maximum - minimum
+    if highIsGood then
+      return minimum + 0.55 * span, minimum + 0.35 * span
+    end
+    return minimum + 0.45 * span, minimum + 0.65 * span
+  end
+  return warning, critical
+end
+
 local function rawState(value, ranges)
   for i = 1, #ranges do
     local r = ranges[i]

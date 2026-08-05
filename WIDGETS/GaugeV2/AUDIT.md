@@ -20,14 +20,21 @@ de qué cambió y qué test lo verifica. Progreso por tanda (ver §9 para el ord
 
 - **Tanda 1** (P0-1, P0-2, P0-5, P0-6, P0-4) — ✅ completa.
 - **Tanda 2** (P0-3, P0-7, P1-8, P1-9, P1-6, P1-7) — ✅ completa.
-- **Tanda 3** (visual) — ✅ **G-2, G-12**. Pendiente: G-1, G-3 a G-11, G-13, P1-1, P1-2, P1-3,
-  P1-4, P1-5, P1-10, P1-11.
-- **Tanda 4** (rendimiento: P2-1 a P2-4) — pendiente.
+- **Tanda 3** (visual) — ✅ **completa**. Todos los hallazgos gráficos (§7) y de
+  comportamiento visual (§2) están corregidos: G-2, G-12, G-3, G-4, P1-5, P1-1, G-6, G-7, G-8,
+  G-9, P1-2, P1-3, P1-4, G-10, P1-10, P1-11, G-13, G-11. **G-1** y **G-10** verificados
+  resueltos como efecto de otras correcciones (ver sus notas). `dev/collide.lua` no reporta
+  ninguna colisión en la matriz de 12 zonas, en los extremos de valor ni en los barridos de
+  270°/180°/360°.
+- **Tanda 4** (rendimiento) — ✅ **completa**. P2-1 (aguja de líneas, sin
+  reasignación de lienzo por frame), P2-3 (app + tabla de módulos compartidos:
+  13 `loadScript` la primera instancia, 0 las siguientes), P2-2 (escrituras
+  agrupadas por objeto y frame: 14 → 10 `lvgl.set` en una transición), P2-4
+  (precisión de sensor cacheada por nombre).
 - **Tanda 5** (higiene: P3-1 a P3-8) — pendiente.
 
-`run_tests.lua` 37/37 · `smoke_test.lua` 60/60 tras esta tanda (23 tests nuevos, todos de
-regresión sobre hallazgos concretos de este informe). Sesión de corrección detenida aquí a
-petición explícita — el resto de la lista sigue siendo válido y priorizado en §9.
+`run_tests.lua` 38/38 · `smoke_test.lua` 79/79 tras las Tandas 3 y 4 (42 tests nuevos, todos de
+regresión sobre hallazgos concretos de este informe).
 
 ---
 
@@ -303,7 +310,14 @@ y caer al tracker interno en el resto de casos.
 
 ## 2. P1 — defectos de comportamiento y visuales
 
-### P1-1 · El pulso crítico deja el arco a opacidad plena al perder el enlace
+### P1-1 · El pulso crítico deja el arco a opacidad plena al perder el enlace ✅ CORREGIDO
+
+> **Corregido.** En la rama de salida de `renderer.updatePulse()`, la opacidad
+> restaurada es ahora la que pide la clave nueva (`muted` → 120, el resto →
+> 255) en lugar de `full` siempre. Un gauge atenuado por pérdida de enlace ya
+> no vuelve a opacidad plena al cortarse el pulso en el valle. Verificado por
+> `smoke_test.lua`: *"P1-1: losing the link mid-pulse leaves the gauge muted,
+> not at full"*.
 
 `renderer.lua:484-499`
 
@@ -320,7 +334,18 @@ Corrección: en la rama de salida del pulso, restaurar la opacidad que correspon
 
 ---
 
-### P1-2 · En barra corta el texto de estado se construye con altura 0
+### P1-2 · En barra corta el texto de estado se construye con altura 0 ✅ CORREGIDO
+
+> **Corregido.** La fila inferior de la barra se dimensiona ahora con la
+> **fuente de estado** (`stateH`), no con `nameH`. El presupuesto vertical
+> reserva la fila de estado ANTES que la caja del valor, recorta la barra a su
+> mínimo antes de ceder, y sólo elimina la fila cuando la zona no admite ni el
+> valor en su fuente más pequeña (XXS) — por debajo de ~44 px de alto, donde
+> es físicamente imposible. En las zonas del informe (300 px de ancho,
+> h = 44…60) `stateBox.h` es 13 px y `STALE`/`NO LINK`/`WARN`/`CRIT` se ven.
+> Verificado por `smoke_test.lua`: *"P1-2: a short bar keeps a real-height
+> state row"* (matriz h ∈ {40,44,46,50,55,60} sin cajas degeneradas, y CRIT
+> visible en una barra de 44 px).
 
 `layout.lua:294-322`
 
@@ -345,7 +370,16 @@ haya sitio real, no a `nameH`.
 
 ---
 
-### P1-3 · Un temporizador transcurrido desborda la caja de valor
+### P1-3 · Un temporizador transcurrido desborda la caja de valor ✅ CORREGIDO
+
+> **Corregido.** `widestSample()` reserva ahora la anchura **con signo**
+> (`"-00:00:00"`, 9 caracteres) en la rama de timer, de modo que `"-00:01:05"`
+> cabe sin saltar de línea. Además, el fallback de `pickValueFont()` ya no
+> devuelve un ancho de muestra mayor que la región (recortada a la cuerda,
+> G-6) cuando ningún cuerpo cabe: el cuadro nunca asoma fuera del anillo.
+> Verificado por `run_tests.lua` (*"widest sample covers the scale plus one
+> character of slack"*) y `smoke_test.lua`: *"P1-3: an elapsed timer fits its
+> value box"*.
 
 `format.lua:45-52`
 
@@ -364,7 +398,17 @@ Corrección: `return "-00:00:00"` en la rama de timer.
 
 ---
 
-### P1-4 · Cualquier valor fuera de escala desborda igual
+### P1-4 · Cualquier valor fuera de escala desborda igual ✅ CORREGIDO
+
+> **Corregido.** El valor no se recorta a la escala (correcto: un instrumento
+> debe decir la verdad), así que la muestra reservada añade **un carácter de
+> margen** —el signo `-` delante del texto más ancho del rango—. La caja
+> resultante contiene cualquier valor que sea, a lo sumo, un carácter más
+> ancho que los extremos de la escala (el caso medido: `1500` en una escala
+> 0–100). Verificado por `smoke_test.lua`: *"P1-4: an out-of-scale value fits
+> its value box"*. Límite conocido y aceptado: una excursión doble (signo
+> opuesto **y** un dígito más, p. ej. `-1500` en una escala 0–100) sigue
+> superando el margen.
 
 `format.lua:45-52` (mismo mecanismo)
 
@@ -377,7 +421,14 @@ expuesto, así que la vía práctica es sobredimensionar la muestra.
 
 ---
 
-### P1-5 · El modo Gradiente queda rojo permanente si `Warning == Critical`
+### P1-5 · El modo Gradiente queda rojo permanente si `Warning == Critical` ✅ CORREGIDO
+
+> **Corregido.** En `renderer.colorKey`, cuando `lo == hi` (umbrales iguales =
+> acantilado deliberado) la rampa de gradiente cae a `data.state` en lugar de
+> normalizar sobre un tramo de longitud cero, que `geometry.normalize` resolvía
+> a 0 —rojo— para cualquier valor. La barra hereda la corrección (usa el mismo
+> `colorKey`). Verificado por `smoke_test.lua`: *"P1-5: gradient with Warn ==
+> Crit follows the state, not the red end"*.
 
 `renderer.lua:287-297`
 
@@ -391,9 +442,6 @@ umbrales iguales, `t` es siempre 0 → `grad0` → rojo, para cualquier valor.
 
 Evidencia (sonda 12): valores 10, 50 y 90 sobre una escala 0–100 con `Warn = Crit = 50`
 producen los tres `colorKey = grad0`.
-
-Corrección: si `lo == hi`, caer al gradiente sobre `cfg.min..cfg.max`, o directamente a
-`data.state`.
 
 ---
 
@@ -505,7 +553,16 @@ Corrección: devolver `true` sólo si al menos una de las dos lecturas fue numé
 
 ---
 
-### P1-10 · La barra no tiene pulso crítico ni chip de estado
+### P1-10 · La barra no tiene pulso crítico ni chip de estado ✅ CORREGIDO
+
+> **Corregido.** La barra construye ahora el mismo chip de estado que el dial
+> (`renderer.updateChip`, extraído del dial y compartido por ambos renderizadores:
+> el chip abraza el texto con `chipPad`/`chipHeight`, que ya no son campos
+> muertos) y pulsa el relleno a ~1 Hz en crítico, con la misma regla de salida
+> del pulso que el dial (P1-1): perder el enlace en el valle deja la barra
+> atenuada, no a opacidad plena. El mismo widget comunica la criticidad igual
+> en zonas de dial y de barra. Verificado por `smoke_test.lua`: *"P1-10: the
+> bar chips and pulses its state like the dial"*.
 
 `bar.lua` · `layout.lua:319-320`
 
@@ -516,7 +573,16 @@ paridad se pretendía y se quedó a medias.
 
 ---
 
-### P1-11 · Las marcas de umbral de la barra pierden el límite de aviso cuando «bajo es bueno»
+### P1-11 · Las marcas de umbral de la barra pierden el límite de aviso cuando «bajo es bueno» ✅ CORREGIDO
+
+> **Corregido.** La condición de marcas ya no exige `role ~= "normal"`: marca
+> el `to` de **toda** banda cuyo extremo caiga estrictamente dentro de la
+> escala (`t > 0 and t < 1`, ya normalizado — descendente incluido). Con
+> `highGood = false` el límite de aviso es el `to` de la banda normal, que
+> ahora sí se marca: el sensor de temperatura (0/70/90/120) dibuja **2**
+> marcas, tantas como rails dibuja el dial del mismo sensor. Verificado por
+> `smoke_test.lua`: *"P1-11: low-is-good bars mark the warning boundary
+> too"*.
 
 `bar.lua:52`
 
@@ -531,7 +597,16 @@ del mismo sensor dibuja **2** rails (sonda C).
 
 ## 3. P2 — rendimiento y recursos
 
-### P2-1 · Cada frame de aguja destruye y reasigna dos lienzos LVGL
+### P2-1 · Cada frame de aguja destruye y reasigna dos lienzos LVGL ✅ CORREGIDO
+
+> **Corregido.** La aguja y el contrapeso son ahora **líneas** (`lvgl.line`), no
+> triángulos. `LvglWidgetLine::refresh()` sólo reescribe los puntos de la línea
+> (`lv_line_set_points`) — sin `malloc`, sin borrar el objeto — mientras que
+> `LvglWidgetTriangle::refresh()` liberaba el lienzo, borraba el objeto y
+> rehacía `malloc(w*h+4)` en cada cambio de ángulo. La opción 1 del informe:
+> se pierde el afilado, se elimina por completo el churn de heap (el único
+> hallazgo con riesgo de estabilidad). Verificado por `smoke_test.lua`:
+> *"style choice controls the needle"* (el objeto es `line`, no `triangle`).
 
 `renderer.lua:425-430`
 
@@ -577,7 +652,19 @@ La forma `pts = function` **no** ayuda: `callRefs` hashea el resultado y llama a
 
 ---
 
-### P2-2 · Una escritura de propiedad = un `refresh()` completo del objeto en C++
+### P2-2 · Una escritura de propiedad = un `refresh()` completo del objeto en C++ ✅ CORREGIDO
+
+> **Corregido.** `setProp()` encola ahora las claves sucias por objeto y un
+> `flush()` al final de cada entrada pública del frame (el `update` del
+> renderizador y el de la barra, y `updateSourceLabels`, que corre desde
+> `app.update`) emite **un** `lvgl.set` por objeto. La transición
+> normal → crítico pasa de 14 a **10** `lvgl.set` (la aguja añade 2 directos
+> por `pts`, que no pueden pasar por la caché porque las tablas se comparan
+> por referencia). La caché sigue filtrando claves sin cambio y se actualiza
+> de inmediato, así que las lecturas del mismo frame ven el valor nuevo.
+> Verificado por `smoke_test.lua`: *"P2-2: a state transition batches one
+> lvgl.set per object"* (color+opacidad+ángulo del arco salen en una sola
+> llamada).
 
 `renderer.lua:45-58`
 
@@ -594,7 +681,16 @@ Corrección: acumular en `scratch` por objeto y hacer un único `lvgl.set` al fi
 
 ---
 
-### P2-3 · Cada instancia del widget carga 13 chunks propios
+### P2-3 · Cada instancia del widget carga 13 chunks propios ✅ CORREGIDO
+
+> **Corregido.** `main.lua` memoiza ahora el resultado de cargar `app.lua`
+> (un upvalue compartido por todas las instancias, que es exactamente cómo el
+> firmware ejecuta `main.lua` una sola vez) y `app.lua` memoiza la **tabla de
+> módulos** por ruta. La primera instancia carga los 13 chunks; la segunda
+> carga **0**, y comparten los módulos —incluidas las cachés de métricas de
+> `theme`, que ahora memoizan entre instancias. Los `setup()` siguen siendo
+> idempotentes y toda la estado por widget vive en `widget`. Verificado por
+> `smoke_test.lua`: *"P2-3: the module table is shared between instances"*.
 
 `main.lua:131-141` · `app.lua:23-41,60-63`
 
@@ -611,7 +707,16 @@ los mismos módulos.
 
 ---
 
-### P2-4 · `sensorPrecision` recorre 60 sensores creando 60 tablas Lua
+### P2-4 · `sensorPrecision` recorre 60 sensores creando 60 tablas Lua ✅ CORREGIDO
+
+> **Corregido.** `findSensor()` memoiza en una tabla de módulo cada acierto
+> `nombre → {prec, índice}`, así que el barrido de 60 sensores ocurre una vez
+> por nombre de sensor por modelo, no en cada resolución de fuente. Como los
+> módulos ahora se comparten entre instancias (P2-3), la caché también. Sólo
+> se cachean los **aciertos**: un sensor aún no conectado se vuelve a
+> escanear cuando aparece, así que nunca se cachea un fallo. Verificado por
+> `smoke_test.lua`: *"P2-4: a second source resolution does not rescan the
+> sensor table"*.
 
 `telemetry.lua:82-92`
 
@@ -796,7 +901,14 @@ lua5.3 dev/collide.lua       ./          # -> informe de colisiones
 
 ### 7.1 Defectos que hacen el widget engañoso
 
-#### G-1 · `Cels` y `RxBt` por defecto: dial rojo permanente y escala equivocada
+#### G-1 · `Cels` y `RxBt` por defecto: dial rojo permanente y escala equivocada ✅ CORREGIDO
+
+> **Verificado resuelto por P0-2 + P1-6.** Sus dos causas ya están corregidas:
+> P0-2 reconstruye las secciones/etiquetas al cambiar el rango y P1-6 mantiene
+> `Cels`/`RxBt` en la escala correcta según `Cells`. La sonda confirma que
+> `RxBt` 16.4 V dimensiona la caja del valor para `16.40` (132 px de caja,
+> 132 px de texto) y que `Cels` por defecto queda en `normal` con la escala de
+> celda única.
 
 **El caso más grave de todo el informe, y es la configuración por defecto del sensor de baterías.**
 
@@ -849,7 +961,16 @@ A valor 78 sobre 100, `Sections` era **pixel a pixel idéntico** a `Static`. El 
 tenía este problema: radio distinto (78 vs 68) y opacidad 255 — el modelo que ahora sigue
 `Sections` también.
 
-#### G-3 · Un temporizador transcurrido dice `CRIT` en color de aviso
+#### G-3 · Un temporizador transcurrido dice `CRIT` en color de aviso ✅ CORREGIDO
+
+> **Corregido.** `renderer.stateText()` trata ahora el temporizador transcurrido
+> como `warning` —la misma clasificación que `colorKey()`— en vez de leer el
+> `data.state` crudo, que es `critical` porque un valor negativo cae por debajo
+> del mínimo de la escala. El chip dice `WARN` en ámbar, coherente con el arco.
+> La barra hereda la corrección (`bar.lua` usa `renderer.stateText`).
+> Verificado por `smoke_test.lua`: *"G-3: an elapsed timer says WARN, not CRIT
+> in warning colour"*. Sigue pendiente la nota de diseño: un timer sobre la
+> escala 0–100 por defecto sigue siendo un dial sin sentido (aguja clavada).
 
 ```text
 data.state = critical   colorKey = warning   chip = "CRIT"
@@ -863,15 +984,25 @@ la escala. La palabra **CRIT dibujada en ámbar** es lo peor de los dos mundos.
 Además, un timer sobre la escala por defecto 0–100 es un dial sin sentido: el valor está en
 segundos, así que la aguja vive clavada en un extremo. El texto es correcto; el instrumento no.
 
-#### G-4 · Una escala manual con rango negativo queda toda en crítico
+#### G-4 · Una escala manual con rango negativo queda toda en crítico ✅ CORREGIDO
+
+> **Corregido.** `ranges.saneThresholds()` detecta cuando **ambos** umbrales
+> caen fuera de `[min, max]` por el mismo lado —el `clamp` de `build()` los
+> colapsaba sobre el mismo extremo y la banda crítica pasaba a ser toda la
+> escala— y los deriva al 35 % / 55 % del tramo (espejado para `High is good =
+> false`), las proporciones que usan los presets. Se aplica en
+> `app.configure()` sobre los umbrales efectivos, así que `cfg.warn/crit`,
+> bandas, estado, rail, secciones y el modo Gradiente comparten los mismos
+> valores derivados. Un par igual **dentro** del rango se deja intacto (un
+> acantilado deliberado). Verificado por `run_tests.lua`: *"G-4: both
+> thresholds out of range derive at the presets' proportions"* y
+> `smoke_test.lua`: *"G-4: out-of-range thresholds do not leave the dial born
+> critical"*.
 
 `Min = -120, Max = 0` (el caso RSSI en dBm, que los propios presets definen) con los umbrales por
 defecto 55/35: `ranges.build` recorta ambos a 0, la banda crítica pasa a ser `-120..0` —toda la
 escala— y las bandas de aviso y normal quedan de ancho cero. **El dial nace permanentemente
 rojo** y no hay forma de notarlo salvo mirándolo.
-
-No es "el usuario debe configurar los umbrales": el widget podría detectar que ambos umbrales
-caen fuera de `[min, max]` y derivarlos al 35 % / 55 % del tramo, como hacen los presets.
 
 #### G-5 · `Static` no da ninguna pista de color en crítico
 
@@ -903,7 +1034,18 @@ Merece al menos que el chip use el color de estado.
 480x272   LABEL/TICK   "100" cruzado por una marca
 ```
 
-#### G-6 · La unidad cruza el anillo en 6 de 12 zonas
+#### G-6 · La unidad cruza el anillo en 6 de 12 zonas ✅ CORREGIDO
+
+> **Corregido.** La región del valor en modo balanceado se recorta ahora a la
+> **cuerda** del círculo en el borde inferior de la banda (no al ancho de la
+> caja del dial), con 1 px de margen para el redondeo, y la banda sube un poco
+> (micro centrada en el círculo, compacta al 50 %, normal/large al 45 %). De
+> paso: `placeValue()` no cuenta la unidad dos veces (el hueco ya venía en
+> `uw`), y una unidad que no se dibuja (micro) ya no reserva ancho. El árbol
+> real ya no muestra ninguna colisión valor/unidad vs anillo en la matriz de
+> 12 zonas, ni en extremos de valor ni en los barridos (verificado con
+> `dev/collide.lua`). Verificado por `smoke_test.lua`: *"G-6: the value and
+> unit stay inside the ring in balanced zones"*.
 
 `placeValue` (`layout.lua:106-122`) centra el grupo *valor + unidad* en una región tan ancha como
 la caja del dial. Pero a la altura donde se dibuja (52–82 % de la caja) el hueco interior del
@@ -913,30 +1055,74 @@ cae sistemáticamente sobre el anillo.
 Empeora con el ancho de la cadena: `5400`, `78.00` y `5400.00` cruzan el anillo por ambos lados,
 y `78.00` en zona micro queda con el `7` partido por el arco.
 
-#### G-7 · `min/max` choca con las etiquetas de escala en todas las zonas grandes
+#### G-7 · `min/max` choca con las etiquetas de escala en todas las zonas grandes ✅ CORREGIDO
+
+> **Corregido.** La fila `min/max` (que cuelga bajo el valor, dentro del
+> círculo) se recorta ahora a la **cuerda** del anillo a su profundidad con el
+> mismo `clipToChord()` que usa el valor (G-6). Con la banda del valor más
+> arriba (G-6) el solape `LABEL/LABEL` con las etiquetas de escala ya no se
+> produce, y el recorte elimina además el cruce con el anillo y con las marcas
+> de historial que apuntan a la misma banda inferior. `dev/collide.lua` ya no
+> reporta ninguna colisión `LABEL/LABEL` ni `LABEL/RING` en la matriz de
+> zonas. Verificado por `smoke_test.lua`: *"G-7: the min/max row stays inside
+> the ring and off the scale labels"*.
 
 18 px de solape horizontal en 200×200 y 260×220. Es precisamente la combinación que la
 documentación promociona (`large` + `Markers + text`): `L.minMaxBox` y las etiquetas de extremo
 se disputan la misma banda inferior sin ninguna comprobación entre ellas.
 
-#### G-8 · La etiqueta de escala superior siempre la cruza su propia marca
+#### G-8 · La etiqueta de escala superior siempre la cruza su propia marca ✅ CORREGIDO
+
+> **Corregido.** Cada etiqueta de escala se empuja ahora hacia fuera a lo
+> largo de su radio hasta que la **esquina más cercana** al centro queda a
+> `tickOuter + px(sm)`. Al quedar todo el cuadro a distancia ≥ ese radio, la
+> marca (que termina dentro de `tickOuter`) no puede tocarlo, en cualquier
+> ángulo del arco. `dev/collide.lua` ya no reporta `"100"` cruzado por su
+> marca en la matriz de zonas ni en los barridos de 270°. Verificado por
+> `smoke_test.lua`: *"G-8: the scale end labels sit clear of their end
+> ticks"*.
 
 En todas las zonas `large`, incluida pantalla completa. La caja de la etiqueta se **centra** en un
 punto a `tickOuter + px(sm)` (`layout.lua:262-269`), así que su mitad interior retrocede sobre la
 marca. Visualmente `100` se lee como `f00`.
 
-#### G-9 · La caja de las etiquetas de escala es de ancho fijo
+#### G-9 · La caja de las etiquetas de escala es de ancho fijo ✅ CORREGIDO
+
+> **Corregido.** Cada caja se dimensiona ahora con `T.textWidth` de su propio
+> texto (`"20000.00"` → 48 px en lugar de 30), medida exacta de lo que el
+> renderizador va a imprimir con la misma fuente. Sin recorte ni salto de
+> línea. Verificado por `smoke_test.lua`: *"G-9: scale labels size their box
+> to the text, not a fixed width"*.
 
 `local sw = T.px(30)` (`layout.lua:267`), independientemente de la cadena. Con `Max = 20000` y dos
 decimales, `20000.00` (48 px) se recorta a `2000`. Debe medirse con `T.textWidth`.
 
-#### G-10 · En `Sweep = 360°` el nombre se dibuja sobre el anillo
+#### G-10 · En `Sweep = 360°` el nombre se dibuja sobre el anillo ✅ CORREGIDO
+
+> **Verificado resuelto por G-6.** La corrección G-6 subió la banda del valor
+> dentro del círculo (45 % de la caja en normal/large), y el nombre cuelga
+> ahora justo debajo de ella, dentro del radio interior: ni el nombre ni el
+> valor cruzan el anillo, y no se superponen entre sí (2 px de separación).
+> Comprobado con la comprobación etiqueta-vs-arco de `dev/collide.lua` en
+> 360° sobre las tres zonas `large` (200×200, 260×220, 480×272): limpio en
+> todas. Verificado por `smoke_test.lua`: *"G-10: at 360 degrees the name
+> stays inside the ring and off the value"*.
 
 `LABEL/RING "RSSI" cruza un arco (r=68, th=12)`. La rama de 360° mete el nombre bajo el valor,
 dentro del círculo (`layout.lua:242-247`), y a ese radio el anillo pasa justo por ahí. En la
 captura el nombre y el valor se leen como una sola mancha.
 
-#### G-11 · En `Sweep = 180°` ambas etiquetas de escala las cruzan las marcas
+#### G-11 · En `Sweep = 180°` ambas etiquetas de escala las cruzan las marcas ✅ CORREGIDO
+
+> **Corregido.** La corrección G-8/G-9 ya había apartado la etiqueta inferior
+> de su marca; la superior seguía cruzándola cuando el borde de la zona
+> (200×200, arco de 180° que termina a las 3 en punto) obligaba al recorte a
+> devolver el cuadro sobre la marca. Ahora, si tras el recorte a la zona el
+> cuadro sigue intersectando la marca de extremo, la etiqueta se **desliza por
+> la tangente** (perpendicular al radio) hasta despejarla, en la dirección que
+> quepa en la zona. `dev/collide.lua` ya no reporta ninguna colisión en 180°
+> (ni en 200×200 ni en 480×272). Verificado por `smoke_test.lua`: *"G-11: at
+> 180 degrees both scale labels clear their end ticks"*.
 
 Los extremos del arco caen a las 9 y a las 3 en punto, exactamente donde están las marcas
 extremas.
@@ -959,7 +1145,19 @@ marcas estaban en `x = 106` y `x = 165`: **ambas tapadas**.
 Era el mismo error de capas que G-2, con el mismo efecto perverso: las referencias de umbral
 desaparecían justo cuando el valor se acercaba a ellas.
 
-#### G-13 · Las orientaciones vertical y horizontal desperdician el 70 % de la zona
+#### G-13 · Las orientaciones vertical y horizontal desperdician el 70 % de la zona ✅ CORREGIDO
+
+> **Corregido (horizontal; vertical verificado como límite geométrico).** La
+> rama horizontal ya no capa el dial a `min(w*0.5, h)`: el dial crece hasta la
+> **altura completa** de la zona y la columna de texto se queda sólo con el
+> ancho que necesita (suelo `max(px(120), 0.28·w)`, y el `max()` con la regla
+> anterior garantiza que ningún dial pequeño pierda tamaño). En 480×272 el
+> anillo pasa de ~210 a **234 px** (27 % → 32 % del área), el máximo geométrico
+> para un dial redondo en esa zona. En vertical (100×260, 120×220) el dial ya
+> estaba limitado por la anchura de la zona: el 18 % es inherente a un redondo
+> en un rectángulo 2.6:1 y no mejora sin deformar el instrumento. Verificado
+> por `smoke_test.lua`: *"G-13: a wide horizontal zone grows the dial to the
+> full height"*.
 
 Diámetro del anillo frente a la zona, medido:
 

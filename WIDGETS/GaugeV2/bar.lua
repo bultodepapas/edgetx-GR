@@ -56,13 +56,18 @@ function M.build(widget)
   -- threshold marks on the track, the linear equivalent of the dial's rail.
   -- Compare the NORMALISED position, not the raw value against cfg.min/max:
   -- on a descending scale (Min > Max) `r.to > cfg.min and r.to < cfg.max` is
-  -- never true, so every mark silently vanished (AUDIT.md P0-3).
+  -- never true, so every mark silently vanished (AUDIT.md P0-3). And mark the
+  -- BOUNDARY of EVERY band whose end falls strictly inside the scale, not
+  -- just the non-normal ones: on a low-is-good scale (normal -> warning ->
+  -- critical) the warning threshold is the `to` of the NORMAL band, so the
+  -- old condition drew only one mark where the dial draws two rails
+  -- (AUDIT.md P1-11).
   if cfg.colorMode ~= R.COLOR_STATIC then
     ui.marks = {}
     for i = 1, #widget.ranges do
       local r = widget.ranges[i]
       local t = G.normalize(r.to, cfg.min, cfg.max)
-      if r.role ~= "normal" and t > 0 and t < 1 then
+      if t > 0 and t < 1 then
         ui.marks[#ui.marks + 1] = vline(markX(widget, r.to), b.y, b.h,
           L.markThickness, T.stateColor(r.role, widget.accent))
       end
@@ -91,12 +96,21 @@ function M.build(widget)
                            widget.nameText)
   end
   if L.showState then
+    -- the state chip: same pill as the dial, so WARN/CRIT/STALE signal
+    -- identically in bar zones (AUDIT.md P1-10)
+    ui.chip = lvgl.rectangle{
+      x = L.stateBox.x, y = L.stateBox.y - T.px(1),
+      w = L.stateBox.w, h = L.chipHeight,
+      color = T.color.chip, filled = 1, rounded = floor(L.chipHeight / 2),
+    }
+    lvgl.hide(ui.chip)
     ui.stateLabel = R.label(L.stateBox, L.stateFont, T.color.label,
                             L.stateAlign)
   end
 
   widget.frame = {
     props = {},
+    dirty = {},
     fillW = -1, ghostX = -1, minX = -1,
     needleShown = true, markersShown = false, chipShown = false,
     colorKey = "", valueStr = "", stateStr = "", minStr = "", maxStr = "",
@@ -109,6 +123,8 @@ function M.updateSourceLabels(widget)
   local ui = widget.ui
   R.setProp(widget, ui.unitLabel, "text", widget.unitText or "")
   R.setProp(widget, ui.nameLabel, "text", widget.nameText or "")
+  -- runs from app.update(), outside the refresh frame: flush now (P0-6)
+  R.flush(widget)
 end
 
 local function updateFill(widget)
@@ -155,6 +171,29 @@ local function updateHistory(widget)
   end
 end
 
+-- Critical state pulses the fill at ~1 Hz, exactly as the dial pulses its
+-- arc, so a bar communicates severity the same way a dial does
+-- (AUDIT.md P1-10). Same P1-1 rule on exit: restore the opacity the NEW key
+-- calls for, so losing the link mid-pulse leaves the bar dimmed, not at full.
+local function updatePulse(widget, key)
+  local ui, frame = widget.ui, widget.frame
+  if key ~= "critical" then
+    if frame.pulse then
+      frame.pulse = false
+      R.setProp(widget, ui.fill, "opacity",
+                (key == "muted") and T.opacity.muted or T.opacity.full)
+    end
+    return
+  end
+  local now = getTime()
+  if now - frame.pulseAt >= 50 then  -- 50 * 10 ms
+    frame.pulseAt = now
+    frame.pulse = not frame.pulse
+    R.setProp(widget, ui.fill, "opacity",
+              frame.pulse and T.opacity.pulse or T.opacity.full)
+  end
+end
+
 function M.update(widget)
   local ui, frame = widget.ui, widget.frame
   if not ui.built then return end
@@ -190,12 +229,15 @@ function M.update(widget)
     if s ~= frame.stateStr then
       frame.stateStr = s
       R.setProp(widget, ui.stateLabel, "text", s)
+      R.updateChip(widget, s)
     end
   end
 
   updateFill(widget)
   updateHistory(widget)
+  updatePulse(widget, key)
 
+  R.flush(widget)
   frame.prevAvail = widget.data.availability
 end
 

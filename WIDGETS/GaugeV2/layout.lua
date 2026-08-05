@@ -45,6 +45,28 @@ local function box(x, y, w, h)
   return { x = floor(x), y = floor(y), w = floor(w), h = floor(h or 0) }
 end
 
+-- Clip a box to the dial circle's clear CHORD at the box's BOTTOM edge,
+-- centred on the dial centre. The ring is closest to the text at the bottom
+-- of its box, so this guarantees every corner of the text stays inside the
+-- ring (the audit's LABEL/RING collisions: G-6 for the value, G-7 for the
+-- min/max row). One px of safety, because a box exactly as wide as the
+-- floored chord puts its corners on the ring and rounding can push them a
+-- hair outside. Returns the box (or nil) for convenience.
+local function clipToChord(L, b)
+  if not b then return b end
+  local dy = (b.y + b.h) - L.cy
+  local clearR = L.radius - floor(L.trackThickness / 2)
+  local chord = 0
+  if clearR > 0 and math.abs(dy) < clearR then
+    chord = 2 * math.sqrt(clearR * clearR - dy * dy)
+  end
+  if chord > 0 and chord < b.w then
+    b.w = floor(chord) - T.px(1)
+    b.x = L.cx - floor(b.w / 2)
+  end
+  return b
+end
+
 -- mode: micro (<64), compact (<105), normal (<180), large (>=180)
 -- orientation: horizontal (>1.4), vertical (<0.8), balanced
 function M.classify(w, h)
@@ -93,13 +115,19 @@ local function pickValueFont(sample, unitText, maxW, maxH, cap)
       end
     end
   end
+  -- Nothing fits the region: use the smallest font, but never let the
+  -- reserved box exceed the region. The region was chord-clipped to stay
+  -- inside the ring (AUDIT.md G-6), so an oversized box - possible once the
+  -- sample carries a slack character (P1-3/P1-4) - would push its corners
+  -- onto the ring. The value itself is always narrower than the sample.
   local font = ramp[#ramp]
   local unitFont = font
   local uw = 0
   if unitText and unitText ~= "" then
     uw = T.textWidth(unitText, unitFont) + gap
   end
-  return font, unitFont, T.textWidth(sample, font), uw
+  local w = min(T.textWidth(sample, font), max(maxW - uw, 0))
+  return font, unitFont, w, uw
 end
 
 -- Place the value + unit pair centred as a group inside `region`.
@@ -110,14 +138,18 @@ local function placeValue(L, region, sample, unitText, cap)
   L.unitFont = unitFont
   local vh = T.fontHeight(valueFont)
   local uh = T.fontHeight(unitFont)
+  local gap = T.px(T.space.sm)
   local groupW = vw + uw
   local x0 = region.x + floor((region.w - groupW) / 2)
   local y0 = region.y + floor((region.h - vh) / 2)
   if y0 < region.y then y0 = region.y end
   L.valueBox = box(x0, y0, vw, vh)
   L.valueAlign = RIGHT
-  -- unit sits on the value baseline, one step down in the type ramp
-  L.unitBox = box(x0 + vw + T.px(T.space.sm), y0 + (vh - uh) - T.px(1), uw, uh)
+  -- unit sits on the value baseline, one step down in the type ramp. `uw`
+  -- from pickValueFont already includes the gap, so the box must not add it
+  -- again: the reserved group is then exactly `groupW` and the fit check in
+  -- pickValueFont (w + uw <= maxW) is honest (AUDIT.md G-6).
+  L.unitBox = box(x0 + vw + gap, y0 + (vh - uh) - T.px(1), max(uw - gap, 1), uh)
   L.unitAlign = LEFT
 end
 
@@ -152,7 +184,15 @@ local function dialLayout(widget, cfg, L, w, h)
   -- dial box and text region per orientation
   local dial, textRegion, valueRegion
   if orientation == "horizontal" then
-    local dialSide = min(w * 0.5, h)
+    -- The dial takes the full zone HEIGHT and the text column keeps only the
+    -- width it needs. `min(w*0.5, h)` strangled the dial to half the zone
+    -- even when there was height to spare, wasting up to ~73 % of the area
+    -- (AUDIT.md G-13: 480x272 used 27 %). The column floor - the value at its
+    -- smallest font plus the longest label row - keeps the text legible, and
+    -- the max() with the old half-width rule means a narrow horizontal zone
+    -- never loses dial size.
+    local textMin = max(T.px(120), floor(w * 0.28))
+    local dialSide = max(min(w - textMin, h), min(w * 0.5, h))
     dial = box(pad, pad, dialSide - pad * 2, h - pad * 2)
     local tx = dial.x + dial.w + T.px(T.space.md)
     textRegion = box(tx, pad, w - tx - pad, h - pad * 2)
@@ -174,9 +214,22 @@ local function dialLayout(widget, cfg, L, w, h)
     local d = min(w, h - nameSpace)
     dial = box(floor((w - d) / 2) + pad, pad, d - pad * 2, d - pad * 2)
     textRegion = dial
-    -- value lives inside the lower half of the dial circle
-    valueRegion = box(dial.x, dial.y + floor(dial.h * 0.52),
-                      dial.w, floor(dial.h * 0.30))
+    -- value lives inside the dial circle. A micro dial draws no state chip
+    -- and no needle, so its value can sit in the MIDDLE of the circle, where
+    -- the clear chord is widest; larger modes must clear the state chip.
+    if mode == "micro" then
+      -- centred exactly on the dial centre: the clear chord is widest there,
+      -- and a micro dial's value is only a few px wide (no unit, no state)
+      valueRegion = box(dial.x, dial.y + floor(dial.h / 2)
+                        - floor(dial.h * 0.15),
+                        dial.w, floor(dial.h * 0.30))
+    elseif mode == "compact" then
+      valueRegion = box(dial.x, dial.y + floor(dial.h * 0.50),
+                        dial.w, floor(dial.h * 0.26))
+    else
+      valueRegion = box(dial.x, dial.y + floor(dial.h * 0.45),
+                        dial.w, floor(dial.h * 0.26))
+    end
   end
 
   L.cx = dial.x + floor(dial.w / 2)
@@ -204,6 +257,16 @@ local function dialLayout(widget, cfg, L, w, h)
   L.tickInner = L.railRadius + T.px(T.space.xs)
   L.tickOuter = L.tickInner + tickLength
 
+  -- In a balanced zone the value text hangs inside the dial circle, and the
+  -- circle's clear interior at that height is a CHORD of the ring - narrower
+  -- than the dial box. Centering the value+unit group against the full box
+  -- width pushes the unit (and wide values) onto the ring, exactly the
+  -- LABEL/RING collisions the audit measured (AUDIT.md G-6). Horizontal/
+  -- vertical zones place the value outside the dial and do not need it.
+  if orientation == "balanced" then
+    clipToChord(L, valueRegion)
+  end
+
   -- needle
   L.showNeedle = (cfg.style == M.STYLE_NEEDLE)
     or (cfg.style == M.STYLE_AUTO and mode ~= "micro")
@@ -219,7 +282,11 @@ local function dialLayout(widget, cfg, L, w, h)
   -- typography and text regions
   local cap = (mode == "micro") and T.FONTS.XS
     or ((mode == "compact") and T.FONTS.L or nil)
-  placeValue(L, valueRegion, F.widestSample(widget), widget.unitText, cap)
+  -- a unit that will not be drawn (micro zones) must not reserve width in the
+  -- value group: the chord a micro dial leaves for text is only a few px
+  -- (AUDIT.md G-6)
+  placeValue(L, valueRegion, F.widestSample(widget),
+             L.showUnit and widget.unitText or "", cap)
 
   local align = (orientation == "horizontal") and LEFT or CENTER
   if orientation == "horizontal" then
@@ -253,23 +320,93 @@ local function dialLayout(widget, cfg, L, w, h)
   L.nameAlign = align
   L.stateAlign = align
 
+  -- the min/max row hangs below the value INSIDE the dial circle: constrain
+  -- it to the chord at its depth so it neither crosses the ring nor the
+  -- history marks that point into the same lower band (AUDIT.md G-7). The
+  -- minTextBox/maxTextBox split below then inherit the clipped width.
+  if orientation == "balanced" then
+    clipToChord(L, L.minMaxBox)
+  end
+
   -- min / max text share the min-max row
   local halfW = floor(L.minMaxBox.w / 2)
   L.minTextBox = box(L.minMaxBox.x, L.minMaxBox.y, halfW, minMaxH)
   L.maxTextBox = box(L.minMaxBox.x + halfW, L.minMaxBox.y, halfW, minMaxH)
 
-  -- scale end labels, centred on the arc ends
+  -- scale end labels, one at each arc end, sitting just OUTSIDE the end
+  -- ticks. The old code centred a fixed 30 px box on the point at
+  -- tickOuter + px(sm): its inner half retreated over the end tick ("100"
+  -- read as "f00", AUDIT.md G-8), and the fixed width clipped long strings
+  -- like 20000.00 (AUDIT.md G-9). Each label is now sized with its own text
+  -- width and pushed outward along the radial until its NEAREST corner sits
+  -- at r0 - so every point of the box is at distance >= r0 from the centre,
+  -- and no point of the tick (which ends inside r0) can touch it.
   if L.showScale then
-    local r = L.tickOuter + T.px(T.space.sm)
-    local sw = T.px(30)
-    local x1, y1 = G.pointOnCircle(L.cx, L.cy, r, L.startAngle)
-    local x2, y2 = G.pointOnCircle(L.cx, L.cy, r, L.startAngle + L.sweep)
     local sh = T.fontHeight(L.scaleFont)
-    L.scaleMinBox = box(x1 - sw / 2, y1 - sh / 2, sw, sh)
-    L.scaleMaxBox = box(x2 - sw / 2, y2 - sh / 2, sw, sh)
+    local r0 = L.tickOuter + T.px(T.space.sm)
+    local function placeScaleLabel(angle, text)
+      local sw = T.textWidth(text, L.scaleFont)
+      local a, b = sw / 2, sh / 2
+      local ux, uy = G.pointOnCircle(0, 0, 1, angle)
+      local sx = (ux >= 0) and a or -a
+      local sy = (uy >= 0) and b or -b
+      local dot = ux * sx + uy * sy
+      local r = dot + math.sqrt(math.max(dot * dot + r0 * r0 - a * a - b * b, 0))
+      local cx, cy = G.pointOnCircle(L.cx, L.cy, r, angle)
+      return box(cx - a, cy - b, sw, sh)
+    end
+    -- A label that the zone edge forced back over its own end tick slides
+    -- along the TANGENT until it clears the tick: the radial placement above
+    -- clears it by construction, only the zone clamp can pull it back in. A
+    -- 180 deg arc ends at 9/3 o'clock, right at the extreme marks, so on a
+    -- zone just wide enough for the dial the clamp does exactly that
+    -- (AUDIT.md G-11).
+    local function clearEndTick(angle, b)
+      local ux, uy = G.pointOnCircle(0, 0, 1, angle)
+      local px, py = -uy, ux            -- tangent unit vector
+      local halfTh = max(1, L.tickThickness / 2)
+      local tMin, tMax, pMin, pMax = math.huge, -math.huge, math.huge, -math.huge
+      for i = 1, 4 do
+        local cx0 = b.x + ((i % 2 == 1) and 0 or b.w)
+        local cy0 = b.y + (i <= 2 and 0 or b.h)
+        local dx, dy = cx0 - L.cx, cy0 - L.cy
+        local t = dx * ux + dy * uy
+        local pt = dx * px + dy * py
+        if t < tMin then tMin = t end
+        if t > tMax then tMax = t end
+        if pt < pMin then pMin = pt end
+        if pt > pMax then pMax = pt end
+      end
+      -- clear when the radial span or the perpendicular band misses the tick
+      if tMax <= L.tickInner or tMin >= L.tickOuter
+        or pMax <= -halfTh or pMin >= halfTh then
+        return b
+      end
+      local gap = 1
+      local function shifted(s)
+        return box(b.x + px * s, b.y + py * s, b.w, b.h)
+      end
+      local function inZone(bb)
+        return bb.x >= 0 and bb.y >= 0
+          and bb.x + bb.w <= w and bb.y + bb.h <= h
+      end
+      local d = shifted(halfTh + gap - pMin)          -- slide along +tangent
+      if inZone(d) then return d end
+      local u = shifted(-halfTh - gap - pMax)         -- or along -tangent
+      if inZone(u) then return u end
+      return b  -- no room either way: keep the clamped position
+    end
+    L.scaleMinBox = placeScaleLabel(L.startAngle,
+      F.display(widget, widget.config.min))
+    L.scaleMaxBox = placeScaleLabel(L.startAngle + L.sweep,
+      F.display(widget, widget.config.max))
     -- do not let the labels leave the zone
     if L.scaleMinBox.x < 0 then L.scaleMinBox.x = 0 end
-    if L.scaleMaxBox.x + sw > w then L.scaleMaxBox.x = w - sw end
+    if L.scaleMaxBox.x + L.scaleMaxBox.w > w then
+      L.scaleMaxBox.x = w - L.scaleMaxBox.w
+    end
+    L.scaleMinBox = clearEndTick(L.startAngle, L.scaleMinBox)
+    L.scaleMaxBox = clearEndTick(L.startAngle + L.sweep, L.scaleMaxBox)
     if L.scaleMinBox.y + sh > h then L.showScale = false end
   end
 
@@ -294,30 +431,50 @@ local function barLayout(widget, cfg, L, w, h)
   L.nameFont = T.FONTS.XS
   L.stateFont = T.FONTS.XS
   L.minMaxFont = T.FONTS.XXS
-  local nameH = L.showName and T.fontHeight(L.nameFont) or 0
+  local nameH = T.fontHeight(L.nameFont)
+  local stateH = T.fontHeight(L.stateFont)
+  -- the smallest font the value can use: the value region must never drop
+  -- under this, or the auto-fit would overflow the box (AUDIT.md P1-4)
+  local minText = T.fontHeight(T.FONTS.XXS)
 
+  -- The row below the bar carries the state text (right) and, when there is
+  -- height for it, the name (left). Its height is the STATE font's, never
+  -- the name's: sizing it from nameH meant the short-bar paths zeroed nameH
+  -- and collapsed STALE/NO LINK/WARN/CRIT out of exactly the zones where
+  -- they matter most (AUDIT.md P1-2). The budget reserves the state row
+  -- before the value area, trims the bar to its minimum before giving up,
+  -- and drops the state row only when the zone is too short for even the
+  -- smallest value font.
+  local rowH = (L.showState or L.showName) and stateH or 0
   local barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
-  local textH = h - barH - nameH - pad * 3
-  if textH < T.px(12) then
-    textH = max(h - barH - pad * 2, T.px(12))
-    L.showName = false
-    nameH = 0
+  local textH = h - barH - rowH - pad * 3
+  if textH < minText then
+    barH = max(h - minText - rowH - pad * 3, T.px(8))
+    textH = h - barH - rowH - pad * 3
+    if textH < minText then
+      L.showState = false
+      rowH = (L.showName) and nameH or 0
+      barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
+      textH = h - barH - rowH - pad * 3
+      if textH < minText then textH = minText end
+    end
   end
 
   local valueRegion = box(pad, pad, w - pad * 2, textH)
-  placeValue(L, valueRegion, F.widestSample(widget), widget.unitText,
+  placeValue(L, valueRegion, F.widestSample(widget),
+             L.showUnit and widget.unitText or "",
              (h < T.px(60)) and T.FONTS.M or nil)
 
   L.bar = box(pad, pad + textH + pad, w - pad * 2, barH)
   L.barRadius = floor(barH / 2)
   L.nameBox = box(pad, L.bar.y + barH + pad, floor((w - pad * 2) / 2), nameH)
   L.stateBox = box(pad + floor((w - pad * 2) / 2), L.bar.y + barH + pad,
-                   floor((w - pad * 2) / 2), nameH)
+                   floor((w - pad * 2) / 2), stateH)
   L.nameAlign = LEFT
   L.stateAlign = RIGHT
   L.textAlign = LEFT
   L.chipPad = T.px(T.space.xs)
-  L.chipHeight = nameH
+  L.chipHeight = stateH + T.px(2)
   L.markThickness = max(1, T.px(2))
 end
 

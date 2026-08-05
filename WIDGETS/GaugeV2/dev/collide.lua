@@ -66,6 +66,14 @@ end
 local function report(name, w, zone)
   local hits = {}
   local labels, arcs, lines = {}, {}, {}
+  -- The needle (and its counterweight) sweeps UNDER the dial face by design:
+  -- the labels are created after it and LVGL paints them on top, so a needle
+  -- crossing the value/chip text is not a defect. Since P2-1 the needle is a
+  -- `line`, so the geometric check below would flag it as if it were a tick
+  -- or a threshold mark (which MUST not cross text).
+  local sweep = {}
+  if w.ui.needle then sweep[w.ui.needle] = true end
+  if w.ui.tail then sweep[w.ui.tail] = true end
   for _, o in ipairs(mock.objects()) do
     if not o.visible then goto cont end
     if o.kind == "label" then
@@ -73,7 +81,7 @@ local function report(name, w, zone)
       if ink then labels[#labels+1] = ink end
     elseif o.kind == "arc" then
       arcs[#arcs+1] = o.props
-    elseif o.kind == "line" then
+    elseif o.kind == "line" and not sweep[o] then
       lines[#lines+1] = o.props
     end
     ::cont::

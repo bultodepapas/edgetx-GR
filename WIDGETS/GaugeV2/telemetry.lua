@@ -82,14 +82,27 @@ end
 -- sensors on big radios. The index (0-based, the same space as
 -- model.getSensor(i)) is what model.resetSensor(sensor) expects - it is NOT
 -- a MIXSRC id.
+--
+-- Each model.getSensor(i) call builds a fresh Lua table on the radio, so a
+-- 60-sensor scan on every source resolution was pure allocation waste
+-- (AUDIT.md P2-4). The name -> {prec, index} mapping is model data, stable
+-- for the session, so hits are memoized (and shared between widget instances
+-- now that the modules are shared, P2-3). Only HITS are cached: a sensor not
+-- yet connected must be re-scanned once it appears, so a miss is never cached.
+local sensorCache = {}
 local function findSensor(name)
   if type(model) ~= "table" or type(model.getSensor) ~= "function" then
     return nil, nil
   end
+  local hit = sensorCache[name]
+  if hit then return hit.prec, hit.index end
   local count = tonumber(MAX_SENSORS) or 60
   for i = 0, count - 1 do
     local sn = model.getSensor(i)
-    if sn and sn.name == name then return sn.prec, i end
+    if sn and sn.name == name then
+      sensorCache[name] = { prec = sn.prec, index = i }
+      return sn.prec, i
+    end
   end
   return nil, nil
 end

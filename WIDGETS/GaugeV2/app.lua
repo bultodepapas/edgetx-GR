@@ -28,16 +28,36 @@ local MODULES = {
 local SCALE_AUTO = 1
 local BATTERY_OFF = 1
 
-local function loadModule(path, name)
-  local chunk, err = loadScript(path .. name .. ".lua", "bt")
-  if not chunk then
-    error("GaugeV2: cannot load " .. name .. " (" .. tostring(err) .. ")")
+-- The module table is SHARED by every widget instance: the modules are pure
+-- (all per-widget state lives in the `widget` table), the setup() calls are
+-- idempotent, and theme's metric caches are exactly what should be shared
+-- across instances. main.lua also memoizes app.lua itself, so one screen
+-- with four gauges loads 13 chunks once instead of 52 (AUDIT.md P2-3).
+-- Keyed by path so two differently-located copies of the widget stay
+-- independent.
+local MODS_BY_PATH = {}
+
+local function loadModules(path)
+  local mods = MODS_BY_PATH[path]
+  if mods then return mods end
+  mods = {}
+  MODS_BY_PATH[path] = mods
+  for i = 1, #MODULES do
+    local name = MODULES[i]
+    local chunk, err = loadScript(path .. name .. ".lua", "bt")
+    if not chunk then
+      error("GaugeV2: cannot load " .. name .. " (" .. tostring(err) .. ")")
+    end
+    local ok, mod = pcall(chunk)
+    if not ok or type(mod) ~= "table" then
+      error("GaugeV2: bad module " .. name .. " (" .. tostring(mod) .. ")")
+    end
+    mods[name] = mod
   end
-  local ok, mod = pcall(chunk)
-  if not ok or type(mod) ~= "table" then
-    error("GaugeV2: bad module " .. name .. " (" .. tostring(mod) .. ")")
-  end
-  return mod
+  mods.layout.setup(mods.theme, mods.geometry, mods.format)
+  mods.renderer.setup(mods.theme, mods.geometry, mods.format)
+  mods.bar.setup(mods.theme, mods.geometry, mods.format, mods.renderer)
+  return mods
 end
 
 function M.create(zone, options, path)
@@ -46,7 +66,7 @@ function M.create(zone, options, path)
     options = options,
     path = path or "/WIDGETS/GaugeV2/",
     defs = DEFS,
-    mods = {},
+    mods = loadModules(path or "/WIDGETS/GaugeV2/"),
     source = { id = -1, resolved = false, name = "", unitName = "" },
     data = { availability = "unset" },
     history = {},
@@ -57,14 +77,6 @@ function M.create(zone, options, path)
     unitText = "",
     nameText = "",
   }
-  for i = 1, #MODULES do
-    local name = MODULES[i]
-    widget.mods[name] = loadModule(widget.path, name)
-  end
-  local m = widget.mods
-  m.layout.setup(m.theme, m.geometry, m.format)
-  m.renderer.setup(m.theme, m.geometry, m.format)
-  m.bar.setup(m.theme, m.geometry, m.format, m.renderer)
   return widget
 end
 
@@ -124,6 +136,13 @@ local function configure(widget)
     end
   end
 
+  -- When BOTH thresholds are out of the effective range on the same side,
+  -- building the bands from them would turn the whole dial critical with
+  -- zero-width warning/normal bands (e.g. a manual -120..0 dBm scale with
+  -- the 0..100 defaults). Derive them at the presets' proportions instead
+  -- (AUDIT.md G-4).
+  warning, critical = m.ranges.saneThresholds(minimum, maximum, warning,
+                                              critical, highGood)
   cfg.min, cfg.max, cfg.warn, cfg.crit = minimum, maximum, warning, critical
   cfg.highGood = highGood
 
@@ -178,7 +197,7 @@ local function configure(widget)
     widget.layoutRebuilt = true
     lvgl.clear()
     widget.ui = {}
-    widget.frame = { props = {} }
+    widget.frame = { props = {}, dirty = {} }
     painter(widget).build(widget)
   end
 end

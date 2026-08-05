@@ -44,11 +44,18 @@ end
 -- (an instrument keeps its ones digit in place).
 function M.widestSample(widget)
   local cfg = widget.config
-  if widget.source.isTimer then return "00:00:00" end
+  -- Timers print as hh:mm:ss and an ELAPSED timer carries a leading sign, so
+  -- the sample must be the signed width: a box sized for "00:00:00" wraps the
+  -- real "-00:01:05" and clips it (AUDIT.md P1-3).
+  if widget.source.isTimer then return "-00:00:00" end
   local a = M.display(widget, cfg.min)
   local b = M.display(widget, cfg.max)
-  if #b >= #a then return b end
-  return a
+  local sample = (#b >= #a) and b or a
+  -- The value is deliberately NOT clamped to the scale - an instrument must
+  -- tell the truth - so an out-of-range value can be one character wider
+  -- than the range's widest string. Reserve that one character of slack, or
+  -- the extra digit wraps inside the fixed value box (AUDIT.md P1-4).
+  return "-" .. sample
 end
 
 return M

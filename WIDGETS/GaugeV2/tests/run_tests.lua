@@ -131,6 +131,32 @@ test("ranges warn == crit collapses the warning band", function()
   assertEq(r[2].from, r[2].to)
 end)
 
+test("G-4: both thresholds out of range derive at the presets' proportions", function()
+  -- Manual -120..0 dBm scale with the 0..100 defaults (55/35): clamping would
+  -- collapse both onto Max and make the whole dial one critical band. The
+  -- helper must derive them at 35 % / 55 % of the span instead.
+  local w, c = ranges.saneThresholds(-120, 0, 55, 35, true)
+  assertNear(c, -78, 0.01, "critical at 35 % of the span")
+  assertNear(w, -54, 0.01, "warning at 55 % of the span")
+
+  -- low-is-good mirrors the bands against the top of the scale
+  w, c = ranges.saneThresholds(-120, 0, 55, 35, false)
+  assertNear(w, -66, 0.01, "low-is-good warning")
+  assertNear(c, -42, 0.01, "low-is-good critical")
+
+  -- in-range thresholds pass through untouched
+  local a, b = ranges.saneThresholds(0, 100, 55, 35, true)
+  assertEq(a, 55); assertEq(b, 35)
+
+  -- an equal pair INSIDE the range is a deliberate sharp cliff, not a mistake
+  a, b = ranges.saneThresholds(0, 100, 50, 50, true)
+  assertEq(a, 50); assertEq(b, 50)
+
+  -- one threshold on each side is still the old clamp's job
+  a, b = ranges.saneThresholds(0, 100, 500, -500, true)
+  assertEq(a, 500); assertEq(b, -500)
+end)
+
 test("determineState inside and outside", function()
   local r = ranges.build(0, 100, 55, 35, true)
   assertEq(ranges.determineState(80, r), "normal")
@@ -302,14 +328,14 @@ test("timers format as hh:mm:ss with a sign", function()
   assertEq(format.hms(-65), "-00:01:05")
 end)
 
-test("widest sample covers the scale", function()
+test("widest sample covers the scale plus one character of slack", function()
   local widget = {
     config = { min = 0, max = 100, precision = 1 },
     source = { isTimer = false },
   }
-  assertEq(format.widestSample(widget), "100.0")
+  assertEq(format.widestSample(widget), "-100.0")
   widget.source.isTimer = true
-  assertEq(format.widestSample(widget), "00:00:00")
+  assertEq(format.widestSample(widget), "-00:00:00")
 end)
 
 -- ---- smoothing -----------------------------------------------------------

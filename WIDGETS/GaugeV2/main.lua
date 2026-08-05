@@ -128,15 +128,24 @@ local function translate(name)
   return labels[name]
 end
 
+-- app.lua is loaded once per RADIO, not once per widget instance: main.lua
+-- itself is evaluated once and its upvalues are shared by every instance
+-- (luaLoadWidgetCallback), so a memoized app - whose own module table is
+-- likewise shared, see app.lua - cuts 13 loadScript calls per instance
+-- (AUDIT.md P2-3: four gauges on one screen used to load 52 chunks).
+local sharedApp
+
 local function create(zone, opts, path)
   path = path or DEFAULT_PATH
-  local chunk, err = loadScript(path .. "app.lua", "bt")
-  if not chunk then
-    error("GaugeV2: cannot load app.lua (" .. tostring(err) .. ")")
+  if not sharedApp then
+    local chunk, err = loadScript(path .. "app.lua", "bt")
+    if not chunk then
+      error("GaugeV2: cannot load app.lua (" .. tostring(err) .. ")")
+    end
+    sharedApp = chunk(DEFS)
   end
-  local app = chunk(DEFS)
-  local widget = app.create(zone, opts, path)
-  widget.app = app
+  local widget = sharedApp.create(zone, opts, path)
+  widget.app = sharedApp
   return widget
 end
 

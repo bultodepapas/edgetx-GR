@@ -27,3 +27,7 @@ _wasi_sdk_fetch
 
 output/
 .devcontainer/devcontainer-lock.json
+
+# Apt packages downloaded for local tooling (e.g. the Lua 5.3 test runner);
+# never commit these.
+*.deb

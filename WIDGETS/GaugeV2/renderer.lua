@@ -38,10 +38,12 @@ end
 M.COLOR_STATIC, M.COLOR_THRESHOLD, M.COLOR_RAIL, M.COLOR_GRADIENT,
   M.COLOR_SECTIONS = 1, 2, 3, 4, 5
 
--- One scratch table for every lvgl.set call: the binding reads it
--- immediately, so reusing it keeps refresh() allocation free.
-local scratch = {}
-
+-- Property writes are QUEUED per object and flushed in one lvgl.set call at
+-- the end of the frame: each lvgl.set is a full C++ getParams + refresh(), so
+-- a state transition that touches six objects with two keys each used to
+-- emit 14 refreshes when 6 would do (AUDIT.md P2-2). The cache still filters
+-- unchanged keys, and it is updated immediately, so later reads in the same
+-- frame see the new value.
 local function setProp(widget, obj, key, value)
   if not obj then return end
   local props = widget.frame.props
@@ -52,11 +54,30 @@ local function setProp(widget, obj, key, value)
   end
   if cache[key] == value then return end
   cache[key] = value
-  scratch[key] = value
-  lvgl.set(obj, scratch)
-  scratch[key] = nil
+  local dirty = widget.frame.dirty
+  if not dirty then
+    dirty = {}
+    widget.frame.dirty = dirty
+  end
+  local t = dirty[obj]
+  if not t then
+    t = {}
+    dirty[obj] = t
+  end
+  t[key] = value
 end
 M.setProp = setProp
+
+-- Send every queued property for each object in a single lvgl.set call.
+-- Called once at the end of each update frame (renderer and bar).
+function M.flush(widget)
+  local dirty = widget.frame.dirty
+  if not dirty then return end
+  widget.frame.dirty = nil
+  for obj, t in pairs(dirty) do
+    lvgl.set(obj, t)
+  end
+end
 
 -- ---------------------------------------------------------------- angles --
 
@@ -180,17 +201,20 @@ end
 local function buildNeedle(widget)
   local ui, L = widget.ui, widget.layout
   local a = L.startAngle
-  -- lvgl.triangle takes ONLY pts plus the base object params (it is a
-  -- LvglSimpleWidgetObject - no filled/thickness/rounded); it always fills.
-  ui.needle = lvgl.triangle{
-    pts = G.trianglePoints(L.cx, L.cy, L.needleInner, L.needleOuter,
-                           L.needleHalf, a),
-    color = T.color.accent,
+  -- A needle of LINES, not triangles: on the radio LvglWidgetTriangle::refresh
+  -- frees the canvas and rebuilds it on every angle change - under needle
+  -- damping the smoothed value moves almost every frame, so the audit
+  -- measured ~46 canvas rebuilds in 20 frames and ~24 KB of heap churn per
+  -- frame on a 200x200 zone (AUDIT.md P2-1). LvglWidgetLine::refresh only
+  -- rewrites the points: the needle loses its taper, and gains an order of
+  -- magnitude and - the point of the fix - no allocation churn at all.
+  ui.needle = lvgl.line{
+    pts = G.linePoints(L.cx, L.cy, L.needleInner, L.needleOuter, a),
+    thickness = max(1, L.needleHalf * 2), color = T.color.accent,
   }
-  ui.tail = lvgl.triangle{
-    pts = G.trianglePoints(L.cx, L.cy, L.needleInner, L.tailOuter,
-                           max(1, floor(L.needleHalf * 0.7)), a + 180),
-    color = T.color.accent,
+  ui.tail = lvgl.line{
+    pts = G.linePoints(L.cx, L.cy, L.needleInner, L.tailOuter, a + 180),
+    thickness = max(1, floor(L.needleHalf * 1.4)), color = T.color.accent,
   }
   ui.pivotRing = lvgl.circle{
     x = L.cx, y = L.cy, radius = L.pivotRadius,
@@ -285,6 +309,7 @@ function M.build(widget)
 
   widget.frame = {
     props = {},
+    dirty = {},
     angle = -1, ghostAngle = -1, minAngle = -1, maxAngle = -1,
     needleShown = true, markersShown = false, chipShown = false,
     colorKey = "", valueStr = "", stateStr = "", minStr = "", maxStr = "",
@@ -313,6 +338,11 @@ function M.colorKey(widget)
     -- while the value sits just above the warning line.
     local lo, hi = cfg.crit, cfg.warn
     if lo > hi then lo, hi = hi, lo end
+    -- Equal thresholds give the ramp a zero span, so normalize() pins every
+    -- value to the red end (AUDIT.md P1-5). Fall back to the band colour: a
+    -- warn == crit configuration is a sharp cliff, and the state already says
+    -- which side of it the value is on.
+    if lo == hi then return data.state or "normal" end
     local t = G.normalize(data.displayValue, lo, hi)
     if not cfg.highGood then t = 1 - t end
     return "grad" .. floor(t * 20)
@@ -356,11 +386,46 @@ local function stateText(widget)
   if a == "disconnected" then return "NO LINK" end
   if a == "stale" then return "STALE" end
   if a ~= "valid" then return "NO DATA" end
+  -- An elapsed countdown timer is classified WARNING by colorKey (the arc is
+  -- amber); its raw state is critical because a negative value sits below the
+  -- scale minimum. The chip must say what the instrument paints - a CRIT
+  -- word in warning colour is the worst of both worlds (AUDIT.md G-3).
+  if widget.source.isTimer and data.value and data.value < 0 then
+    return "WARN"
+  end
   if data.state == "warning" then return "WARN" end
   if data.state == "critical" then return "CRIT" end
   return ""
 end
 M.stateText = stateText
+
+-- Show or hide the state chip, hugging its text. Shared by the dial and the
+-- bar so both signal state identically: the bar used to have no chip at all,
+-- leaving WARN/CRIT as bare text in bar zones while dial zones got the full
+-- pill (AUDIT.md P1-10).
+function M.updateChip(widget, s)
+  local ui, frame = widget.ui, widget.frame
+  if not ui.chip then return end
+  local show = (s ~= "")
+  if show then
+    -- the chip hugs its text: measured here because the state string changes
+    -- rarely (never per frame), unlike the value
+    local L = widget.layout
+    local w = T.textWidth(s, L.stateFont) + L.chipPad * 2
+    local x = L.stateBox.x
+    if L.stateAlign == CENTER then
+      x = L.stateBox.x + floor((L.stateBox.w - w) / 2)
+    elseif L.stateAlign == RIGHT then
+      x = L.stateBox.x + L.stateBox.w - w
+    end
+    setProp(widget, ui.chip, "x", x)
+    setProp(widget, ui.chip, "w", w)
+    lvgl.show(ui.chip)
+  else
+    lvgl.hide(ui.chip)
+  end
+  frame.chipShown = show
+end
 
 local function updateText(widget)
   local ui, frame = widget.ui, widget.frame
@@ -382,27 +447,7 @@ local function updateText(widget)
     if s ~= frame.stateStr then
       frame.stateStr = s
       setProp(widget, ui.stateLabel, "text", s)
-      local show = (s ~= "")
-      if ui.chip then
-        if show then
-          -- the chip hugs its text: measured here because the state string
-          -- changes rarely (never per frame), unlike the value
-          local L = widget.layout
-          local w = T.textWidth(s, L.stateFont) + L.chipPad * 2
-          local x = L.stateBox.x
-          if L.stateAlign == CENTER then
-            x = L.stateBox.x + floor((L.stateBox.w - w) / 2)
-          elseif L.stateAlign == RIGHT then
-            x = L.stateBox.x + L.stateBox.w - w
-          end
-          setProp(widget, ui.chip, "x", x)
-          setProp(widget, ui.chip, "w", w)
-          lvgl.show(ui.chip)
-        else
-          lvgl.hide(ui.chip)
-        end
-        frame.chipShown = show
-      end
+      M.updateChip(widget, s)
     end
   end
 
@@ -445,10 +490,10 @@ local function updateArc(widget)
     frame.angle = a
     setProp(widget, ui.valueArc, "endAngle", a)
     if ui.needle then
-      lvgl.set(ui.needle, { pts = G.trianglePoints(L.cx, L.cy, L.needleInner,
-        L.needleOuter, L.needleHalf, a) })
-      lvgl.set(ui.tail, { pts = G.trianglePoints(L.cx, L.cy, L.needleInner,
-        L.tailOuter, max(1, floor(L.needleHalf * 0.7)), a + 180) })
+      lvgl.set(ui.needle, { pts = G.linePoints(L.cx, L.cy, L.needleInner,
+        L.needleOuter, a) })
+      lvgl.set(ui.tail, { pts = G.linePoints(L.cx, L.cy, L.needleInner,
+        L.tailOuter, a + 180) })
     end
   end
   if not frame.needleShown then
@@ -508,7 +553,12 @@ local function updatePulse(widget, key)
   if key ~= "critical" then
     if frame.pulse then
       frame.pulse = false
-      setProp(widget, ui.valueArc, "opacity", T.opacity.full)
+      -- Restore the opacity the NEW key calls for, not the full one: losing
+      -- the link while the pulse is in its trough must leave the gauge dim
+      -- (muted 120), not stuck at 255 until the next colour change
+      -- (AUDIT.md P1-1).
+      setProp(widget, ui.valueArc, "opacity",
+              (key == "muted") and T.opacity.muted or T.opacity.full)
     end
     return
   end
@@ -533,6 +583,10 @@ function M.updateSourceLabels(widget)
     setProp(widget, ui.scaleMin, "text", F.display(widget, widget.config.min))
     setProp(widget, ui.scaleMax, "text", F.display(widget, widget.config.max))
   end
+  -- This runs from app.update(), OUTSIDE the frame's refresh: flush the
+  -- queued writes here so a Name/Suffix edit reaches LVGL before the next
+  -- refresh (the cheap delta path of AUDIT.md P0-6).
+  M.flush(widget)
 end
 
 function M.update(widget)
@@ -551,6 +605,7 @@ function M.update(widget)
   updateHistory(widget)
   updatePulse(widget, key)
 
+  M.flush(widget)
   frame.prevAvail = widget.data.availability
 end
 

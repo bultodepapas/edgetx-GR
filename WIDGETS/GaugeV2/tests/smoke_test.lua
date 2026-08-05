@@ -196,6 +196,76 @@ test("a changed value writes only what changed", function()
   assertTrue(writes < 20, "only deltas, got " .. writes)
 end)
 
+test("P2-2: a state transition batches one lvgl.set per object", function()
+  -- Every lvgl.set is a full C++ getParams + refresh(); the audit measured
+  -- 14 of them in a single normal -> critical transition, over 6 objects,
+  -- because each property was sent separately. Dirty properties are now
+  -- queued per object and flushed in one call (AUDIT.md P2-2).
+  local w = newWidget({ x = 0, y = 0, w = 200, h = 160 },
+    { Source = ID_RSSI, Damping = 0 })
+  refresh(w, 2)
+  -- the value arc changes colour, opacity AND angle in the same frame
+  local before = w.ui.valueArc.setCount
+  mock.setValue(ID_RSSI, 10)          -- critical: colour + opacity + angle
+  refresh(w)
+  assertEq(w.ui.valueArc.setCount - before, 1,
+    "colour+opacity+endAngle must go out in ONE lvgl.set, not three")
+end)
+
+test("P2-3: the module table is shared between instances", function()
+  -- main.lua is evaluated once per radio and its upvalues are shared; every
+  -- instance used to load app.lua + 12 modules itself (13 loadScript calls
+  -- each). The app and its module table are now memoized (AUDIT.md P2-3).
+  setupRadio()
+  local realLoad = loadScript
+  local calls = 0
+  loadScript = function(path) calls = calls + 1 return realLoad(path) end
+  local ok, err = pcall(function()
+    local mod = dofile(widgetDir .. "main.lua")
+    local opts = mock.makeOptions(mod.defs, { Source = ID_RSSI })
+    local zone = { x = 0, y = 0, w = 200, h = 160 }
+    local w1 = mod.create(zone, opts, widgetDir)
+    mod.update(w1, opts)
+    local afterFirst = calls
+    assertTrue(afterFirst > 0, "the first instance loads the chunks")
+    local w2 = mod.create(zone, opts, widgetDir)
+    mod.update(w2, opts)
+    assertEq(calls - afterFirst, 0,
+      "a second instance must not reload any chunk, got "
+      .. (calls - afterFirst))
+    assertTrue(w1.mods == w2.mods, "instances share the module table")
+  end)
+  loadScript = realLoad
+  if not ok then error(err) end
+end)
+
+test("P2-4: re-resolving a sensor name hits the precision cache", function()
+  -- findSensor() used to scan all MAX_SENSORS on every source resolution,
+  -- building a fresh table per model.getSensor call (AUDIT.md P2-4). Hits
+  -- are now memoized and the modules are shared, so a second instance
+  -- resolving the same sensor must not rescan.
+  setupRadio()
+  local mod = dofile(widgetDir .. "main.lua")
+  local real = model.getSensor
+  local scans = 0
+  model.getSensor = function(i) scans = scans + 1 return real(i) end
+  local ok, err = pcall(function()
+    local opts = mock.makeOptions(mod.defs, { Source = ID_RSSI })
+    local zone = { x = 0, y = 0, w = 200, h = 160 }
+    local w1 = mod.create(zone, opts, widgetDir)
+    mod.update(w1, opts)
+    local afterFirst = scans
+    assertTrue(afterFirst > 0, "the first resolution scans the sensor table")
+    local w2 = mod.create(zone, opts, widgetDir)
+    mod.update(w2, opts)
+    assertEq(scans, afterFirst,
+      "re-resolving the same sensor must hit the cache, rescan="
+      .. (scans - afterFirst))
+  end)
+  model.getSensor = real
+  if not ok then error(err) end
+end)
+
 -- ---- the option contract in action ---------------------------------------
 
 test("colour mode is honoured (1.0 compared choices to strings)", function()
@@ -263,7 +333,11 @@ test("style choice controls the needle", function()
   assertEq(w.ui.needle, nil, "arc style has no needle")
   w = newWidget(nil, { Source = ID_RSSI, Style = "Needle" })
   assertTrue(w.ui.needle ~= nil, "needle style draws one")
-  assertEq(w.ui.needle.kind, "triangle", "tapered needle")
+  -- A line, not a triangle: LvglWidgetTriangle::refresh frees and rebuilds
+  -- the canvas on every angle change (~24 KB/frame of heap churn under
+  -- damping), while LvglWidgetLine::refresh only rewrites the points
+  -- (AUDIT.md P2-1).
+  assertEq(w.ui.needle.kind, "line", "needle must be a line, not a triangle")
 end)
 
 test("precision choice selects the decimals", function()
@@ -285,6 +359,19 @@ test("gradient mode produces a continuous colour", function()
   local high = w.ui.valueArc.props.color
   mock.setValue(ID_RSSI, 20); refresh(w, 2)
   assertTrue(w.ui.valueArc.props.color ~= high, "colour tracks the value")
+end)
+
+test("P1-5: gradient with Warn == Crit follows the state, not the red end", function()
+  -- Equal thresholds give the gradient ramp a zero span, so normalize() used
+  -- to pin EVERY value to the red end (grad0) - even one deep in the normal
+  -- band. A warn == crit configuration is a sharp cliff: the band colour
+  -- says which side the value is on.
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Gradient",
+                             Scale = "Manual", Warn = 50, Crit = 50 })
+  mock.setValue(ID_RSSI, 10); refresh(w, 2)
+  assertEq(w.frame.colorKey, "critical", "below the 50/50 cliff is critical")
+  mock.setValue(ID_RSSI, 90); refresh(w, 2)
+  assertEq(w.frame.colorKey, "normal", "above the 50/50 cliff is normal")
 end)
 
 -- ---- 2.11 compatibility --------------------------------------------------
@@ -314,6 +401,376 @@ test("Scale = Manual defeats presets on 2.12", function()
   assertEq(w.config.max, 8.4, "Auto prefers the preset")
 end)
 
+test("G-4: out-of-range thresholds do not leave the dial born critical", function()
+  -- Manual -120..0 dBm scale (the RSSI-in-dBm range the presets define) with
+  -- the 0..100 defaults Warn=55/Crit=35: both thresholds sit above Max=0, so
+  -- the old clamp collapsed them onto 0 and the whole dial was one critical
+  -- band with zero-width warning/normal bands.
+  local w = newWidget(nil, { Source = ID_STICK, Scale = "Manual",
+                             Min = -120, Max = 0, ColorMode = "Threshold" })
+  assertTrue(w.config.warn < 0 and w.config.crit < 0,
+    "thresholds derived into the range, got warn=" .. w.config.warn ..
+    " crit=" .. w.config.crit)
+  assertTrue(w.config.crit < w.config.warn,
+    "critical must stay below warning, got " .. w.config.crit .. "/" ..
+    w.config.warn)
+  assertTrue(w.ranges[1].from < w.ranges[1].to,
+    "the critical band has real width")
+
+  mock.setValue(ID_STICK, -20)      -- mid-normal on the derived scale
+  refresh(w, 2)
+  assertEq(w.frame.colorKey, "normal", "-20 dBm must not be critical")
+  mock.setValue(ID_STICK, -110)     -- deep in the noise floor
+  refresh(w, 2)
+  assertEq(w.frame.colorKey, "critical", "-110 dBm is critical")
+end)
+
+test("G-6: the value and unit stay inside the ring in balanced zones", function()
+  -- The value text lives inside the dial circle, whose clear interior at the
+  -- text band's height is a CHORD of the ring - narrower than the dial box.
+  -- Centring the value+unit group against the box width used to push the
+  -- unit (and wide values) onto the ring (AUDIT.md G-6).
+  local zones = {
+    { 60, 60 }, { 80, 60 }, { 100, 100 }, { 128, 96 }, { 160, 160 },
+    { 200, 160 }, { 200, 200 }, { 260, 220 },
+  }
+  for _, z in ipairs(zones) do
+    local zone = { x = 0, y = 0, w = z[1], h = z[2] }
+    local w = newWidget(zone, { Source = ID_RSSI })
+    refresh(w)
+    local L = w.layout
+    if L.orientation == "balanced" then
+      local clearR = L.radius - math.floor(L.trackThickness / 2)
+      local labels = { w.ui.valueLabel, w.ui.unitLabel }
+      for _, label in ipairs(labels) do
+        if label then
+          local p = label.props
+          local x1, y1 = p.x, p.y
+          local x2, y2 = x1 + (p.w or 0), y1 + (p.h or 0)
+          for _, c in ipairs({ { x1, y1 }, { x2, y1 }, { x1, y2 }, { x2, y2 } }) do
+            local dx, dy = c[1] - L.cx, c[2] - L.cy
+            assertTrue(dx * dx + dy * dy <= clearR * clearR,
+              string.format("%dx%d %q corner (%d,%d) outside the r=%d ring",
+                z[1], z[2], tostring(p.text), c[1], c[2], clearR))
+          end
+        end
+      end
+    end
+  end
+end)
+
+test("G-7: the min/max row stays inside the ring and off the scale labels", function()
+  -- In large balanced zones the min/max row hangs below the value INSIDE the
+  -- dial circle, competing for the same lower band as the scale end labels
+  -- and the history marks (AUDIT.md G-7). The row is clipped to the ring's
+  -- chord at its depth, so it must neither cross the ring nor touch the
+  -- "0"/"100" labels at the arc ends.
+  local zone = { x = 0, y = 0, w = 200, h = 200 }   -- large: scale labels on
+  local w = newWidget(zone, { Source = ID_RSSI, ShowMinMax = "Markers + text" })
+  mock.setValue(ID_RSSI_MIN, 31)
+  mock.setValue(ID_RSSI_MAX, 92)
+  refresh(w)
+  assertTrue(w.ui.minText ~= nil, "large zone shows the min/max text")
+  assertTrue(w.ui.scaleMin ~= nil, "scale end labels built")
+
+  local L = w.layout
+  local clearR = L.radius - math.floor(L.trackThickness / 2)
+  local function boxInside(label)
+    local p = label.props
+    local x1, y1 = p.x, p.y
+    local x2, y2 = x1 + (p.w or 0), y1 + (p.h or 0)
+    for _, c in ipairs({ { x1, y1 }, { x2, y1 }, { x1, y2 }, { x2, y2 } }) do
+      local dx, dy = c[1] - L.cx, c[2] - L.cy
+      assertTrue(dx * dx + dy * dy <= clearR * clearR,
+        string.format("%q corner (%d,%d) outside the r=%d ring",
+          tostring(p.text), c[1], c[2], clearR))
+    end
+  end
+  boxInside(w.ui.minText)
+  boxInside(w.ui.maxText)
+
+  local theme = w.mods.theme
+  local function ink(label)
+    local p = label.props
+    local tw = theme.textWidth(p.text or "", p.font)
+    local x = p.x
+    if p.align == CENTER then x = p.x + math.floor((p.w - tw) / 2)
+    elseif p.align == RIGHT then x = p.x + p.w - tw end
+    return { x1 = x, y1 = p.y, x2 = x + tw, y2 = p.y + (p.h or 0) }
+  end
+  local function overlap(a, b)
+    local ix = math.min(a.x2, b.x2) - math.max(a.x1, b.x1)
+    local iy = math.min(a.y2, b.y2) - math.max(a.y1, b.y1)
+    return ix > 0 and iy > 0
+  end
+  assertTrue(not overlap(ink(w.ui.minText), ink(w.ui.scaleMin)),
+    "min text must not overlap the lower scale label")
+  assertTrue(not overlap(ink(w.ui.maxText), ink(w.ui.scaleMax)),
+    "max text must not overlap the upper scale label")
+end)
+
+test("G-8: the scale end labels sit clear of their end ticks", function()
+  -- The old placement centred a fixed 30 px box on the point just past the
+  -- end tick, so the label's inner half retreated over the tick ("100" read
+  -- as "f00", AUDIT.md G-8). The box is now pushed outward along the radial
+  -- until its nearest corner sits past the tick's outer radius: every corner
+  -- of the label must therefore be farther from the dial centre than the
+  -- tick's outermost point.
+  local zone = { x = 0, y = 0, w = 200, h = 200 }   -- large, 270 deg default
+  local w = newWidget(zone, {})
+  refresh(w)
+  assertTrue(w.ui.scaleMin ~= nil, "scale end labels shown on large zones")
+  local L = w.layout
+  local function clearsTick(label)
+    local p = label.props
+    local minD2 = math.huge
+    local corners = {
+      { p.x, p.y }, { p.x + p.w, p.y },
+      { p.x, p.y + p.h }, { p.x + p.w, p.y + p.h },
+    }
+    for _, c in ipairs(corners) do
+      local d2 = (c[1] - L.cx) ^ 2 + (c[2] - L.cy) ^ 2
+      if d2 < minD2 then minD2 = d2 end
+    end
+    assertTrue(minD2 >= L.tickOuter ^ 2,
+      string.format("%q label must clear the end tick", tostring(p.text)))
+  end
+  clearsTick(w.ui.scaleMin)
+  clearsTick(w.ui.scaleMax)
+end)
+
+test("G-9: scale labels size their box to the text, not a fixed width", function()
+  -- The scale label box used a hard-coded 30 px width regardless of the
+  -- string, so "20000.00" was clipped to "2000" (AUDIT.md G-9). The box must
+  -- be exactly as wide as its measured text.
+  local w = newWidget({ x = 0, y = 0, w = 200, h = 200 },
+    { Scale = "Manual", Min = 0, Max = 20000, Precision = "2" })
+  refresh(w)
+  assertEq(w.ui.scaleMax.props.text, "20000.00",
+    "precision 2 must render both decimals on the label")
+  local maxP = w.ui.scaleMax.props
+  local expect = w.mods.theme.textWidth(maxP.text, maxP.font)
+  assertEq(maxP.w, expect,
+    "the max label box must be as wide as its text, not a fixed 30 px")
+  assertTrue(maxP.w > w.ui.scaleMin.props.w,
+    "a longer label gets a wider box")
+end)
+
+test("P1-2: a short bar keeps a real-height state row", function()
+  -- The state row below the bar used to be sized from the NAME font, which
+  -- the short-bar paths zeroed, so STALE/NO LINK/WARN/CRIT vanished from
+  -- exactly the zones where they matter most (AUDIT.md P1-2). The row must
+  -- be as tall as the state font in every short bar that can physically
+  -- hold it, and no visible label may have a degenerate box.
+  local heights = { 40, 44, 46, 50, 55, 60 }
+  for _, h in ipairs(heights) do
+    local w = newWidget({ x = 0, y = 0, w = 300, h = h },
+      { Source = ID_RSSI, Style = "Bar" })
+    local L = w.layout
+    assertEq(L.style, "bar", "a 300-wide strip is a bar")
+    assertTrue(not L.showState or L.stateBox.h > 0,
+      string.format("h=%d: a shown state must have height > 0, got %d",
+        h, L.stateBox.h))
+    if h >= 44 then
+      assertTrue(L.showState,
+        string.format("h=%d: the state must stay visible in a short bar", h))
+    end
+    for _, o in ipairs(mock.objects()) do
+      if o.visible and o.kind == "label" then
+        assertTrue(o.props.h > 0 and o.props.w > 0,
+          string.format("h=%d: visible label %q has a degenerate box",
+            h, tostring(o.props.text)))
+      end
+    end
+  end
+
+  -- the semantic payload: a critical value renders CRIT in a 44 px bar
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 44 },
+    { Source = ID_RSSI, Style = "Bar" })
+  assertTrue(w.ui.stateLabel ~= nil, "state label built at h=44")
+  mock.setValue(ID_RSSI, 10)
+  refresh(w, 2)
+  assertEq(w.frame.stateStr, "CRIT",
+    "the critical state must render in a 44 px bar")
+end)
+
+test("P1-11: low-is-good bars mark the warning boundary too", function()
+  -- On a low-is-good scale (normal -> warning -> critical) the warning
+  -- threshold is the `to` of the NORMAL band, which the old condition
+  -- skipped; a temperature bar drew 1 mark where the dial draws 2 rails
+  -- (AUDIT.md P1-11).
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_TEMP_T1, Style = "Bar", ColorMode = "Threshold" })
+  local marks = w.ui.marks
+  assertTrue(marks ~= nil, "threshold marks built")
+  assertEq(#marks, 2,
+    "low-is-good bar must mark the warning AND critical boundaries, got "
+    .. tostring(marks and #marks or 0) .. " mark(s)")
+  local L, cfg = w.layout, w.config
+  local function xAt(v)
+    local t = (v - cfg.min) / (cfg.max - cfg.min)
+    if t < 0 then t = 0 elseif t > 1 then t = 1 end
+    return L.bar.x + math.floor(L.bar.w * t + 0.5)
+  end
+  local xs = {}
+  for _, m in ipairs(marks) do xs[#xs + 1] = math.floor(m.props.pts[1][1]) end
+  assertTrue(xs[1] == xAt(cfg.warn) or xs[2] == xAt(cfg.warn),
+    "one mark must sit at the warning boundary")
+  assertTrue(xs[1] == xAt(cfg.crit) or xs[2] == xAt(cfg.crit),
+    "one mark must sit at the critical boundary")
+end)
+
+test("P1-10: the bar chips and pulses its state like the dial", function()
+  -- A bar used to signal critical only by the fill colour: no state chip and
+  -- no ~1 Hz pulse (AUDIT.md P1-10). Both are the dial's signalling and must
+  -- behave identically in bar zones.
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_RSSI, Style = "Bar" })
+  assertTrue(w.ui.chip ~= nil, "the bar builds a state chip")
+  assertTrue(objIndex(w.ui.stateLabel) > objIndex(w.ui.chip),
+    "the state text must paint on top of the chip")
+  mock.setValue(ID_RSSI, 10)          -- critical (crit=35)
+  refresh(w)
+  assertEq(w.frame.stateStr, "CRIT")
+  assertTrue(w.frame.chipShown, "the chip shows for CRIT")
+  local L = w.layout
+  assertEq(w.ui.chip.props.w,
+    w.mods.theme.textWidth("CRIT", L.stateFont) + L.chipPad * 2,
+    "the chip hugs the CRIT text")
+  assertEq(w.ui.chip.props.x + w.ui.chip.props.w,
+    L.stateBox.x + L.stateBox.w, "the chip is right-aligned to the state box")
+
+  -- pulse: the fill alternates pulse/full at ~1 Hz (50 * 10 ms ticks)
+  refresh(w, 10)     -- 500 ms: first toggle is due
+  assertTrue(w.frame.pulse, "critical pulses after 500 ms")
+  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.pulse,
+    "the pulse trough dims the fill")
+  refresh(w, 10)     -- another 500 ms: back to full
+  assertEq(w.frame.pulse, false)
+  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.full)
+end)
+
+test("P1-3: an elapsed timer fits its value box", function()
+  -- widestSample used to reserve "00:00:00" (8 chars); an elapsed timer
+  -- prints "-00:01:05" (9 chars) and wrapped inside the box, clipping the
+  -- leading digit (AUDIT.md P1-3). The sample now reserves the signed
+  -- width, so the box must hold the rendered string at the value font.
+  local w = newWidget({ x = 0, y = 0, w = 200, h = 200 }, { Source = ID_TIMER1 })
+  mock.setValue(ID_TIMER1, -65)
+  refresh(w)
+  local L = w.layout
+  assertEq(w.frame.valueStr, "-00:01:05")
+  local tw = w.mods.theme.textWidth(w.frame.valueStr, L.valueFont)
+  assertTrue(L.valueBox.w >= tw,
+    string.format("timer box %d must hold %d px of text", L.valueBox.w, tw))
+end)
+
+test("P1-4: an out-of-scale value fits its value box", function()
+  -- The value is deliberately not clamped to the scale, so it can be one
+  -- character wider than the range's widest string; the sample now reserves
+  -- that slack and the box must hold the rendered text (AUDIT.md P1-4).
+  local w = newWidget({ x = 0, y = 0, w = 200, h = 200 },
+    { Source = ID_RSSI, Scale = "Manual", Min = 0, Max = 100 })
+  mock.setValue(ID_RSSI, 1500)
+  refresh(w)
+  local L = w.layout
+  assertEq(w.frame.valueStr, "1500")
+  local tw = w.mods.theme.textWidth(w.frame.valueStr, L.valueFont)
+  assertTrue(L.valueBox.w >= tw,
+    string.format("value box %d must hold %d px of text", L.valueBox.w, tw))
+end)
+
+test("G-10: at 360 degrees the name stays inside the ring and off the value", function()
+  -- The 360 deg branch hangs the name under the value inside the circle; the
+  -- G-6 band repositioning lifted that pair clear of the ring, where the
+  -- name used to cross it (AUDIT.md G-10). Both must stay inside the clear
+  -- radius and not overlap each other.
+  local zone = { x = 0, y = 0, w = 200, h = 200 }
+  local w = newWidget(zone, { Source = ID_RSSI, Sweep = "360 deg" })
+  refresh(w)
+  local L = w.layout
+  assertTrue(w.ui.nameLabel ~= nil, "the name shows at 360 degrees")
+  assertTrue(not L.showScale, "no scale labels on a closed ring")
+  local clearR = L.radius - math.floor(L.trackThickness / 2)
+  local theme = w.mods.theme
+  local function ink(label)
+    local p = label.props
+    local tw = theme.textWidth(p.text or "", p.font)
+    local x = p.x
+    if p.align == CENTER then x = p.x + math.floor((p.w - tw) / 2)
+    elseif p.align == RIGHT then x = p.x + p.w - tw end
+    return { x1 = x, y1 = p.y, x2 = x + tw, y2 = p.y + (p.h or 0) }
+  end
+  local function inside(ib)
+    for _, c in ipairs({ { ib.x1, ib.y1 }, { ib.x2, ib.y1 },
+                         { ib.x1, ib.y2 }, { ib.x2, ib.y2 } }) do
+      local d2 = (c[1] - L.cx) ^ 2 + (c[2] - L.cy) ^ 2
+      assertTrue(d2 <= clearR ^ 2,
+        string.format("text corner (%d,%d) outside the r=%d ring",
+          c[1], c[2], clearR))
+    end
+  end
+  inside(ink(w.ui.valueLabel))
+  inside(ink(w.ui.nameLabel))
+  local vi, ni = ink(w.ui.valueLabel), ink(w.ui.nameLabel)
+  assertTrue(not (math.min(vi.x2, ni.x2) > math.max(vi.x1, ni.x1)
+    and math.min(vi.y2, ni.y2) > math.max(vi.y1, ni.y1)),
+    "name and value must not overlap at 360 degrees")
+end)
+
+test("G-13: a wide horizontal zone grows the dial to the full height", function()
+  -- The horizontal branch used to cap the dial at half the zone width
+  -- (`min(w*0.5, h)`), stranding up to ~73 % of a 480x272 zone empty; the
+  -- dial now takes the full height and leaves the text column only the
+  -- width it needs (AUDIT.md G-13).
+  local zone = { x = 0, y = 0, w = 480, h = 272 }
+  local w = newWidget(zone, { Source = ID_RSSI })
+  local L = w.layout
+  assertEq(L.orientation, "horizontal")
+  local ringD = (L.radius + math.floor(L.trackThickness / 2)) * 2
+  assertTrue(ringD > math.floor(math.min(zone.w, zone.h) * 0.8),
+    string.format("the ring (%d) must use most of the short side (272)", ringD))
+  local theme = w.mods.theme
+  local p = w.ui.valueLabel.props
+  assertTrue(theme.textWidth(tostring(p.text), p.font) <= p.w,
+    "the value must fit the (narrower) text column")
+end)
+
+test("G-11: at 180 degrees both scale labels clear their end ticks", function()
+  -- The 180 deg arc ends at 9/3 o'clock, exactly at the extreme marks; on a
+  -- zone just wide enough for the dial, the zone clamp used to pull the max
+  -- label back over its tick ("100" crossed by a line). The label now slides
+  -- along the tangent to clear it (AUDIT.md G-11).
+  local w = newWidget({ x = 0, y = 0, w = 200, h = 200 },
+    { Source = ID_RSSI, Sweep = "180 deg" })
+  refresh(w)
+  local theme = w.mods.theme
+  local function ink(label)
+    local p = label.props
+    local tw = theme.textWidth(p.text or "", p.font)
+    local x = p.x
+    if p.align == CENTER then x = p.x + math.floor((p.w - tw) / 2)
+    elseif p.align == RIGHT then x = p.x + p.w - tw end
+    return { x1 = x, y1 = p.y, x2 = x + tw, y2 = p.y + (p.h or 0) }
+  end
+  local function tickCrossesLabel(tick, lb)
+    local pts = tick.props.pts
+    for t = 0, 1, 0.05 do
+      local x = pts[1][1] + (pts[2][1] - pts[1][1]) * t
+      local y = pts[1][2] + (pts[2][2] - pts[1][2]) * t
+      if x >= lb.x1 and x <= lb.x2 and y >= lb.y1 and y <= lb.y2 then
+        return true
+      end
+    end
+    return false
+  end
+  local ticks = w.ui.ticks
+  assertTrue(not tickCrossesLabel(ticks[1], ink(w.ui.scaleMin)),
+    "the min scale label must clear its end tick at 180 deg")
+  assertTrue(not tickCrossesLabel(ticks[#ticks], ink(w.ui.scaleMax)),
+    "the max scale label must clear its end tick at 180 deg")
+end)
+
 -- ---- telemetry -----------------------------------------------------------
 
 test("T1 is a temperature sensor, not a timer", function()
@@ -339,6 +796,20 @@ test("an elapsed timer colours the gauge warning", function()
   refresh(w)
   assertEq(w.frame.valueStr, "-00:00:12")
   assertEq(w.frame.colorKey, "warning")
+end)
+
+test("G-3: an elapsed timer says WARN, not CRIT in warning colour", function()
+  -- A negative timer value is below the 0..100 default scale, so data.state
+  -- is "critical" - but colorKey classifies an elapsed countdown as warning
+  -- (the official Value widget behaviour). stateText must follow colorKey:
+  -- a CRIT chip painted amber is the worst of both worlds.
+  local w = newWidget(nil, { Source = ID_TIMER1 })
+  mock.setValue(ID_TIMER1, -12)
+  refresh(w)
+  assertEq(w.data.state, "critical", "the raw state is critical (below scale min)")
+  assertEq(w.frame.stateStr, "WARN", "the chip says what the arc paints")
+  assertEq(w.ui.stateLabel.props.color, COLOR_THEME_WARNING)
+  assertEq(w.ui.chip.visible, true, "the chip is shown for the warning")
 end)
 
 test("cell tables aggregate by the chosen mode", function()
@@ -567,6 +1038,27 @@ test("no data states are distinguished", function()
   assertEq(w.data.availability, "disconnected")
   assertEq(w.frame.stateStr, "NO LINK")
   assertEq(w.frame.colorKey, "muted")
+end)
+
+test("P1-1: losing the link mid-pulse leaves the gauge muted, not at full", function()
+  -- The pulse toggles the arc between pulse (150) and full (255). Losing the
+  -- link while the pulse is in its TROUGH used to make updatePulse() restore
+  -- T.opacity.full over the muted 120 that applyColors() had just set - a
+  -- dimmed gauge stuck at full opacity until the next colour change.
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold" })
+  mock.setValue(ID_RSSI, 10)          -- critical band
+  refresh(w)
+  mock.advance(6000)                  -- >= 500 ticks: pulse enters its trough
+  w.mod.refresh(w)
+  assertTrue(w.frame.pulse, "in the pulse trough")
+  assertEq(w.ui.valueArc.props.opacity, w.mods.theme.opacity.pulse)
+
+  mock.setValue(ID_RSSI, nil)
+  mock.sim.rssi = 0                   -- link down while the pulse is low
+  refresh(w)
+  assertEq(w.frame.colorKey, "muted")
+  assertEq(w.ui.valueArc.props.opacity, w.mods.theme.opacity.muted,
+    "the muted gauge must stay dim, not snap to full opacity")
 end)
 
 test("the needle hides and snaps back on reconnect", function()
