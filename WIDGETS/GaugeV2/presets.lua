@@ -52,9 +52,14 @@ local PRESETS = {
     minimum = 6, maximum = 8.4, warning = 6.8, critical = 6.4, highIsGood = true,
   },
   {
+    -- cellsTable: getSourceValue() returns one entry PER CELL for this
+    -- sensor (api_general.cpp luaPushCells), unlike RxBt/VFAS above which is
+    -- a single pack-total reading. The pack-range rescale in app.lua only
+    -- makes sense for a value that IS the pack total (AUDIT.md P1-6) -
+    -- Lowest and Average stay single-cell magnitude regardless of pack size.
     names = { "Cell", "Cells", "Cels", "Cel#" },
     minimum = 3.0, maximum = 4.2, warning = 3.7, critical = 3.5,
-    highIsGood = true, battery = true,
+    highIsGood = true, battery = true, cellsTable = true,
   },
   {
     names = { "Tmp", "Temp", "Temperature", "Tmp1", "Tmp2", "TFET", "TBEC" },
@@ -138,7 +143,20 @@ function M.find(source)
       local p = PRESETS[i]
       if p.units then
         for j = 1, #p.units do
-          if p.units[j] == source.unit then return p end
+          if p.units[j] == source.unit then
+            if not p.battery then return p end
+            -- Battery/cell detection is only trustworthy from an exact NAME
+            -- match: matching by unit alone (any unlabelled Volt sensor)
+            -- must not inherit it, or an unrelated voltage sensor (a BEC, a
+            -- servo rail) permanently latches a cell count and gets
+            -- rescaled to a battery pack range it has nothing to do with
+            -- (AUDIT.md P1-7).
+            local copy = {}
+            for k, v in pairs(p) do copy[k] = v end
+            copy.battery = nil
+            copy.cellsTable = nil
+            return copy
+          end
         end
       end
     end

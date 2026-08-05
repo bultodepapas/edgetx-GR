@@ -193,6 +193,8 @@ local sim = {
   fields = {},               -- id -> { id, name, unit }
   byName = {},               -- name -> id
   sensors = {},              -- index -> { name, prec, unit }
+  switches = {},             -- swsrc_t -> boolean, distinct from `values`
+  sensorResets = {},         -- model.resetSensor(i) call log
   tones = {},
   haptics = {},
 }
@@ -208,8 +210,18 @@ function M.reset()
   sim.fields = {}
   sim.byName = {}
   sim.sensors = {}
+  sim.switches = {}
+  sim.sensorResets = {}
   sim.tones = {}
   sim.haptics = {}
+end
+
+-- Set a SWITCH option's simulated state. Deliberately a separate store from
+-- setValue()/sim.values: getSwitchValue() and getValue() read different id
+-- spaces on real firmware (a swsrc_t vs a MIXSRC id), and code that confuses
+-- the two (AUDIT.md P0-1) must fail here too.
+function M.setSwitch(id, active)
+  sim.switches[id] = active and true or false
 end
 
 -- Register a source in the simulated radio.
@@ -349,6 +361,9 @@ local function install(env)
     return v, cur, fr
   end
   env.getValue = function(id) return sim.values[id] end
+  -- Distinct id space and store from getValue()/sim.values, deliberately:
+  -- see the M.setSwitch comment.
+  env.getSwitchValue = function(id) return sim.switches[id] or false end
 
   env.getFieldInfo = function(idOrName)
     if type(idOrName) == "string" then
@@ -365,6 +380,20 @@ local function install(env)
 
   env.model = {
     getSensor = function(i) return sim.sensors[i] end,
+    -- Records the call (assertable via sim.sensorResets) and mirrors
+    -- TelemetryItem::clear() (telemetry_sensors.h): the sensor and its
+    -- -/+ siblings read back unavailable until the next sample lands.
+    resetSensor = function(i)
+      sim.sensorResets[#sim.sensorResets + 1] = i
+      local sn = sim.sensors[i]
+      if not sn then return end
+      for id, f in pairs(sim.fields) do
+        if f.name == sn.name or f.name == sn.name .. "-"
+           or f.name == sn.name .. "+" then
+          sim.values[id] = nil
+        end
+      end
+    end,
   }
 
   env.playTone = function(f, len, pause)

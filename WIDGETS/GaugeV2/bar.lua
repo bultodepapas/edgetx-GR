@@ -44,22 +44,30 @@ function M.build(widget)
     opacity = T.opacity.rail,
   }
 
-  -- threshold marks on the track, the linear equivalent of the dial's rail
+  -- The fill is created BEFORE the threshold marks so the marks paint on top
+  -- of it, not under it: a mark sitting inside the filled portion of the bar
+  -- must stay visible there too (AUDIT.md G-12) - that is exactly the
+  -- moment a value approaching a threshold most needs the reference line.
+  ui.fill = lvgl.rectangle{
+    x = b.x, y = b.y, w = 1, h = b.h,
+    color = T.color.accent, filled = 1, rounded = L.barRadius,
+  }
+
+  -- threshold marks on the track, the linear equivalent of the dial's rail.
+  -- Compare the NORMALISED position, not the raw value against cfg.min/max:
+  -- on a descending scale (Min > Max) `r.to > cfg.min and r.to < cfg.max` is
+  -- never true, so every mark silently vanished (AUDIT.md P0-3).
   if cfg.colorMode ~= R.COLOR_STATIC then
     ui.marks = {}
     for i = 1, #widget.ranges do
       local r = widget.ranges[i]
-      if r.role ~= "normal" and r.to > cfg.min and r.to < cfg.max then
+      local t = G.normalize(r.to, cfg.min, cfg.max)
+      if r.role ~= "normal" and t > 0 and t < 1 then
         ui.marks[#ui.marks + 1] = vline(markX(widget, r.to), b.y, b.h,
           L.markThickness, T.stateColor(r.role, widget.accent))
       end
     end
   end
-
-  ui.fill = lvgl.rectangle{
-    x = b.x, y = b.y, w = 1, h = b.h,
-    color = T.color.accent, filled = 1, rounded = L.barRadius,
-  }
 
   if L.showGhost then
     ui.ghost = vline(b.x, b.y - T.px(2), b.h + T.px(4), L.markThickness,

@@ -76,19 +76,22 @@ local function isTimerSource(id, name, isTelemetry)
   return string.sub(name, 1, 5) == "timer" or name == "tx-time"
 end
 
--- Sensor precision is not exposed by getFieldInfo; look it up once through
--- the model sensor table. MAX_SENSORS is exposed to Lua (40/60/99 depending
--- on the target) - scanning a hard-coded 32 misses sensors on big radios.
-local function sensorPrecision(name)
+-- Sensor precision AND index are not exposed by getFieldInfo; look them up
+-- once, together, through the model sensor table. MAX_SENSORS is exposed to
+-- Lua (40/60/99 depending on the target) - scanning a hard-coded 32 misses
+-- sensors on big radios. The index (0-based, the same space as
+-- model.getSensor(i)) is what model.resetSensor(sensor) expects - it is NOT
+-- a MIXSRC id.
+local function findSensor(name)
   if type(model) ~= "table" or type(model.getSensor) ~= "function" then
-    return nil
+    return nil, nil
   end
   local count = tonumber(MAX_SENSORS) or 60
   for i = 0, count - 1 do
     local sn = model.getSensor(i)
-    if sn and sn.name == name then return sn.prec end
+    if sn and sn.name == name then return sn.prec, i end
   end
-  return nil
+  return nil, nil
 end
 
 -- Resolve and cache source metadata. Only does work when the source changed.
@@ -103,6 +106,7 @@ function M.resolveSource(widget)
   s.isTelemetry = false
   s.isTimer = false
   s.prec = nil
+  s.sensorIndex = nil
   s.minId = nil
   s.maxId = nil
   s.cells = nil
@@ -119,7 +123,7 @@ function M.resolveSource(widget)
       s.isTelemetry = (info.unit ~= nil)
       s.isTimer = isTimerSource(id, s.name, s.isTelemetry)
       if s.isTelemetry then
-        s.prec = sensorPrecision(s.name)
+        s.prec, s.sensorIndex = findSensor(s.name)
         -- the radio already tracks per-sensor min/max as sibling sources
         local lo = getFieldInfo(s.name .. "-")
         local hi = getFieldInfo(s.name .. "+")
@@ -172,17 +176,36 @@ local function latchCells(widget, value)
 end
 M.latchCells = latchCells
 
+-- Returns true only when at least one sibling actually produced a number:
+-- both ids can resolve yet read nil for a while (sensor just appeared, no
+-- samples yet), and treating that as success permanently disables the
+-- trackHistory() fallback below (AUDIT.md P1-9).
 local function readHistorySiblings(widget)
   local s, h = widget.source, widget.history
   if not s.minId and not s.maxId then return false end
   local lo = s.minId and getSourceValue(s.minId) or nil
   local hi = s.maxId and getSourceValue(s.maxId) or nil
-  if type(lo) == "number" then h.min = lo end
-  if type(hi) == "number" then h.max = hi end
-  return true
+  local gotAny = false
+  if type(lo) == "number" then h.min = lo; gotAny = true end
+  if type(hi) == "number" then h.max = hi; gotAny = true end
+  return gotAny
 end
 
--- Fallback tracker: only reached when the source has no sibling sensors.
+-- The radio's <name>-/<name>+ siblings track the RAW per-item sensor value.
+-- That is only the same quantity as the displayed value when neither
+-- transform below is active; otherwise the units silently mismatch (a
+-- percentage dial with volt history, or a pack total with a per-cell
+-- extreme) - api_general.cpp documents Cels+/Cels- as always a single
+-- cell's value, never the pack total or average (AUDIT.md P0-7).
+local function historyTrustworthy(cfg, wasCells)
+  if cfg.battery and cfg.battery ~= M.BATTERY_OFF then return false end
+  if wasCells and cfg.cells ~= M.CELLS_LOWEST then return false end
+  return true
+end
+M.historyTrustworthy = historyTrustworthy
+
+-- Fallback tracker: reached whenever the sibling history cannot be trusted
+-- for this reading's units, not only when the source has no sibling sensors.
 local function trackHistory(widget, value)
   local h = widget.history
   if h.min == nil then
@@ -219,7 +242,9 @@ function M.refresh(widget)
     return
   end
 
+  local wasCells = false
   if type(value) == "table" then
+    wasCells = true
     local aggregate, count = aggregateCells(value, cfg.cells or M.CELLS_LOWEST)
     if aggregate == nil then
       -- non-numeric tables (GPS, date/time) are not gauge readings
@@ -269,7 +294,8 @@ function M.refresh(widget)
   data.state = widget.mods.ranges.determineState(value, widget.ranges, prev,
                                                  widget.deadband)
 
-  if not readHistorySiblings(widget) then
+  local trusted = historyTrustworthy(cfg, wasCells) and readHistorySiblings(widget)
+  if not trusted then
     trackHistory(widget, value)
   end
 end

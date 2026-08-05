@@ -27,7 +27,7 @@
 
 local M = {}
 
-local floor, max = math.floor, math.max
+local floor, min, max = math.floor, math.min, math.max
 
 local T, G, F  -- theme, geometry, format
 
@@ -72,36 +72,58 @@ local function angleOf(widget, value)
 end
 M.angleOf = angleOf
 
+-- Ordered (lo, hi) angle span for a band. Bands are always ascending in
+-- VALUE space (ranges.build), but a descending scale (Min > Max) mirrors the
+-- value->angle mapping (geometry.normalize), so angleOf(r.from) can come out
+-- above angleOf(r.to). Sorting here, rather than assuming a2 > a1, is what
+-- keeps sections/rails/marks visible on a descending scale (AUDIT.md P0-3).
+local function bandSpan(widget, r)
+  local a1, a2 = angleOf(widget, r.from), angleOf(widget, r.to)
+  if a1 > a2 then a1, a2 = a2, a1 end
+  return a1, a2
+end
+M.bandSpan = bandSpan
+
 -- ----------------------------------------------------------------- build --
 
 local function buildTrack(widget)
   local ui, L, cfg = widget.ui, widget.layout, widget.config
-  local endA = L.startAngle + L.sweep
+  -- Same clamp as angleOf(): lv_arc_set_bg_end_angle only subtracts 360 once
+  -- (270 + 360 = 630 -> 270, equal to bgStartAngle), and LVGL skips drawing a
+  -- zero-length arc entirely, so a full ring's background track never
+  -- rendered without this (AUDIT.md P0-4).
+  local endA = L.startAngle + L.sweep - ((L.sweep >= 360) and 1 or 0)
+  ui.track = lvgl.arc{
+    x = L.cx, y = L.cy, radius = L.radius,
+    startAngle = L.startAngle, endAngle = endA,
+    bgStartAngle = L.startAngle, bgEndAngle = endA,
+    color = T.color.rail, bgColor = T.color.rail,
+    bgOpacity = T.opacity.rail, opacity = 0,
+    thickness = L.trackThickness, rounded = 1,
+  }
+
+  -- Sections: the whole scale as three coloured bands on the OUTER ring -
+  -- the same position/opacity model as the Rail mode below - so the bands
+  -- stay clearly visible regardless of where the value arc currently sits.
+  -- Drawing them at the value arc's own radius/thickness put them directly
+  -- underneath it at 25% opacity, which made Sections pixel-identical to
+  -- Static at any value inside the normal band (AUDIT.md G-2).
   if cfg.colorMode == M.COLOR_SECTIONS then
     ui.sections = {}
     for i = 1, #widget.ranges do
       local r = widget.ranges[i]
-      local a1, a2 = angleOf(widget, r.from), angleOf(widget, r.to)
+      local a1, a2 = bandSpan(widget, r)
       if a2 > a1 then
         local c = T.stateColor(r.role, widget.accent)
         ui.sections[#ui.sections + 1] = lvgl.arc{
-          x = L.cx, y = L.cy, radius = L.radius,
+          x = L.cx, y = L.cy, radius = L.railRadius,
           startAngle = a1, endAngle = a2,
           bgStartAngle = a1, bgEndAngle = a2,
-          color = c, bgColor = c, bgOpacity = T.opacity.rail, opacity = 0,
-          thickness = L.trackThickness, rounded = 0,
+          color = c, bgColor = c, bgOpacity = 255, opacity = 0,
+          thickness = L.railThickness, rounded = 0,
         }
       end
     end
-  else
-    ui.track = lvgl.arc{
-      x = L.cx, y = L.cy, radius = L.radius,
-      startAngle = L.startAngle, endAngle = endA,
-      bgStartAngle = L.startAngle, bgEndAngle = endA,
-      color = T.color.rail, bgColor = T.color.rail,
-      bgOpacity = T.opacity.rail, opacity = 0,
-      thickness = L.trackThickness, rounded = 1,
-    }
   end
 
   -- threshold rail: a thin permanent reminder of where the bands are, drawn
@@ -111,7 +133,7 @@ local function buildTrack(widget)
     for i = 1, #widget.ranges do
       local r = widget.ranges[i]
       if r.role ~= "normal" then
-        local a1, a2 = angleOf(widget, r.from), angleOf(widget, r.to)
+        local a1, a2 = bandSpan(widget, r)
         if a2 > a1 then
           local c = T.stateColor(r.role, widget.accent)
           ui.rails[#ui.rails + 1] = lvgl.arc{

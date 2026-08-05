@@ -108,8 +108,14 @@ local function configure(widget)
       warning, critical = preset.warning, preset.critical
       highGood = preset.highIsGood
       -- a pack voltage scale only means something once the cell count is
-      -- known; until then keep the single-cell preset
-      if preset.battery and src.cells and src.cells > 1 then
+      -- known; until then keep the single-cell preset. And only for a
+      -- reading that IS the pack total: a `cellsTable` source (Cels) showing
+      -- Lowest or Average is still single-cell magnitude no matter how many
+      -- cells were detected - rescaling it to the pack range would clamp it
+      -- permanently near the bottom of the dial (AUDIT.md P1-6).
+      local wantsPackRange = not preset.cellsTable
+        or cfg.cells == m.telemetry.CELLS_TOTAL
+      if preset.battery and src.cells and src.cells > 1 and wantsPackRange then
         local pack = m.presets.packRange(src.cells, "lipo")
         minimum, maximum = pack.minimum, pack.maximum
         warning, critical = pack.warning, pack.critical
@@ -147,15 +153,26 @@ local function configure(widget)
 
   local rangeSig = table.concat({ cfg.min, cfg.max, cfg.warn, cfg.crit,
                                   cfg.highGood and 1 or 0, cfg.precision }, ":")
-  if rangeSig ~= widget.rangeSig then
+  -- Battery mode and the Cells aggregation mode change which UNIT the
+  -- displayed value is in without necessarily changing cfg.min/max (e.g.
+  -- Lowest -> Total on a Cels source keeps the same pack-range scale), so
+  -- rangeSig alone would miss it and leave stale per-cell-volt history mixed
+  -- with pack-total readings (AUDIT.md P0-7).
+  local historySig = tostring(cfg.battery) .. ":" .. tostring(cfg.cells)
+  if rangeSig ~= widget.rangeSig or historySig ~= widget.historySig then
     widget.rangeSig = rangeSig
+    widget.historySig = historySig
     m.telemetry.resetHistory(widget)
     m.smoothing.reset(widget)
   end
 
   local L = m.layout.calculate(widget, cfg)
   widget.layout = L
+  -- rangeSig is included so a range edit (min/max/warn/crit/precision, or the
+  -- battery cell latch) rebuilds everything derived from it at BUILD time:
+  -- section/rail arcs, bar threshold marks, scale end labels (AUDIT.md P0-2).
   local sig = m.layout.signature(L, cfg) .. ":" .. widget.unitText
+    .. ":" .. widget.rangeSig
   if sig ~= widget.layoutSig then
     widget.layoutSig = sig
     widget.layoutRebuilt = true
@@ -189,6 +206,7 @@ function M.update(widget, options)
     widget.data.lastValue = nil   -- never show a new source's old data
     widget.data.state = nil
     src.cells = nil
+    widget.cellsApplied = nil   -- let the NEW source's cell count re-latch
     m.telemetry.resetHistory(widget)
     m.smoothing.reset(widget)
     m.alerts.reset(widget)
@@ -197,18 +215,37 @@ function M.update(widget, options)
 
   widget.layoutRebuilt = false
   configure(widget)
-  if widget.sourceChanged and not widget.layoutRebuilt then
+  -- Unconditional (not just on a source change): a Name/Suffix option edit
+  -- must reach the screen too, and this is the cheap delta path for it
+  -- (AUDIT.md P0-6). A rebuild already painted the current text, so skip it
+  -- there. setProp() no-ops when the string is unchanged, so this call is
+  -- free on the common "nothing changed" update.
+  if not widget.layoutRebuilt then
     painter(widget).updateSourceLabels(widget)
   end
   widget.sourceChanged = false
 end
 
+-- A SWITCH option is a swsrc_t, read with getSwitchValue() (AUDIT.md P0-1),
+-- never getValue(). Unlike the alert switch, a misread here must NOT trigger
+-- a reset, so any failure to read leaves resetArmed unchanged (no edge).
 local function checkResetSwitch(widget)
   local sw = widget.config.resetSw
   if not sw or sw == 0 then return end
-  local ok, value = pcall(getValue, sw)
-  local active = ok and (tonumber(value) or 0) > 0
+  if type(getSwitchValue) ~= "function" then return end
+  local ok, value = pcall(getSwitchValue, sw)
+  if not ok then return end
+  local active = (value == true)
   if active and not widget.resetArmed then
+    local idx = widget.source.sensorIndex
+    if idx and type(model) == "table" and type(model.resetSensor) == "function" then
+      -- For a real telemetry sensor, resetHistory() alone is undone within
+      -- THIS SAME refresh(): telemetry.refresh() calls readHistorySiblings()
+      -- right after, which reads the radio's own <name>-/<name>+ sources
+      -- straight back, unreset (AUDIT.md P1-8). model.resetSensor() is the
+      -- same primitive the official "Reset telemetry" action uses.
+      model.resetSensor(idx)
+    end
     widget.mods.telemetry.resetHistory(widget)
   end
   widget.resetArmed = active

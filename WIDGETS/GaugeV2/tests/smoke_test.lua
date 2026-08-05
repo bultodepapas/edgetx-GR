@@ -38,6 +38,7 @@ end
 local ID_RSSI, ID_CELLS, ID_TEMP_T1, ID_TIMER1, ID_STICK, ID_RXBT =
   3072, 3075, 3078, 200, 100, 3081
 local ID_RSSI_MIN, ID_RSSI_MAX = 3073, 3074
+local ID_RXBT_MIN, ID_RXBT_MAX = 3082, 3083
 
 local function setupRadio()
   mock.reset()
@@ -48,6 +49,8 @@ local function setupRadio()
   mock.addField(ID_CELLS, "Cels", 1)
   mock.addField(ID_TEMP_T1, "T1", 11)
   mock.addField(ID_RXBT, "RxBt", 1)
+  mock.addField(ID_RXBT_MIN, "RxBt-", 1)
+  mock.addField(ID_RXBT_MAX, "RxBt+", 1)
   mock.addField(ID_TIMER1, "timer1")     -- no unit: not a telemetry source
   mock.addField(ID_STICK, "Thr")
   mock.sim.sensors[0] = { name = "RSSI", prec = 0, unit = 17 }
@@ -75,6 +78,14 @@ local function refresh(widget, times)
     mock.advance(50)
     widget.mod.refresh(widget)
   end
+end
+
+-- Creation order of an object, matching LVGL's paint order (later = on top).
+local function objIndex(obj)
+  for i, o in ipairs(mock.objects()) do
+    if o == obj then return i end
+  end
+  return nil
 end
 
 -- ---- option contract -----------------------------------------------------
@@ -198,6 +209,43 @@ test("colour mode is honoured (1.0 compared choices to strings)", function()
              "rail marks the warning and critical bands")
 end)
 
+test("G-2: Sections bands sit outside the value arc, at full opacity", function()
+  -- Sharing the value arc's own radius/thickness at 25% opacity put the
+  -- bands directly underneath it, invisible at any value inside the normal
+  -- band - pixel-identical to Static. They must use the outer (rail) radius
+  -- and paint at full opacity, the same model as the working Rail mode.
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Sections" })
+  assertTrue(w.ui.track ~= nil, "a plain background track is still built")
+  for _, s in ipairs(w.ui.sections) do
+    assertEq(s.props.radius, w.layout.railRadius, "sections use the rail radius")
+    assertTrue(s.props.radius ~= w.ui.track.props.radius,
+      "sections must not share the value arc's own radius")
+    assertEq(s.props.bgOpacity, 255, "sections must be fully opaque")
+  end
+end)
+
+test("P0-3: a descending scale still draws sections, rails and bar marks", function()
+  -- Min > Max mirrors the value->angle mapping (geometry.normalize), so the
+  -- angle of a band's `from` can land above the angle of its `to`; comparing
+  -- angleOf(from) < angleOf(to), or the raw value against cfg.min/max on the
+  -- bar, silently drops every band on a descending scale.
+  local w = newWidget(nil, { Source = ID_STICK, Scale = "Manual",
+                             Min = 100, Max = 0, ColorMode = "Sections" })
+  assertTrue(w.ui.sections ~= nil and #w.ui.sections >= 2,
+             "descending scale must still build section arcs")
+
+  w = newWidget(nil, { Source = ID_STICK, Scale = "Manual",
+                       Min = 100, Max = 0, ColorMode = "Rail" })
+  assertTrue(w.ui.rails ~= nil and #w.ui.rails >= 1,
+             "descending scale must still build rail arcs")
+
+  w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+                { Source = ID_STICK, Scale = "Manual", Min = 100, Max = 0,
+                  Style = "Bar", ColorMode = "Threshold" })
+  assertTrue(w.ui.marks ~= nil and #w.ui.marks >= 1,
+             "descending scale must still build bar threshold marks")
+end)
+
 test("threshold colouring reaches the objects", function()
   local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold" })
   mock.setValue(ID_RSSI, 70); refresh(w)
@@ -315,6 +363,29 @@ test("cell tables aggregate by the chosen mode", function()
   assertEq(w.frame.valueStr, "3.98", "average cell")
 end)
 
+test("P1-6: only Cells=Total switches a Cels source to the pack-range scale", function()
+  local cells = { 4.10, 4.05, 4.00, 3.95 }   -- a 4S pack, all in Auto/default
+
+  local wLowest = newWidget(nil, { Source = ID_CELLS, Cells = "Lowest" })
+  mock.setValue(ID_CELLS, cells); refresh(wLowest, 2)
+  assertEq(wLowest.source.cells, 4, "cell count still detected")
+  assertTrue(wLowest.config.max < 5,
+    "Lowest must stay on the single-cell preset scale, got max=" ..
+    tostring(wLowest.config.max))
+  assertTrue(tonumber(wLowest.frame.valueStr) > wLowest.config.min,
+    "the lowest cell (3.95) must not be clamped to the bottom of the dial")
+
+  local wAvg = newWidget(nil, { Source = ID_CELLS, Cells = "Average" })
+  mock.setValue(ID_CELLS, cells); refresh(wAvg, 2)
+  assertTrue(wAvg.config.max < 5, "Average must also stay single-cell scale")
+
+  local wTotal = newWidget(nil, { Source = ID_CELLS, Cells = "Total" })
+  mock.setValue(ID_CELLS, cells); refresh(wTotal, 2)
+  assertTrue(wTotal.config.max > 10,
+    "Total must switch to the pack-range scale, got max=" ..
+    tostring(wTotal.config.max))
+end)
+
 test("a 4S pack on a voltage source scales the dial", function()
   local w = newWidget(nil, { Source = ID_RXBT })
   assertEq(w.config.max, 8.4, "single cell preset before any reading")
@@ -323,6 +394,63 @@ test("a 4S pack on a voltage source scales the dial", function()
   assertEq(w.source.cells, 4, "cell count latched")
   assertTrue(w.config.max > 16, "scale rebuilt for the pack, got " ..
              tostring(w.config.max))
+end)
+
+test("P0-2: the cell latch rebuilds sections, rails and scale labels", function()
+  local zone = { x = 0, y = 0, w = 260, h = 220 }   -- large: scale labels shown
+  local w = newWidget(zone, { Source = ID_RXBT, ColorMode = "Sections" })
+  local before = {}
+  for i, s in ipairs(w.ui.sections) do
+    before[i] = s.props.startAngle .. "-" .. s.props.endAngle
+  end
+  local scaleMaxBefore = w.ui.scaleMax.props.text
+
+  mock.setValue(ID_RXBT, 16.4)
+  refresh(w, 2)
+  assertTrue(w.config.max > 16, "scale rebuilt for the pack")
+
+  local moved = false
+  for i, s in ipairs(w.ui.sections) do
+    if before[i] ~= (s.props.startAngle .. "-" .. s.props.endAngle) then
+      moved = true
+    end
+  end
+  assertTrue(moved, "section angles must follow the new scale, not the old one")
+  assertTrue(w.ui.scaleMax.props.text ~= scaleMaxBefore,
+    "scale label must reprint for the new max, got " .. w.ui.scaleMax.props.text)
+  assertEq(w.ui.scaleMax.props.text, "16.80", "4S pack max at RxBt's precision (2)")
+
+  -- rail mode: same story
+  local wr = newWidget(zone, { Source = ID_RXBT, ColorMode = "Rail" })
+  local railBefore = wr.ui.rails[1].props.startAngle .. "-" .. wr.ui.rails[1].props.endAngle
+  mock.setValue(ID_RXBT, 16.4)
+  refresh(wr, 2)
+  local railAfter = wr.ui.rails[1].props.startAngle .. "-" .. wr.ui.rails[1].props.endAngle
+  assertTrue(railBefore ~= railAfter, "rail angles must follow the new scale")
+
+  -- bar mode: threshold marks must follow too
+  local wb = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+                       { Source = ID_RXBT, Style = "Bar", ColorMode = "Threshold" })
+  local markBefore = wb.ui.marks[1].props.pts[1][1]
+  mock.setValue(ID_RXBT, 16.4)
+  refresh(wb, 2)
+  local markAfter = wb.ui.marks[1].props.pts[1][1]
+  assertTrue(markBefore ~= markAfter, "bar threshold marks must follow the new scale")
+end)
+
+test("P0-5: cellsApplied resets on a source change", function()
+  local w, mod, opts = newWidget(nil, { Source = ID_RXBT })
+  mock.setValue(ID_RXBT, 16.4)
+  refresh(w, 2)
+  assertTrue(w.cellsApplied, "first source's cell count latched")
+
+  opts.Source = ID_CELLS
+  mod.update(w, opts)
+  assertEq(w.cellsApplied, nil, "cellsApplied must clear so the new source can latch")
+
+  mock.setValue(ID_CELLS, { 4.10, 4.05, 4.00 })
+  refresh(w, 2)
+  assertEq(w.source.cells, 3, "the new source's own cell count was latched")
 end)
 
 test("battery percent turns volts into state of charge", function()
@@ -352,6 +480,64 @@ test("history falls back to tracking for local sources", function()
   mock.setValue(ID_STICK, 600); refresh(w)
   assertEq(w.history.min, 400)
   assertEq(w.history.max, 900)
+end)
+
+test("P1-9: the fallback tracker still runs while siblings resolve but read nil", function()
+  -- RSSI-/RSSI+ are registered fields (minId/maxId resolve) but never given a
+  -- value: a sensor that just appeared has no samples yet. Treating a nil
+  -- reading as "the radio has it covered" would disable the fallback tracker
+  -- forever, leaving history stuck at nil even while the value itself works.
+  local w = newWidget(nil, { Source = ID_RSSI })
+  mock.setValue(ID_RSSI, 70); refresh(w)
+  mock.setValue(ID_RSSI, 55); refresh(w)
+  mock.setValue(ID_RSSI, 80); refresh(w)
+  assertEq(w.history.min, 55, "fallback tracker ran despite unread siblings")
+  assertEq(w.history.max, 80)
+end)
+
+test("P0-7: battery percent history is tracked in percent, not raw sibling volts", function()
+  local w = newWidget(nil, { Source = ID_RXBT, Battery = "Li-Po",
+                             ShowMinMax = "Markers + text" })
+  mock.setValue(ID_RXBT_MIN, 14.8)
+  mock.setValue(ID_RXBT_MAX, 16.8)
+  mock.setValue(ID_RXBT, 16.0); refresh(w)
+  mock.setValue(ID_RXBT, 16.4); refresh(w)
+  assertTrue(w.history.max <= 100,
+    "history must be a percent, got " .. tostring(w.history.max))
+  assertTrue(w.history.min >= 0 and w.history.min <= 100)
+end)
+
+test("P0-7: Cells=Total history is tracked in pack volts, not per-cell siblings", function()
+  local w = newWidget(nil, { Source = ID_CELLS, Cells = "Total",
+                             Scale = "Manual", Min = 0, Max = 20 })
+  -- Cels-/Cels+ (a real firmware pair) report a single CELL's extreme, which
+  -- would be far below a pack total if trusted here.
+  mock.addField(3076, "Cels-", 1)
+  mock.addField(3077, "Cels+", 1)
+  mock.setValue(3076, 3.80)
+  mock.setValue(3077, 4.10)
+  mock.setValue(ID_CELLS, { 4.10, 4.05, 4.00, 3.95 }); refresh(w)
+  mock.setValue(ID_CELLS, { 3.90, 3.85, 3.80, 3.75 }); refresh(w)
+  assertTrue(w.history.max > 10,
+    "pack total history, got " .. tostring(w.history.max) .. " (looks per-cell)")
+end)
+
+test("P1-8: the reset switch resets a real telemetry sensor at the radio", function()
+  local SWITCH = 160
+  local w = newWidget(nil, { Source = ID_RSSI, ResetSw = SWITCH })
+  mock.setValue(ID_RSSI, 70); refresh(w)
+  mock.setValue(ID_RSSI_MIN, 31)
+  mock.setValue(ID_RSSI_MAX, 92)
+  refresh(w)
+  assertEq(w.history.min, 31)
+  assertEq(w.history.max, 92)
+
+  mock.setSwitch(SWITCH, true)   -- rising edge
+  refresh(w)
+  assertEq(#mock.sim.sensorResets, 1, "model.resetSensor must be called once")
+  assertEq(mock.sim.sensorResets[1], 0, "RSSI is sensor index 0 in this radio")
+  assertEq(w.history.min, nil, "history cleared by the reset, not re-fed stale siblings")
+  assertEq(w.history.max, nil)
 end)
 
 test("markers stay hidden until history exists", function()
@@ -473,6 +659,19 @@ test("Style = Bar forces the linear style anywhere", function()
   assertEq(w.layout.style, "bar")
 end)
 
+test("G-12: bar threshold marks paint on top of the fill, not under it", function()
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+                      { Source = ID_RSSI, ColorMode = "Threshold" })
+  assertTrue(w.ui.marks ~= nil and #w.ui.marks >= 1, "marks built")
+  local fillIdx = objIndex(w.ui.fill)
+  assertTrue(fillIdx ~= nil, "fill object found")
+  for i, m in ipairs(w.ui.marks) do
+    assertTrue(objIndex(m) > fillIdx,
+      "mark " .. i .. " created before the fill would be painted under it "..
+      "and vanish once the value's fill reaches it")
+  end
+end)
+
 test("resize rebuilds only when the structure changes", function()
   local w, mod, opts = newWidget(nil, { Source = ID_RSSI })
   refresh(w)
@@ -493,6 +692,19 @@ test("sweep option changes the arc geometry", function()
   refresh(w)
   mock.setValue(ID_RSSI, 100); refresh(w, 5)
   assertTrue(w.frame.angle < 270 + 360, "full ring never closes on itself")
+end)
+
+test("P0-4: a 360 degree sweep still draws the background track", function()
+  -- LVGL normalises a > 360 angle by subtracting 360 exactly once
+  -- (270 + 360 = 630 -> 270), which without the fix collapses the track's
+  -- bgStartAngle/bgEndAngle onto the same point - a zero-length arc LVGL
+  -- skips drawing entirely.
+  local w = newWidget(nil, { Source = ID_RSSI, Sweep = "360 deg" })
+  assertTrue(w.ui.track ~= nil, "default colour mode builds a track arc")
+  local p = w.ui.track.props
+  local function lvNorm(a) return (a > 360) and (a - 360) or a end
+  assertTrue(lvNorm(p.bgStartAngle) ~= lvNorm(p.bgEndAngle),
+    "track background must not collapse to a zero-length arc")
 end)
 
 -- ---- text ----------------------------------------------------------------
@@ -518,6 +730,18 @@ test("name and unit overrides win over the sensor", function()
   assertEq(w.nameText, "LINK")
   assertEq(w.unitText, "dBm")
   assertEq(w.ui.nameLabel.props.text, "LINK")
+end)
+
+test("P0-6: editing the Name override updates the label without a rebuild", function()
+  local w, mod, opts = newWidget(nil, { Source = ID_RSSI })
+  refresh(w)
+  assertEq(w.ui.nameLabel.props.text, "RSSI")
+  local sig = w.layoutSig
+  opts.Label = "LINK"
+  mod.update(w, opts)
+  assertEq(w.layoutSig, sig, "a name edit is not a structural change")
+  assertEq(w.nameText, "LINK")
+  assertEq(w.ui.nameLabel.props.text, "LINK", "label text updated on the cheap path")
 end)
 
 -- ---- alerts and switches -------------------------------------------------
@@ -549,15 +773,48 @@ test("the reset switch clears the tracked history", function()
   local SWITCH = 150
   local w = newWidget(nil, { Source = ID_STICK, ResetSw = SWITCH,
                              Scale = "Manual", Min = 0, Max = 1024 })
-  mock.setValue(SWITCH, -1024)   -- switch off
+  mock.setSwitch(SWITCH, false)
   mock.setValue(ID_STICK, 200); refresh(w)
   mock.setValue(ID_STICK, 900); refresh(w)
   assertEq(w.history.max, 900)
   mock.setValue(ID_STICK, 300)
-  mock.setValue(SWITCH, 1024)    -- rising edge
+  mock.setSwitch(SWITCH, true)   -- rising edge
   refresh(w)
   assertEq(w.history.max, 300, "history restarted from the current value")
   assertEq(w.history.min, 300)
+end)
+
+test("P0-1: switch options are read with getSwitchValue, not getValue", function()
+  -- getValue()/sim.values and getSwitchValue()/sim.switches are deliberately
+  -- separate stores in the mock (see mock_env.lua M.setSwitch): a widget that
+  -- reads a SWITCH option through getValue() must see nothing here, exactly
+  -- as it would misread an unrelated MIXSRC on real firmware.
+  local SWITCH = 151
+  local w = newWidget(nil, { Source = ID_STICK, ResetSw = SWITCH,
+                             Scale = "Manual", Min = 0, Max = 1024 })
+  mock.setValue(ID_STICK, 200); refresh(w)
+  mock.setValue(ID_STICK, 900); refresh(w)
+  assertEq(w.history.max, 900)
+
+  mock.setValue(SWITCH, 1024)    -- wrong API's store: must have no effect
+  refresh(w)
+  assertEq(w.history.max, 900, "a getValue()-based read would already have reset")
+
+  mock.setValue(ID_STICK, 50)
+  mock.setSwitch(SWITCH, true)   -- right API's store, rising edge: must reset
+  refresh(w)
+  assertEq(w.history.max, 50, "reset switch fired via getSwitchValue")
+end)
+
+test("P0-1: a switch mis-read as a value does not silence alerts", function()
+  local SWITCH = 152
+  local w = newWidget(nil, { Source = ID_RSSI, Alerts = "Critical",
+                             AlertSw = SWITCH, Delay = 0 })
+  mock.setValue(SWITCH, 0)       -- wrong API's store would read "off"
+  mock.setSwitch(SWITCH, true)   -- right API's store: armed
+  mock.setValue(ID_RSSI, 10)
+  refresh(w, 2)
+  assertTrue(#mock.sim.tones > 0, "alert must fire: the switch is armed via getSwitchValue")
 end)
 
 -- ---- scenarios -----------------------------------------------------------

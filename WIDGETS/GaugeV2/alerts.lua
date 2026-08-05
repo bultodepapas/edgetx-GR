@@ -23,11 +23,15 @@ M.OFF, M.CRITICAL, M.ALL = 1, 2, 3
 
 local REPEAT_TICKS = 500   -- 5 s between repeats of the same state
 
+-- A SWITCH option is a swsrc_t (may be negative), not a MIXSRC id: it must be
+-- read with getSwitchValue(), never getValue() (AUDIT.md P0-1). On any
+-- failure to read it, stay armed - a misread switch must not silence alerts.
 local function switchActive(id)
   if not id or id == 0 then return true end
-  local ok, value = pcall(getValue, id)
+  if type(getSwitchValue) ~= "function" then return true end
+  local ok, value = pcall(getSwitchValue, id)
   if not ok then return true end
-  return (tonumber(value) or 0) > 0
+  return value == true
 end
 
 local function play(widget, state)

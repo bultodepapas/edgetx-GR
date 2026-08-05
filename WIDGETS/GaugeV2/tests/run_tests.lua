@@ -180,6 +180,27 @@ test("preset falls back to the unit", function()
   assertEq(p.highIsGood, false, "temperature is low-is-good")
 end)
 
+test("P1-7: an unknown voltage sensor does not inherit battery detection", function()
+  -- Only an exact NAME match (RxBt, Cels, ...) is trustworthy evidence that
+  -- a sensor IS a battery; matching by unit alone just means "some voltage
+  -- source", e.g. a BEC or servo rail sensor with a name the widget has
+  -- never seen.
+  local p = presets.find({ name = "VBEC", unit = 1 })
+  assertTrue(p ~= nil, "unit fallback still finds a preset")
+  assertEq(p.battery, nil, "must not inherit battery detection from RxBt")
+  assertEq(p.cellsTable, nil, "must not inherit cell-table detection either")
+
+  -- The real RxBt preset (exact name match) keeps its battery flag.
+  local named = presets.find({ name = "RxBt", unit = 1 })
+  assertEq(named.battery, true, "exact name match keeps battery detection")
+
+  -- find() must not have mutated the shared preset table as a side effect.
+  local again = presets.find({ name = "VBEC", unit = 1 })
+  assertEq(again.battery, nil, "repeated lookups stay clean")
+  assertEq(presets.find({ name = "RxBt", unit = 1 }).battery, true,
+    "the named preset itself was not corrupted by the unit-fallback copy")
+end)
+
 test("preset misses stay nil", function()
   assertEq(presets.find({ name = "Zork" }), nil)
   assertEq(presets.find(nil), nil)
