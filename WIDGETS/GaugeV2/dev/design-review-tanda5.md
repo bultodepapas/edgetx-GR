@@ -203,6 +203,93 @@ La jerarquía valor → estado → escala es el diseño actual (texto sobre geom
 borde, bandas atenuadas). El "chip CRIT roba atención" es una opinión de diseño; el
 propietario lo mantiene como punto de estado.
 
+### P0 (reabierto) — hallazgos de una revisión visual adicional (Tanda 5, 05 ago 2026)
+
+> Esta sub-sección no viene del informe del diseñador: sale de una inspección pixel a pixel
+> de los renders reales (`dev/shots/mode-Rail-crit-v1/v2/v3.png` y
+> `mode-Rail-pos1/2/3.png`), contrastada contra `layout.lua`, `renderer.lua`, `theme.lua`,
+> `dev/shots.lua` y `tests/mock_env.lua`. Confirma P0-1 y P0-2 (comparando v2 vs v3: la cola
+> desaparece, el hueco entre `22` y el pivote/cuerpo de la aguja es real y visible en el
+> render) y encuentra dos colisiones aguja-elemento que ni el informe original ni
+> `dev/collide.lua` cubren, porque ambos prueban ángulos donde no ocurren.
+
+**3.12 La aguja atraviesa el chip de estado en ángulos "hacia arriba" — nuevo, P0.**
+En `mode-Rail-pos2.png` (valor 50, aguja a 270°, estado WARN) el tallo de la aguja sale del
+pivote y sube en línea recta, cruzando literalmente el relleno y el texto del pill `WARN`
+antes de llegar al borde interior de la pista. Medido en el render (300×240): el pill ocupa
+x 115–181 / y ≈54–86; la aguja lo atraviesa verticalmente por su centro (x≈148) en todo ese
+rango de y. No es un artefacto del ángulo de prueba: `L.stateBox` se coloca en
+`dial.y + floor(dial.h*0.26)` (`layout.lua:344`), centrado horizontalmente en todo el ancho
+del dial, y `needleOuter` llega casi al borde interior de la pista
+(`L.radius - trackThickness/2 - 1`, `layout.lua:304`) — el chip vive justo en la trayectoria
+de cualquier aguja que apunte hacia arriba. Y "hacia arriba" no es un caso raro: con Sweep
+270° (`{135,270}`, default de Rail) la aguja apunta a 270° en valor 50 (el punto medio); con
+Sweep 180° (`{180,180}`) también pasa por 270° en valor 50; con Sweep 360° (`{270,360}`) la
+aguja *empieza* apuntando a 270° en valor 0. En los tres presets hay un valor de escala en el
+que la aguja cruza el chip, y el chip solo se muestra en WARN/CRIT/NO DATA/NO LINK/STALE
+(`renderer.lua:405-420,431`) — justo los estados que más necesitan destacar.
+`dev/collide.lua` no lo detecta: excluye la aguja de **todas** las colisiones de etiqueta,
+chip incluido (`dev/collide.lua:69-76`, `sweep[w.ui.needle] = true` sin distinguir chip de
+valor). Esa exclusión se justificó para el caso ya documentado en 3.1 (la aguja roza la
+esquina del valor; el texto se pinta encima; legible) — pero un pill sólido de 66×30 px
+bisecado por el tallo de la aguja no es "rozar una esquina", es partir el elemento en dos.
+Aplicar la misma regla aquí es usar el z-order como parche, justo lo que la restricción 2 del
+repo prohíbe. **Decisión:** tratarlo como P0 geométrico, no como exclusión de audit. Ver
+P0-4 del plan.
+
+**3.13 La aguja tapa la unidad en el cap final — nuevo, P0 → reconsiderado a P2.**
+En `mode-Rail-pos3.png` (valor 100, aguja en el cap final, 45°) el cuerpo de la aguja queda
+directamente encima de la `d` de `dB`: confirmado recortando y ampliando esa zona del
+render — el cuerpo cubre casi por completo el trazo de la letra, dejando solo la `B`
+legible. Es estructural, no accidental: el cap final del sweep 270° por defecto es 45°
+(entre las 3 y las 6), exactamente el cuadrante donde vive la unidad (a la derecha del
+valor). Cualquier valor cercano al máximo de la escala empuja la aguja hacia ese mismo
+cuadrante. El informe y P0-2 solo corrigieron la holgura en el **ángulo crítico** (194°,
+contra el **valor**); este es el mismo tipo de colisión contra la **unidad**, en el extremo
+opuesto del barrido. **Reconsiderado el 05 ago 2026:** el propietario, viendo esta misma
+familia de solapamiento en `value-78` (valor grande, aguja cerca), decide que proteger la
+unidad geométricamente no vale la pena — prefiere el valor lo más grande posible y la
+unidad pequeña o **desactivable** (quien configura el sensor ya sabe la unidad). Pasa de
+P0-5 a **P2-5**, sustituido por la opción `ShowUnit`. Ver nota de alcance en P2-5 del plan
+(cambia el contrato de opciones, no es un pulido puro).
+
+**3.14 Centrado del chip — 3.5 se reabre con matiz (medido, no solo documentado).**
+Aislando el pill del anillo del dial por continuidad de región (no solo por color, que
+coincide entre pista y chip) en `mode-Rail-crit-v3.png`: el pill ocupa x 115–181 (66 px), el
+texto `CRIT` ocupa x 127–173 (46 px) → margen izquierdo 12 px, margen derecho 8 px. No es
+percepción óptica de las letras: el texto está 2 px a la derecha del centro real del pill,
+con un reparto de aire 12:8 (50 % más a la izquierda). 3.5 se cerró como "ya resuelto"
+citando la fórmula de centrado **vertical** (`chipOff`, `renderer.lua:303`), correcta — pero
+esa fórmula no toca el eje horizontal, y el ancho del pill se calcula con `T.textWidth` →
+`lcd.sizeText` (`theme.lua:111-123`), la métrica real de fuente **en el dispositivo**.
+Contrastando en el código: **el desajuste medido es del pipeline de capturas, no del
+widget.** `tests/mock_env.lua:168-179` stubea `lcd.sizeText` como `#texto * 0.55 * alto`
+(monoespaciado), y `dev/shots.lua:89` usa la misma fórmula para maquetar el SVG — pero el
+`<text>` real del SVG se dibuja con `font-family="DejaVu Sans, Verdana, sans-serif"`
+(`dev/shots.lua:171`), una fuente proporcional. `CRIT` tiene una `I` angosta: la fórmula
+monoespaciada sobreestima su ancho, así que la caja calculada no coincide con la tinta real
+de DejaVu — de ahí el 12:8. En el radio real `lcd.sizeText` mide la fuente que de verdad se
+dibuja, así que este desajuste concreto **no tiene por qué reproducirse en hardware**.
+**Decisión:** no corregir el centrado a ciegas contra el screenshot (riesgo de sobre-corregir
+un problema que es del renderer de `dev/`, no del widget); verificar primero contra una
+captura de simulador/radio real, o mejorar `textW`/`sizeText` de `dev/` para que dejen de
+mentir sobre el ancho de fuente antes de fiarse de una medida en píxeles de estas capturas.
+Ver P1-4 revisado.
+
+**3.15 Aire muerto entre el valor y `RSSI` — nuevo, P1 (detectado en revisión visual).**
+En capturas balanced (`mode-Rail-crit`, base 200×160) queda un hueco vertical notable entre
+la caja del valor y la etiqueta de nombre. Los dos elementos no se hablan entre sí:
+`nameBox` se ancla al fondo del `dial` (`dial.y + dial.h - nameH`, `layout.lua:354`)
+independientemente de dónde termine la tinta del valor, mientras que `valueRegion` reserva
+una banda proporcional fija (`dial.h*0.26`, `layout.lua:251-252`) casi siempre más alta que
+el texto que contiene. El hueco crece o encoge con el tamaño de zona sin que nadie lo
+controle. Con ese aire disponible, subir el valor un escalón en la rampa (`STDSIZE`→`M`,
+`theme.lua:45`) es viable en más zonas de las que hoy lo usan, y/o repartir mejor
+`minMaxBox`/`nameBox` en ese tramo. **Decisión:** P1-5 del plan — no es solo estético: más
+tamaño de fuente en el valor es la jerarquía visual correcta (es el dato más importante del
+dial) y hoy se degrada antes de lo necesario porque `valueRegion` no usa el espacio que sí
+tiene libre debajo.
+
 ### Correcciones al informe (metodología)
 
 - Varias medidas describen la captura **v1** (pre-Tanda 4): pivote anillo+punto, aguja de
@@ -226,6 +313,7 @@ propietario lo mantiene como punto de estado.
 | P0-1 | **Eliminar la cola/gancho** (`ui.tail`): borrar su creación, su escritura `pts` por frame y su color; quitar `tailOuter` y `ratio.tailLength`. La aguja queda cuerpo + punta + pivote | `renderer.lua` (buildNeedle, applyColors, updateArc), `layout.lua`, `theme.lua`, `dev/collide.lua`, `DOCS.md`, `smoke_test.lua` | ✅ Done — la aguja es solo cuerpo + punta + pivote; test P-A actualizado (`w.ui.tail == nil`); -1 objeto por frame |
 | P0-2 | **Holgura de valor**: bajar la región de valor ~5–9 px en la base (balanced normal) para dejar aire real entre la celda de tinta y el pivote/banda del cuerpo en ángulos críticos. La fila min/max no puede salir de su cuerda (G-7). Acompañado de `STDSIZE` en la rampa de fuentes (16 px) para que la degradación por la cuerda sea 24→16 y no 24→13 (AUDIT P3-4); la unidad no cambia (skip de STD en `smallerFont`) | `layout.lua` (valueRegion + `valueDrop = T.px(7)`), `theme.lua` (RAMP + smallerFont), `tests/smoke_test.lua` | ✅ Done — 200×160: valor 24→16 px, y 71→82, 5 px libres bajo el pivote; aguja a 194° a 11 px de la celda; 200×200/260×220 conservan su fuente; fila min/max dentro de su cuerda; collide 18/18 |
 | P0-3 | Punta definida + hub sólido (ya ✅ Tanda 4) | — | ✅ mantener + test existente |
+| P0-4 | **Aguja vs. chip de estado** (3.12, nuevo): el chip WARN/CRIT/NO DATA/... vive en la trayectoria vertical de la aguja para algún valor de la escala, en los 3 presets de Sweep. No es "rozar una esquina" como 3.1 — es bisecar un pill sólido. Recortar `needleOuter` (o el tramo de la aguja) en la ventana angular que cruza `L.stateBox`, igual que P0-2 recortó holgura para el valor; alternativa: alejar `stateBox` del radio que alcanza la aguja. `dev/collide.lua` debe dejar de excluir el chip de la comprobación aguja↔etiqueta (solo mantener la excepción para el valor, contrato 3.1) | `layout.lua` (stateBox / needleOuter), `renderer.lua`, `dev/collide.lua:69-76` | pendiente — **prioridad alta** |
 
 ### P1 — composición y jerarquía
 
@@ -234,7 +322,8 @@ propietario lo mantiene como punto de estado.
 | P1-1 | **Centrar la tinta visible** del valor en su caja (align CENTER) y re-anclar la unidad a la tinta en cada cambio de valor (guardado por `valueStr`). Bloque visible centrado ±2 px para cualquier ancho; vecinos y cuerda intactos; el dígito de unidades se mueve dentro de la caja reservada | `layout.lua:159` (valueAlign), `renderer.lua` updateText (+ bar.lua) | pendiente |
 | P1-2 | **RSSI más cerca**: subir ~3–5 px en la base o recortar el vacío inferior; margen inferior seguro y `collide.lua` limpio | `layout.lua:349` (nameBox balanced) | pendiente |
 | P1-3 | **Jerarquía en CRIT**: rebajar la banda de referencia pasiva en estado crítico (`opacity.railBand` 200 → ~160, o un umbral por estado) para que el ámbar y el rojo de la banda no compitan con el rojo del estado | `theme.lua:63`, `renderer.lua:168` | pendiente (recomendado) |
-| P1-4 | Chip `CRIT`: sin cambios funcionales; **test de regresión** que fija padding/centrado/borde (ya métrico) | `tests/smoke_test.lua` | pendiente |
+| P1-4 | Chip `CRIT`: el padding horizontal medido (12 px izq. / 8 px der., 3.14) es casi seguro un artefacto de `dev/shots.lua`+`mock_env.lua` (ancho monoespaciado 0.55×alto vs. DejaVu proporcional real), no del widget (que usa `lcd.sizeText` real vía `T.textWidth`). **No tocar `updateChip` a ciegas contra el screenshot.** Primero: verificar en simulador/radio real o corregir `textW` de `dev/` para que mida como DejaVu; solo si el desajuste sobrevive esa verificación, ajustar el centrado. Test de regresión que fija padding/borde (ya métrico) sigue en pie | `dev/shots.lua:89`, `tests/mock_env.lua:168-179` (verificación); `tests/smoke_test.lua` (test) | pendiente — **verificar antes de "arreglar"** |
+| P1-5 | **Valor más grande / aprovechar el aire muerto** (3.15, nuevo — pedido explícito del propietario 05 ago 2026): entre la caja del valor y `RSSI` sobra espacio vertical porque `nameBox` se ancla al fondo del dial y `valueRegion` no lo sabe. Subir el valor un escalón en la rampa (`STDSIZE`→`M`) donde el aire lo permita y/o recalcular `nameBox`/`minMaxBox` relativos al final real de la tinta del valor, no al fondo fijo del dial. El propietario acepta explícitamente que la aguja pase por detrás del valor a cambio de un número más grande (ver nota de alcance más abajo) | `layout.lua` (valueRegion, nameBox, `theme.lua` RAMP) | pendiente — **prioridad alta** |
 
 ### P2 — verificación y robustez
 
@@ -244,6 +333,7 @@ propietario lo mantiene como punto de estado.
 | P2-2 | Unidad: test para dB / dBm / `%` / vacío (ya de la fuente, no hard-coded) | `tests/` | pendiente |
 | P2-3 | Robustez: casos `7`, `100`, `-92`, `---` (sin datos) y out-of-scale en la matriz de verificación | `dev/collide.lua` / `tests/` | pendiente |
 | P2-4 | Z-order: pintar el chip antes de los textos de valor (orden 4.1 del informe) — sin efecto visual hoy, elimina el riesgo de que el pill tape texto si alguna vez se solapan | `renderer.lua` build | opcional, bajo riesgo |
+| P2-5 | **Aguja vs. unidad en el cap final** (3.13, nuevo) — *reconsiderado 05 ago 2026*: el propietario prioriza el tamaño del valor sobre proteger la unidad de la aguja (ver P1-5) y propone que la unidad sea pequeña y/o **opcional** (`ShowUnit`, on/off), ya que quien configura el sensor ya sabe la unidad. Baja de P0 a P2: no requiere blindaje geométrico si la unidad puede ocultarse. Añadir una opción nueva cambia el contrato declarado (`DOCS.md`, conteo de opciones — ver commit `2233ac34d`), así que **no entra sola en un "pulido"**: requiere decisión de alcance explícita antes de tocar `main.lua`/`DOCS.md` | `layout.lua` (showUnit ya existe internamente por modo; falta el toggle de usuario), `main.lua` (nueva opción), `DOCS.md` | pendiente — **bloqueado por decisión de alcance** |
 
 ### No se adopta (motivo)
 
@@ -269,25 +359,46 @@ ocultar la aguja bajo el valor: la aguja se arregla en geometría (P0-1/P0-2).
 ## 6. Verificación tras cada cambio
 
 - `dev/collide.lua` limpio en la matriz de 12 zonas + extremos + barridos (hoy: 18/18 ✅).
+  **Extender la matriz** (P0-4) para que el chip SÍ se compruebe contra la aguja — hoy la
+  exclusión de `dev/collide.lua:69-76` lo deja ciego a 3.12; mantener la exclusión solo para
+  la tinta del valor (contrato 3.1).
+- Barrido de valores 0/25/50/75/100 en los 3 presets de Sweep (270/180/360) con estado
+  WARN/CRIT forzado, para encontrar el ángulo en que la aguja cruza `stateBox` en cada uno
+  (P0-4) — el "value 78" fijo que usa hoy `dev/collide.lua:191` no lo habría encontrado.
 - Suites `run_tests.lua` (38) y `smoke_test.lua` (88) verdes; tests de regresión de este
-  plan añadidos (P1-4, P2-1, P2-2, P2-3, P0-1 sin cola, P0-2 holgura).
-- Regenerar `dev/shots/*.svg|png` (incl. `mode-Rail-crit`) y `dev/audit-preview.html` para
-  re-revisión del mismo frame.
+  plan añadidos (P1-4, P2-1, P2-2, P2-3, P0-1 sin cola, P0-2 holgura, P0-4 aguja/chip).
+- Antes de tocar el centrado del chip (P1-4): confirmar en simulador/radio real que el
+  desajuste 12:8 de 3.14 no es del `sizeText` monoespaciado de `dev/`. No usar solo el
+  screenshot de `dev/shots.lua` como prueba.
+- Regenerar `dev/shots/*.svg|png` (incl. `mode-Rail-crit` y `mode-Rail-pos1/2/3`) y
+  `dev/audit-preview.html` para re-revisión del mismo frame.
 
 ## 7. Criterios de aceptación (base 200×160)
 
-- ☐ La tinta del valor no toca pivote, banda de aguja, chip ni rail en 1–4 caracteres,
-  negativos, fuera de escala y sin datos (probe + `collide.lua`).
+- ☐ La tinta del valor no toca pivote ni chip en 1–4 caracteres, negativos, fuera de escala
+  y sin datos (probe + `collide.lua`). *Relajado por P1-5 (decisión explícita del
+  propietario, 05 ago 2026): a mayor tamaño de valor, la banda de la aguja puede pasar por
+  detrás de la tinta — el contrato "texto sobre geometría" (§1, restricción 2) sigue
+  garantizando legibilidad; lo que no se permite es que dejen de ser identificables.*
+- ☐ **La aguja no biseca el chip de estado** en ningún ángulo del barrido, para los 3
+  presets de Sweep (270°/180°/360°) — nuevo, P0-4.
 - ☐ El bloque visible valor+unidad queda centrado ±2 px respecto al centro del dial en la
   referencia 200×160, para valores de 1 y de 4 caracteres.
 - ☐ La aguja tiene punta definida (2 px) y base constante (6 px) en todos los ángulos, y
   **no tiene cola**.
 - ☐ En coincidencia angular, la zona crítica y la aguja se distinguen (banda pasiva < 255).
-- ☐ `CRIT` centrado por métricas y fijado por test.
+- ☐ `CRIT`/`WARN` centrado por métricas reales de fuente (verificado en dispositivo o con
+  `sizeText` de `dev/` corregido, no con la captura tal cual — 3.14) y fijado por test.
 - ☐ Ticks idénticos en radio, longitud y espesor (test).
 - ☐ Gramática cromática única por estado: normal / warn / crit / no-data / error,
   documentada (bandas = referencia pasiva; arco + texto = estado activo).
 - ☐ La unidad viene de la fuente (dB/dBm/`%`/vacío), nunca hard-coded (test).
+- ☐ El valor usa el aire disponible bajo el dial (P1-5): al menos un escalón más de fuente
+  donde el hueco lo permita, sin invadir la cuerda de min/max (G-7).
 - ☐ Matriz de verificación en 200×160, 480×272, 800×480 y zona compacta real
   (`dev/collide.lua`).
 - ☐ Suites verdes (38/38, 88/88) y renders regenerados para revisión.
+
+> **Fuera de alcance de esta tanda (pendiente de decisión):** opción `ShowUnit` para
+> ocultar la unidad (P2-5) — cambia el contrato de opciones declarado; no es un "pulido",
+> es una feature nueva. Ver nota de alcance en P2-5.
