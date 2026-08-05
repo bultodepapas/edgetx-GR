@@ -65,8 +65,13 @@ local DEFS = {
     choices = { "Off", "Markers", "Markers + text" } },
 
   -- ---- appended: 2.12+ only (fifty slots) -------------------------------
+  -- Default green (COLOR_THEME_ACTIVE), not the theme primary: on 2.12+
+  -- this option is always populated (COLOR options have no "unedited"
+  -- sentinel the way choices do), so its default IS the normal-state
+  -- colour everyone sees until they pick their own - it must match
+  -- theme.lua's M.color.accent (owner request, Tanda 5).
   { key = "Accent", label = "Accent colour", type = COLOR, field = "accent",
-    since = 212, default = COLOR_THEME_PRIMARY1 },
+    since = 212, default = COLOR_THEME_ACTIVE },
   { key = "Label", label = "Name override", type = STRING, field = "label",
     since = 212, default = "" },
   { key = "Suffix", label = "Unit override", type = STRING, field = "suffix",
@@ -93,6 +98,8 @@ local DEFS = {
     since = 212, default = 0 },
   { key = "ResetSw", label = "Reset min/max", type = SWITCH,
     field = "resetSw", since = 212, default = 0 },
+  { key = "ShowChip", label = "State chip", type = BOOL, field = "showChip",
+    since = 212, default = 1 },
 }
 
 -- Firmware option array. Built inline (rather than in options.lua) so boot

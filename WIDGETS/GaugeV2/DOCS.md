@@ -80,7 +80,7 @@ settings shifted.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
-| **Accent colour** | Color | theme primary | Native colour picker; overrides the normal-state colour. Lets four gauges on one screen be colour-coded. |
+| **Accent colour** | Color | green | Native colour picker; overrides the normal-state colour (default green, the "all clear" colour). Lets four gauges on one screen be colour-coded. |
 | **Name override** | String | "" | Custom label ("PACK", "MOTOR"); empty uses the sensor name. |
 | **Unit override** | String | "" | Custom unit; empty uses the sensor unit. |
 | **Scale** | Choice | Auto | Auto uses a known-sensor preset; Manual always uses your Min/Max/Warning/Critical. |
@@ -93,6 +93,7 @@ settings shifted.
 | **Startup delay** | Integer | 4 s | No alerts until the model has settled. |
 | **Vibrate** | Bool | Off | Haptic pulse on critical. |
 | **Reset min/max** | Switch | none | Clears the tracked history in flight. |
+| **State chip** | Bool | On | Show/hide the WARN / CRIT / no-data pill above the dial. Off leaves colour and the pulse (4.3) as the only state signal. |
 
 Notes:
 
@@ -141,13 +142,21 @@ With **Scale = Manual** your four range values are always used.
 A value maps onto three bands (normal / warning / critical, ordered by the
 direction option):
 
-- **NORMAL** — the accent colour (theme primary, or your Accent option).
+- **NORMAL** — `COLOR_THEME_ACTIVE` (green), or your Accent option.
 - **WARN** — `COLOR_THEME_WARNING`, chip text "WARN".
 - **CRIT** — high-contrast red, chip text "CRIT", and the value arc **pulses**
   at ~1 Hz so the state is visible without relying on colour.
 - **No data** — everything dims to `COLOR_THEME_DISABLED`; the chip reads
   `NO LINK`, `STALE`, `NO DATA` or `NO SOURCE` (see 4.10), and the last known
   value stays on screen.
+
+The chip is optional (**State chip** option, 4.1); turning it off leaves
+colour and the critical pulse as the only state signal.
+
+The **needle never changes colour**: it stays a fixed, theme-neutral tone
+(`COLOR_THEME_PRIMARY1`) regardless of state or colour mode, so it stays
+legible pointing across a green, amber or red band alike — only the arc,
+value text and (where applicable) rail bands carry the state colour.
 
 State changes are **hysteretic**: a worse state is adopted immediately, a
 better one only once the value has cleared the threshold by 2 % of the range.
@@ -165,15 +174,17 @@ machine-gun the alerts.
 
 ### 4.5 Colour modes
 
-- **Static** — everything uses the accent colour.
-- **Threshold** — the arc, needle and value take the state colour.
+- **Static** — everything uses the accent colour (the needle excepted - 4.3).
+- **Threshold** — the arc and value take the state colour.
 - **Rail** *(default)* — as Threshold, plus a thin outer rail that permanently
   marks the warning and critical zones. The value arc keeps the foreground;
   the scale stays readable.
-- **Gradient** — the arc/needle/value colour interpolates green → amber → red
+- **Gradient** — the arc/value colour interpolates green → amber → red
   across the **thresholds** (red at critical, green once inside the normal
   band). Uses fixed RGB, so it does not follow the theme.
 - **Sections** — the track is drawn as three arcs coloured by band.
+
+In every mode the needle itself stays the fixed neutral tone described in 4.3.
 
 ### 4.6 Responsive layouts
 
@@ -469,8 +480,8 @@ filter — right for RSSI, wrong for a noisy current sensor.
 Headless suites run with stock Lua 5.3 (the version EdgeTX embeds):
 
 ```sh
-lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (36 tests)
-lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle      (46 tests)
+lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (38 tests)
+lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle      (96 tests)
 lua5.3 dev/preview.lua      <widget-dir>/   # writes dev/preview.html
 ```
 

@@ -100,6 +100,7 @@ function M.build(widget)
     -- identically in bar zones (AUDIT.md P1-10). Text vertically centred and
     -- a 1 px outline in the lighter label role (review P-B).
     local chipOff = floor((L.chipHeight - T.fontHeight(L.stateFont)) / 2)
+    L.chipOff = chipOff
     ui.chipEdge = lvgl.rectangle{
       x = L.stateBox.x - T.px(1), y = L.stateBox.y - chipOff - T.px(1),
       w = L.stateBox.w + T.px(2), h = L.chipHeight + T.px(2),
@@ -232,6 +233,7 @@ function M.update(widget)
   if str ~= frame.valueStr then
     frame.valueStr = str
     R.setProp(widget, ui.valueLabel, "text", str)
+    R.anchorUnit(widget, str)
   end
   if ui.stateLabel then
     local s = R.stateText(widget)

@@ -46,7 +46,19 @@ M.RAMP = { M.FONTS.XXL, M.FONTS.XL, M.FONTS.L, M.FONTS.M, M.FONTS.S,
            M.FONTS.XS, M.FONTS.XXS }
 
 M.color = {
-  accent  = COLOR_THEME_PRIMARY1,    -- normal state / static mode
+  -- Green: the conventional "all clear" colour a gauge should default to
+  -- (owner request, Tanda 5). This is also Static mode's fixed colour and
+  -- the fallback wherever `widget.accent` is nil - but on 2.12+ firmware
+  -- the Accent OPTION itself always carries a real colour (its own default,
+  -- main.lua), never nil, so that default must point at this same role too
+  -- (main.lua's Accent default = COLOR_THEME_ACTIVE) or the option's
+  -- default silently shadows this fallback and 2.12+ radios never see it.
+  accent  = COLOR_THEME_ACTIVE,
+  needle  = COLOR_THEME_PRIMARY1,    -- the needle NEVER follows the state
+                                     -- colour (owner request): a fixed,
+                                     -- always-legible tone against every
+                                     -- band colour, including the green
+                                     -- normal state above, and both themes
   warn    = COLOR_THEME_WARNING,
   crit    = RED,                     -- no theme role exists for critical
   rail    = COLOR_THEME_SECONDARY1,  -- track + rail base (used with opacity)
@@ -65,6 +77,11 @@ M.opacity = {
   railBand = 200,   -- reference rail bands (Rail mode): drawn at reduced
                     -- opacity so the value arc - and with it the critical
                     -- red - stays the foreground (review P-E)
+  railBandCrit = 160, -- one step dimmer, applied ONLY while the state is
+                    -- critical (renderer.applyColors): at 200 the passive
+                    -- amber band was the highest-luminance element on the
+                    -- ring, competing with the full-red arc/text it is
+                    -- supposed to sit behind (Tanda 5 review 3.6)
   ghost    = 110,   -- peak-hold segment
   muted    = 120,   -- whole gauge when data is not live
   pulse    = 150,   -- critical pulse trough

@@ -22,10 +22,47 @@ se conserva y se blinda con tests.
 > queda a 11 px de la celda (antes cruzaba su esquina).
 >
 > **Renders para inspección** (en `dev/shots/`, gitignored): `mode-Rail-crit.png` es la
-> **v3** (código actual), con copia versionada `mode-Rail-crit-v3.*`; `mode-Rail-crit-v1.*`
-> y `-v2.*` se conservan como trazabilidad. Las variaciones de posición son
+> **v5** (código actual), con copia versionada `mode-Rail-crit-v5.*`; `mode-Rail-crit-v1.*`
+> a `-v4.*` se conservan como trazabilidad. Las variaciones de posición son
 > `mode-Rail-pos1` (valor 0, aguja en el cap inicial), `mode-Rail-pos2` (valor 50, aguja
 > arriba) y `mode-Rail-pos3` (valor 100, aguja en el cap final).
+>
+> **STATUS (2026-08-05, adenda): P0-4 y P1-5 implementados.** P0-4 (la aguja ya no
+> atraviesa el chip WARN/CRIT: `geometry.lua` gana `rayBoxEntry` — intersección
+> rayo/caja por el método de slabs — y `renderer.lua.updateArc` recorta
+> `needleOuter/needleBodyOuter/needleTipInner` al radio de entrada del pill menos 2 px
+> cuando el chip está visible y el ángulo actual lo cruzaría; `frame.chipBox` guarda el
+> footprint real del pill, calculado en `updateChip`, del que `L.chipOff` es la pieza que
+> faltaba — `bar.lua` la necesitaba también y no la tenía, causaba `FAIL ... attempt to
+> perform arithmetic on a nil value (field 'chipOff')` en 3 tests hasta corregirlo).
+> Confirmado en `mode-Rail-pos2.png` (valor 50): antes el tallo cruzaba el pill de lado a
+> lado; ahora se detiene ~2 px antes del borde inferior del chip. Test de regresión propio
+> (*P0-4: the needle stops short of the state chip instead of crossing it*). P1-5 (alcance
+> acotado, decisión del propietario 05 ago 2026): `nameBox` ya no se ancla al fondo fijo
+> del dial — sube hacia `minMaxBox`/`valueBox` con un límite inferior en la posición
+> antigua, así que nunca queda peor que antes; el hueco entre `22 dB` y `RSSI` se redujo
+> visiblemente (confirmado por comparación directa antes/después). **No se tocó el tamaño
+> de fuente del valor** (RAMP/`valueDrop`): el ancho disponible en esa Y está gobernado por
+> el chord del dial, no por la altura de la región, y agrandar la fuente exige mover el
+> valor más cerca del centro — justo lo que P0-2 revirtió para separarlo del pivote/aguja.
+> Tocar eso reabre el test con nombre propio de P0-2, así que se deja como decisión
+> explícita pendiente (ver P1-5 en el plan) en vez de forzarlo en esta pasada. Verificado:
+> suites 38/38 + 90/90 (+1 test nuevo), `dev/collide.lua` limpio (18/18).
+>
+> **STATUS (2026-08-05, 2.ª adenda): P1-1 y P1-3 implementados.** P1-1: la tinta del
+> valor pasa a `align = CENTER` en su caja reservada (`layout.placeValue`) y la unidad se
+> re-ancla a la tinta REAL en cada cambio de `valueStr` (`renderer.anchorUnit`, compartida
+> con `bar.lua`) — con la tinta centrada en una caja de ancho fijo, su propio centro es
+> siempre la mitad de la caja sin importar cuántos dígitos tenga, así que el grupo visible
+> queda en el mismo centro que el grupo reservado para cualquier valor, no solo para la
+> muestra más ancha. Confirmado en `mode-Rail-crit.png`: `22 dB` se desplazó a la
+> izquierda, visiblemente más cerca del pivote. P1-3: la banda pasiva se rebaja a
+> `opacity.railBandCrit = 160` únicamente mientras `colorKey == "critical"` (WARN conserva
+> 200, porque ahí el ámbar es el estado activo); medido en píxel sobre el render, la banda
+> ámbar pasa de (181,144,57) a (149,121,51), casi exacto a la predicción de la fórmula de
+> blend 200→160. Los dos con test de regresión propio. Verificado: suites 38/38 + 92/92
+> (+2 tests nuevos), `dev/collide.lua` limpio (18/18). P1-2 queda cubierto por P1-5 (mismo
+> cambio de `nameBox`), así que se marca resuelto sin código adicional.
 
 ---
 
@@ -313,17 +350,17 @@ tiene libre debajo.
 | P0-1 | **Eliminar la cola/gancho** (`ui.tail`): borrar su creación, su escritura `pts` por frame y su color; quitar `tailOuter` y `ratio.tailLength`. La aguja queda cuerpo + punta + pivote | `renderer.lua` (buildNeedle, applyColors, updateArc), `layout.lua`, `theme.lua`, `dev/collide.lua`, `DOCS.md`, `smoke_test.lua` | ✅ Done — la aguja es solo cuerpo + punta + pivote; test P-A actualizado (`w.ui.tail == nil`); -1 objeto por frame |
 | P0-2 | **Holgura de valor**: bajar la región de valor ~5–9 px en la base (balanced normal) para dejar aire real entre la celda de tinta y el pivote/banda del cuerpo en ángulos críticos. La fila min/max no puede salir de su cuerda (G-7). Acompañado de `STDSIZE` en la rampa de fuentes (16 px) para que la degradación por la cuerda sea 24→16 y no 24→13 (AUDIT P3-4); la unidad no cambia (skip de STD en `smallerFont`) | `layout.lua` (valueRegion + `valueDrop = T.px(7)`), `theme.lua` (RAMP + smallerFont), `tests/smoke_test.lua` | ✅ Done — 200×160: valor 24→16 px, y 71→82, 5 px libres bajo el pivote; aguja a 194° a 11 px de la celda; 200×200/260×220 conservan su fuente; fila min/max dentro de su cuerda; collide 18/18 |
 | P0-3 | Punta definida + hub sólido (ya ✅ Tanda 4) | — | ✅ mantener + test existente |
-| P0-4 | **Aguja vs. chip de estado** (3.12, nuevo): el chip WARN/CRIT/NO DATA/... vive en la trayectoria vertical de la aguja para algún valor de la escala, en los 3 presets de Sweep. No es "rozar una esquina" como 3.1 — es bisecar un pill sólido. Recortar `needleOuter` (o el tramo de la aguja) en la ventana angular que cruza `L.stateBox`, igual que P0-2 recortó holgura para el valor; alternativa: alejar `stateBox` del radio que alcanza la aguja. `dev/collide.lua` debe dejar de excluir el chip de la comprobación aguja↔etiqueta (solo mantener la excepción para el valor, contrato 3.1) | `layout.lua` (stateBox / needleOuter), `renderer.lua`, `dev/collide.lua:69-76` | pendiente — **prioridad alta** |
+| P0-4 | **Aguja vs. chip de estado** (3.12): el chip WARN/CRIT/NO DATA/... vive en la trayectoria vertical de la aguja para algún valor de la escala, en los 3 presets de Sweep. Recorta el alcance de la aguja (`needleOuter`/`needleBodyOuter`/`needleTipInner`) al radio de entrada al pill (método de slabs, `G.rayBoxEntry`) menos 2 px, solo cuando el chip está visible y el ángulo actual lo cruzaría; el resto de ángulos no se toca | `geometry.lua` (`rayBoxEntry`), `renderer.lua` (`needleReach`, `updateArc`, `updateChip`→`frame.chipBox`, `L.chipOff`), `bar.lua` (`L.chipOff` que faltaba) | ✅ Done — confirmado en `mode-Rail-pos2.png` (valor 50): el tallo ya no cruza el pill, se detiene ~2 px antes de su borde; test de regresión propio; suites 38/38+90/90, collide 18/18. **`dev/collide.lua` sigue sin comprobarlo por sí solo** (la exclusión de la aguja en `dev/collide.lua:69-76` no distingue chip de valor) — pendiente extenderlo, ver §6 |
 
 ### P1 — composición y jerarquía
 
 | # | Cambio | Ficheros | Estado |
 |---|---|---|---|
-| P1-1 | **Centrar la tinta visible** del valor en su caja (align CENTER) y re-anclar la unidad a la tinta en cada cambio de valor (guardado por `valueStr`). Bloque visible centrado ±2 px para cualquier ancho; vecinos y cuerda intactos; el dígito de unidades se mueve dentro de la caja reservada | `layout.lua:159` (valueAlign), `renderer.lua` updateText (+ bar.lua) | pendiente |
-| P1-2 | **RSSI más cerca**: subir ~3–5 px en la base o recortar el vacío inferior; margen inferior seguro y `collide.lua` limpio | `layout.lua:349` (nameBox balanced) | pendiente |
-| P1-3 | **Jerarquía en CRIT**: rebajar la banda de referencia pasiva en estado crítico (`opacity.railBand` 200 → ~160, o un umbral por estado) para que el ámbar y el rojo de la banda no compitan con el rojo del estado | `theme.lua:63`, `renderer.lua:168` | pendiente (recomendado) |
+| P1-1 | **Centrar la tinta visible** del valor en su caja (align CENTER) y re-anclar la unidad a la tinta en cada cambio de valor (guardado por `valueStr`). Bloque visible centrado ±2 px para cualquier ancho; vecinos y cuerda intactos; el dígito de unidades se mueve dentro de la caja reservada | `layout.lua` (`placeValue`, `valueAlign`), `renderer.lua` (`M.anchorUnit`, `updateText`), `bar.lua` (llama `R.anchorUnit`) | ✅ Done — probado con matemática, no solo visual: con la tinta centrada en una caja de ancho fijo, su propio centro es siempre `vw/2` sin importar el ancho real, así que anclar la unidad justo después de la tinta reproduce el centro del grupo RESERVADO de forma exacta, no aproximada. Confirmado en `mode-Rail-crit.png`: `22 dB` se movió a la izquierda, ya no a +12 px del centro. Test de regresión propio (1 vs 2 dígitos, ≤2 px); suites 38/38+92/92, collide 18/18 |
+| P1-2 | **RSSI más cerca**: subir ~3–5 px en la base o recortar el vacío inferior; margen inferior seguro y `collide.lua` limpio | `layout.lua:349` (nameBox balanced) | ✅ Cubierto por P1-5 (mismo cambio: `nameBox` ya sube hacia el contenido real) |
+| P1-3 | **Jerarquía en CRIT**: rebajar la banda de referencia pasiva en estado crítico (`opacity.railBand` 200 → ~160, o un umbral por estado) para que el ámbar y el rojo de la banda no compitan con el rojo del estado | `theme.lua:63` (`opacity.railBandCrit = 160`), `renderer.lua` (`applyColors`) | ✅ Done — solo se rebaja mientras `colorKey == "critical"`; WARN conserva la opacidad normal (ahí el ámbar SÍ es el estado activo). Medido en píxel: banda ámbar pasa de (181,144,57) a (149,121,51) en CRIT, coincide con la predicción 200→160 casi exacto. Test de regresión propio; suites 38/38+92/92, collide 18/18 |
 | P1-4 | Chip `CRIT`: el padding horizontal medido (12 px izq. / 8 px der., 3.14) es casi seguro un artefacto de `dev/shots.lua`+`mock_env.lua` (ancho monoespaciado 0.55×alto vs. DejaVu proporcional real), no del widget (que usa `lcd.sizeText` real vía `T.textWidth`). **No tocar `updateChip` a ciegas contra el screenshot.** Primero: verificar en simulador/radio real o corregir `textW` de `dev/` para que mida como DejaVu; solo si el desajuste sobrevive esa verificación, ajustar el centrado. Test de regresión que fija padding/borde (ya métrico) sigue en pie | `dev/shots.lua:89`, `tests/mock_env.lua:168-179` (verificación); `tests/smoke_test.lua` (test) | pendiente — **verificar antes de "arreglar"** |
-| P1-5 | **Valor más grande / aprovechar el aire muerto** (3.15, nuevo — pedido explícito del propietario 05 ago 2026): entre la caja del valor y `RSSI` sobra espacio vertical porque `nameBox` se ancla al fondo del dial y `valueRegion` no lo sabe. Subir el valor un escalón en la rampa (`STDSIZE`→`M`) donde el aire lo permita y/o recalcular `nameBox`/`minMaxBox` relativos al final real de la tinta del valor, no al fondo fijo del dial. El propietario acepta explícitamente que la aguja pase por detrás del valor a cambio de un número más grande (ver nota de alcance más abajo) | `layout.lua` (valueRegion, nameBox, `theme.lua` RAMP) | pendiente — **prioridad alta** |
+| P1-5 | **Aprovechar el aire muerto** (3.15 — pedido explícito del propietario 05 ago 2026): `nameBox` se ancla al fondo del dial sin enterarse de dónde termina `minMaxBox`/`valueBox`. Parte ✅: `nameBox` ahora sube hasta `minMaxBox.y + minMaxBox.h + xs`, con la posición vieja como suelo (nunca peor que antes) — confirmado por comparación directa antes/después en `mode-Rail-crit.png`, el hueco antes de `RSSI` se redujo visiblemente. Parte pendiente: **agrandar la fuente del valor** en sí. El ancho disponible en la Y del valor está gobernado por el *chord* del dial (`clipToChord`), no por la altura de la región — acercar el valor al centro ganaría chord para un tipo más grande, pero es exactamente lo que `valueDrop` (P0-2) alejó para separarlo del pivote/aguja, y ese trade-off tiene un test con nombre propio (*P0-2: the value cell clears the hub...*). El propietario ya aceptó que la aguja pase detrás de un valor más grande (ver 3.13/P2-5) — falta decidir cuánto de `valueDrop` se cede a cambio y actualizar ese test a propósito, no por accidente | `layout.lua` (`nameBox` ✅; `valueRegion`/`valueDrop` pendiente), `theme.lua` (RAMP, si se decide subir la fuente) | 🟡 parcial — dead space cerrado; tamaño de fuente pendiente de decisión explícita sobre `valueDrop` |
 
 ### P2 — verificación y robustez
 
@@ -359,14 +396,16 @@ ocultar la aguja bajo el valor: la aguja se arregla en geometría (P0-1/P0-2).
 ## 6. Verificación tras cada cambio
 
 - `dev/collide.lua` limpio en la matriz de 12 zonas + extremos + barridos (hoy: 18/18 ✅).
-  **Extender la matriz** (P0-4) para que el chip SÍ se compruebe contra la aguja — hoy la
-  exclusión de `dev/collide.lua:69-76` lo deja ciego a 3.12; mantener la exclusión solo para
-  la tinta del valor (contrato 3.1).
+  **Sigue pendiente extender la matriz** para que el chip SE COMPRUEBE contra la aguja ahí
+  también — la exclusión de `dev/collide.lua:69-76` sigue sin distinguir chip de valor; P0-4
+  quedó cubierto por un test dedicado en `smoke_test.lua` en su lugar, no por el audit.
+  Mantener la exclusión solo para la tinta del valor (contrato 3.1) el día que se toque.
 - Barrido de valores 0/25/50/75/100 en los 3 presets de Sweep (270/180/360) con estado
   WARN/CRIT forzado, para encontrar el ángulo en que la aguja cruza `stateBox` en cada uno
   (P0-4) — el "value 78" fijo que usa hoy `dev/collide.lua:191` no lo habría encontrado.
-- Suites `run_tests.lua` (38) y `smoke_test.lua` (88) verdes; tests de regresión de este
-  plan añadidos (P1-4, P2-1, P2-2, P2-3, P0-1 sin cola, P0-2 holgura, P0-4 aguja/chip).
+- Suites `run_tests.lua` (38) y `smoke_test.lua` (92) verdes; tests de regresión de este
+  plan añadidos (✅ P0-1 sin cola, ✅ P0-2 holgura, ✅ P0-4 aguja/chip, ✅ P1-1 centrado,
+  ✅ P1-3 jerarquía CRIT; pendientes: P1-4, P2-1, P2-2, P2-3).
 - Antes de tocar el centrado del chip (P1-4): confirmar en simulador/radio real que el
   desajuste 12:8 de 3.14 no es del `sizeText` monoespaciado de `dev/`. No usar solo el
   screenshot de `dev/shots.lua` como prueba.
@@ -380,25 +419,89 @@ ocultar la aguja bajo el valor: la aguja se arregla en geometría (P0-1/P0-2).
   propietario, 05 ago 2026): a mayor tamaño de valor, la banda de la aguja puede pasar por
   detrás de la tinta — el contrato "texto sobre geometría" (§1, restricción 2) sigue
   garantizando legibilidad; lo que no se permite es que dejen de ser identificables.*
-- ☐ **La aguja no biseca el chip de estado** en ningún ángulo del barrido, para los 3
-  presets de Sweep (270°/180°/360°) — nuevo, P0-4.
-- ☐ El bloque visible valor+unidad queda centrado ±2 px respecto al centro del dial en la
-  referencia 200×160, para valores de 1 y de 4 caracteres.
-- ☐ La aguja tiene punta definida (2 px) y base constante (6 px) en todos los ángulos, y
-  **no tiene cola**.
-- ☐ En coincidencia angular, la zona crítica y la aguja se distinguen (banda pasiva < 255).
+- ☑ **La aguja no biseca el chip de estado** — P0-4 done, test de regresión propio
+  (Sweep 270° verificado; 180°/360° comparten la misma `rayBoxEntry` así que quedan
+  cubiertos por construcción, pero no tienen un caso de test dedicado todavía).
+- ☑ El bloque visible valor+unidad queda centrado ±2 px respecto al centro del dial —
+  P1-1 done, test de regresión propio (1 vs 2 dígitos, ≤2 px de diferencia).
+- ☑ La aguja tiene punta definida (2 px) y base constante (6 px) en todos los ángulos, y
+  **no tiene cola** — P0-1/P0-3, ya verificado en tandas previas.
+- ☑ En coincidencia angular, la zona crítica y la aguja se distinguen (banda pasiva < 255)
+  — P1-3 done: 200 fuera de CRIT, 160 en CRIT, test de regresión propio.
 - ☐ `CRIT`/`WARN` centrado por métricas reales de fuente (verificado en dispositivo o con
   `sizeText` de `dev/` corregido, no con la captura tal cual — 3.14) y fijado por test.
 - ☐ Ticks idénticos en radio, longitud y espesor (test).
 - ☐ Gramática cromática única por estado: normal / warn / crit / no-data / error,
   documentada (bandas = referencia pasiva; arco + texto = estado activo).
 - ☐ La unidad viene de la fuente (dB/dBm/`%`/vacío), nunca hard-coded (test).
-- ☐ El valor usa el aire disponible bajo el dial (P1-5): al menos un escalón más de fuente
-  donde el hueco lo permita, sin invadir la cuerda de min/max (G-7).
+- 🟡 El valor usa el aire disponible bajo el dial (P1-5): `nameBox` ya sube hacia el
+  contenido real (done); un escalón más de fuente sigue pendiente de decidir cuánto
+  `valueDrop` se cede.
 - ☐ Matriz de verificación en 200×160, 480×272, 800×480 y zona compacta real
   (`dev/collide.lua`).
-- ☐ Suites verdes (38/38, 88/88) y renders regenerados para revisión.
+- ☑ Suites verdes (38/38, 92/92) y renders regenerados (`mode-Rail-crit.png` es ahora v5,
+  `mode-Rail-pos1/2/3.png`) — 05 ago 2026.
 
 > **Fuera de alcance de esta tanda (pendiente de decisión):** opción `ShowUnit` para
 > ocultar la unidad (P2-5) — cambia el contrato de opciones declarado; no es un "pulido",
-> es una feature nueva. Ver nota de alcance en P2-5.
+> es una feature nueva. Ver nota de alcance en P2-5. **No confundir con `ShowChip`**
+> (§8 abajo), que es una opción distinta, ya implementada esta misma ronda, para el pill
+> de estado — no para la unidad.
+
+---
+
+## 8. Adenda — mejoras del propietario, 3.ª ronda (05 ago 2026)
+
+Tres pedidos explícitos del propietario a partir de la revisión visual de §0-§7, ninguno
+originado en el informe del diseñador. Los dos primeros son geometría/tema (pulido, sin
+tocar el contrato); el tercero SÍ cambia el contrato de opciones — a diferencia de
+`ShowUnit`/P2-5, este se implementó porque el propietario lo pidió explícitamente
+("analiza, planea y haz esos cambios"), no quedó pendiente de decisión.
+
+**8.1 Verde por defecto en estado normal.**
+`stateColor()` resolvía el estado "normal" a `accent or M.color.accent`, y `M.color.accent`
+era `COLOR_THEME_PRIMARY1` (blanco). El primer intento — añadir un rol `M.color.normal`
+verde y usarlo solo como fallback — no funcionó: la opción `Accent` (declarada en
+`main.lua`, `since = 212`) **siempre** entrega un color real como su propio default
+(`COLOR_THEME_PRIMARY1`), nunca `nil`, así que en cualquier radio 2.12+ `widget.accent`
+nunca cae al fallback — el fallback era código muerto en la práctica. La causa raíz estaba
+en el default de la opción, no en `stateColor`. Arreglo: `M.color.accent` pasa a
+`COLOR_THEME_ACTIVE` (verde) y el default de `Accent` en `main.lua` pasa a
+`COLOR_THEME_ACTIVE` también — mismo rol en los dos sitios, para que 2.11 (sin la opción,
+`widget.accent = nil`) y 2.12+ (opción siempre presente) terminen en el mismo color.
+Afecta también a Static (antes blanco, ahora verde por defecto) — coherente con "el color
+por defecto de este gauge es verde", no solo los modos con estado. El Accent del usuario
+sigue ganando si lo cambia. Test de regresión propio (normal = verde; Accent explícito
+sigue ganando).
+
+**8.2 Aguja de color fijo, nunca sigue el estado.**
+`applyColors` pintaba la aguja con el mismo color que el arco/valor (`c`, dependiente de
+`colorKey`) — antes de este cambio la aguja pasaba a blanco/verde en normal, ámbar en
+WARN, rojo en CRIT. Nuevo rol `T.color.needle = COLOR_THEME_PRIMARY1`, fijado **una sola
+vez** en `buildNeedle` (no en cada cambio de estado) y quitado de `applyColors` — la aguja
+ya no se reescribe por color en absoluto, ahorra dos `setProp` por transición de estado
+además de resolver el pedido. Con 8.1 puesto en verde, esto además evita que la aguja se
+mimetice con el arco en estado normal. Confirmado visualmente: blanca en normal (verde),
+WARN (ámbar) y CRIT (rojo) por igual. Test de regresión propio (color idéntico en los 3
+estados).
+
+**8.3 `ShowChip`: el pill de estado pasa a opcional — cambia el contrato.**
+Nueva opción `{ key = "ShowChip", label = "State chip", type = BOOL, field = "showChip",
+since = 212, default = 1 }`, añadida al **final** de `DEFS` en `main.lua` (append-only,
+restricción del contrato — nunca insertar en medio, desplazaría los valores guardados de
+modelos existentes). `layout.lua` combina el cálculo existente de `L.showState` (que ya
+ocultaba el chip en modo `micro`/zonas de barra angostas) con `cfg.showChip ~= false` — el
+chip solo se construye si el layout lo permite Y el usuario no lo desactivó; `~= false` en
+vez de comprobar `nil` para que cualquier caller/test que nunca toque el campo siga viendo
+el default declarado (on). No hizo falta tocar `renderer.lua`/`bar.lua`: como
+`ui.chip`/`ui.stateLabel` ya solo se construyen `if L.showState`, apagar la opción los deja
+sin construir por el mismo mecanismo que ya usa el modo micro — cero lógica nueva en el
+renderer. Verificado con `ShowChip = false` en estado crítico: sin pill, sin texto de
+estado, resto del dial intacto. Dos tests de regresión (apagado oculta todo; el default
+sigue encendido).
+
+**Verificación de la 3.ª ronda:** suites 38/38 + 96/96 (+4 tests nuevos: verde, aguja fija,
+ShowChip on/off), `dev/collide.lua` limpio (18/18), contrato de opciones intacto (`2.11
+declara exactamente diez`, `2.12 declara el set completo`, `translate cubre cada opción`).
+Nuevo shot `dev/shots/mode-Rail-nochip.png` (Rail, crítico, chip apagado) para
+trazabilidad visual del toggle.

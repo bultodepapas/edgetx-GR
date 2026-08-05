@@ -281,6 +281,10 @@ shot("mode-Rail-pos1", { 200, 160 }, { ColorMode = "Rail" }, 0)
 shot("mode-Rail-pos2", { 200, 160 }, { ColorMode = "Rail" }, 50)
 shot("mode-Rail-pos3", { 200, 160 }, { ColorMode = "Rail" }, 100)
 
+-- ShowChip off (owner request): same critical frame as mode-Rail-crit, pill
+-- hidden - confirms the option actually removes the chip, not just its text.
+shot("mode-Rail-nochip", { 200, 160 }, { ColorMode = "Rail", ShowChip = false }, 22)
+
 -- bar
 shot("bar-300x70-crit", { 300, 70 }, { Style = "Bar" }, 95)
 shot("bar-300x44", { 300, 44 }, { Style = "Bar" }, 95)

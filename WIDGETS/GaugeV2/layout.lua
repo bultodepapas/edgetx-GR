@@ -156,7 +156,18 @@ local function placeValue(L, region, sample, unitText, cap)
   local y0 = region.y + floor((region.h - vh) / 2)
   if y0 < region.y then y0 = region.y end
   L.valueBox = box(x0, y0, vw, vh)
-  L.valueAlign = RIGHT
+  -- P1-1 (Tanda 5 review 3.4): the box is reserved at the widest sample's
+  -- width so digits never shift the group, but RIGHT-aligning the actual
+  -- ink inside it flushed short values against the unit, leaving the empty
+  -- reserve entirely on the left - the visible "22 dB" sat well right of
+  -- the dial's centre even though the RESERVED group was centred there.
+  -- Centring the ink instead, with the unit re-anchored to its real edge
+  -- every time the value text changes (renderer.anchorUnit/bar.lua), keeps
+  -- the VISIBLE group centred on the same point for any digit count: with
+  -- the ink centred in a box of width vw, its own centre is always at
+  -- vw/2 regardless of actualW, so attaching the unit right after the ink
+  -- reproduces exactly the reserved group's centre, not an approximation.
+  L.valueAlign = CENTER
   -- unit sits on the value baseline, one step down in the type ramp. `uw`
   -- from pickValueFont already includes the gap, so the box must not add it
   -- again: the reserved group is then exactly `groupW` and the fit check in
@@ -177,7 +188,10 @@ local function dialLayout(widget, cfg, L, w, h)
 
   L.showUnit = mode ~= "micro"
   L.showName = (mode == "normal" or mode == "large")
-  L.showState = mode ~= "micro"
+  -- ShowChip (owner request, Tanda 5): the WARN/CRIT/no-data pill is opt-out,
+  -- not mandatory - `~= false` so it defaults on for callers/tests that never
+  -- set the field, matching the option's declared BOOL default of 1.
+  L.showState = mode ~= "micro" and cfg.showChip ~= false
   L.showMarkers = (cfg.showMinMax or 1) > 1 and mode ~= "micro"
   L.showMinMaxText = (cfg.showMinMax or 1) > 2 and mode == "large"
   -- a full ring starts and ends at the same point: two scale labels would sit
@@ -351,7 +365,15 @@ local function dialLayout(widget, cfg, L, w, h)
                       dial.w, nameH)
       L.showMinMaxText = false
     else
-      L.nameBox = box(0, dial.y + dial.h - nameH, w, nameH)
+      -- The name used to hang from the dial's bottom edge regardless of how
+      -- tall the value/min-max block actually rendered, leaving dead air
+      -- between them whenever the value was short (Tanda 5 review 3.15).
+      -- Pull it up toward the real content bottom; the old bottom-anchored
+      -- spot - below the ring's open wedge, always clear of the arc - stays
+      -- as the floor, so this never pushes the name lower than before.
+      local closeY = L.minMaxBox.y + L.minMaxBox.h + T.px(T.space.xs)
+      local farY = dial.y + dial.h - nameH
+      L.nameBox = box(0, min(closeY, farY), w, nameH)
     end
   end
   L.textAlign = align
@@ -461,7 +483,7 @@ local function barLayout(widget, cfg, L, w, h)
   local pad = T.px(T.space.sm)
   L.showUnit = true
   L.showName = h >= T.px(46)
-  L.showState = w >= T.px(120)
+  L.showState = w >= T.px(120) and cfg.showChip ~= false
   L.showMarkers = (cfg.showMinMax or 1) > 1
   L.showMinMaxText = false
   L.showScale = false

@@ -216,13 +216,17 @@ local function buildNeedle(widget)
   -- body is thick from the hub to ~55% of the reach, the 2-3 px tip overlaps
   -- the body end and runs to the scale, so the pointer reads as a blade
   -- pointing outward instead of a blunt constant-width line.
+  -- Fixed colour, set once here and never touched by applyColors: the
+  -- needle must stay legible against every band colour (green/amber/red)
+  -- and the dark/light theme alike, so it does not follow the state colour
+  -- the way the arc and value do (owner request, Tanda 5 review).
   ui.needle = lvgl.line{
     pts = G.linePoints(L.cx, L.cy, L.needleInner, L.needleBodyOuter, a),
-    thickness = max(1, L.needleHalf * 2), color = T.color.accent,
+    thickness = max(1, L.needleHalf * 2), color = T.color.needle,
   }
   ui.needleTip = lvgl.line{
     pts = G.linePoints(L.cx, L.cy, L.needleTipInner, L.needleOuter, a),
-    thickness = L.needleTipThickness, color = T.color.accent,
+    thickness = L.needleTipThickness, color = T.color.needle,
   }
   -- Solid hub: ONE filled circle in the neutral rail role, created after the
   -- needle so it covers the blade's inner end. The old ring+accent-dot pair
@@ -301,6 +305,7 @@ function M.build(widget)
     -- letters sit in the middle of the pill, not 1 px from its top edge
     -- (review P-B).
     local chipOff = floor((L.chipHeight - T.fontHeight(L.stateFont)) / 2)
+    L.chipOff = chipOff
     -- 1 px outline in the lighter label role, behind the dark pill, so the
     -- chip reads as a label with a defined edge instead of "a piece of the
     -- rail behind the text" (review P-B).
@@ -335,6 +340,7 @@ function M.build(widget)
     dirty = {},
     angle = -1, ghostAngle = -1, minAngle = -1, maxAngle = -1,
     needleShown = true, markersShown = false, chipShown = false,
+    needleClampChip = false,
     colorKey = "", valueStr = "", stateStr = "", minStr = "", maxStr = "",
     prevAvail = "unset", pulse = false, pulseAt = 0,
   }
@@ -389,13 +395,24 @@ local function applyColors(widget, key)
   setProp(widget, ui.valueArc, "color", c)
   setProp(widget, ui.valueArc, "opacity", opa)
   setProp(widget, ui.valueLabel, "color", c)
-  setProp(widget, ui.needle, "color", c)
-  setProp(widget, ui.needleTip, "color", c)
+  -- the needle is intentionally NOT touched here: it keeps T.color.needle,
+  -- set once at build time (buildNeedle)
   if ui.stateLabel then
     local sc = T.color.label
     if key == "warning" then sc = T.color.warn
     elseif key == "critical" then sc = T.color.crit end
     setProp(widget, ui.stateLabel, "color", sc)
+  end
+  if ui.rails then
+    -- P1-3 (Tanda 5 review 3.6): only while critical, drop every passive
+    -- band one step further so the full-red arc/text stay the brightest
+    -- thing on the ring. WARN keeps the normal reference opacity - there
+    -- the amber band IS the active state, not a competing one.
+    local railOpa = (key == "critical") and T.opacity.railBandCrit
+      or T.opacity.railBand
+    for _, rail in ipairs(ui.rails) do
+      setProp(widget, rail, "bgOpacity", railOpa)
+    end
   end
 end
 
@@ -448,11 +465,33 @@ function M.updateChip(widget, s)
     end
     lvgl.show(ui.chipEdge)
     lvgl.show(ui.chip)
+    -- The pill's actual footprint (edge rectangle, not the narrower
+    -- stateBox the text sits in) - kept so updateArc can stop the needle
+    -- short of it instead of drawing straight through (Tanda 5 review 3.12).
+    frame.chipBox = {
+      x = x - T.px(1), y = L.stateBox.y - L.chipOff - T.px(1),
+      w = w + T.px(2), h = L.chipHeight + T.px(2),
+    }
   else
     lvgl.hide(ui.chipEdge)
     lvgl.hide(ui.chip)
   end
   frame.chipShown = show
+end
+
+-- The value is CENTRED in a box reserved at the widest sample's width
+-- (layout.placeValue, P1-1), so its own ink is always centred on the box
+-- regardless of how many digits it actually has - but the unit was placed
+-- once, at layout time, against the box's right edge. Re-anchor it to the
+-- ink's REAL right edge whenever the text changes: shared by the dial and
+-- the bar (bar.lua calls this too) so both keep the visible "value + unit"
+-- group centred at any digit count, not just at the widest sample.
+function M.anchorUnit(widget, str)
+  local ui, L = widget.ui, widget.layout
+  if not ui.unitLabel then return end
+  local actualW = T.textWidth(str, L.valueFont)
+  local inkRight = L.valueBox.x + floor((L.valueBox.w + actualW) / 2)
+  setProp(widget, ui.unitLabel, "x", inkRight + T.px(T.space.md))
 end
 
 local function updateText(widget)
@@ -468,6 +507,7 @@ local function updateText(widget)
   if str ~= frame.valueStr then
     frame.valueStr = str
     setProp(widget, ui.valueLabel, "text", str)
+    M.anchorUnit(widget, str)
   end
 
   if ui.stateLabel then
@@ -494,6 +534,32 @@ local function updateText(widget)
   end
 end
 
+-- The needle's static reach (L.needleInner/needleBodyOuter/needleTipInner/
+-- needleOuter) crosses the state chip pill for some angle in every Sweep
+-- preset, because the chip sits on the vertical band the needle also sweeps
+-- through (Tanda 5 review 3.12). When the chip is on screen and the current
+-- angle's ray would enter it, shorten the needle to stop just short instead
+-- of drawing through a solid pill - the value/unit text stay under the
+-- existing "text paints over geometry" contract (3.1), only the chip (a
+-- big, opaque shape a needle visibly bisects) gets this extra clearance.
+local function needleReach(widget, a)
+  local L, frame = widget.layout, widget.frame
+  local outer, bodyOuter, tipInner =
+    L.needleOuter, L.needleBodyOuter, L.needleTipInner
+  if frame.chipShown and frame.chipBox then
+    local entry = G.rayBoxEntry(L.cx, L.cy, a, frame.chipBox)
+    if entry and entry < outer then
+      local safe = max(L.needleInner, entry - T.px(2))
+      if safe < outer then
+        outer = safe
+        bodyOuter = min(bodyOuter, safe)
+        tipInner = min(tipInner, bodyOuter)
+      end
+    end
+  end
+  return outer, bodyOuter, tipInner
+end
+
 local function updateArc(widget)
   local ui, L, frame = widget.ui, widget.layout, widget.frame
   local data = widget.data
@@ -513,16 +579,18 @@ local function updateArc(widget)
   end
   local sv = widget.mods.smoothing.step(widget, data.displayValue)
   local a = angleOf(widget, sv)
-  if a ~= frame.angle then
+  if a ~= frame.angle or frame.chipShown ~= frame.needleClampChip then
     frame.angle = a
+    frame.needleClampChip = frame.chipShown
     setProp(widget, ui.valueArc, "endAngle", a)
     if ui.needle then
+      local outer, bodyOuter, tipInner = needleReach(widget, a)
       -- two line segments, both rewritten with the same guarded pts path as
       -- before: body + tip sweep together, nothing allocates (P2-1)
       lvgl.set(ui.needle, { pts = G.linePoints(L.cx, L.cy, L.needleInner,
-        L.needleBodyOuter, a) })
-      lvgl.set(ui.needleTip, { pts = G.linePoints(L.cx, L.cy, L.needleTipInner,
-        L.needleOuter, a) })
+        bodyOuter, a) })
+      lvgl.set(ui.needleTip, { pts = G.linePoints(L.cx, L.cy, tipInner,
+        outer, a) })
     end
   end
   if not frame.needleShown then

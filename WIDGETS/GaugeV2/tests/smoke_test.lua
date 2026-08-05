@@ -328,6 +328,36 @@ test("threshold colouring reaches the objects", function()
   assertEq(w.ui.valueLabel.props.color, RED)
 end)
 
+test("the normal state defaults to green, not the accent colour", function()
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold" })
+  mock.setValue(ID_RSSI, 70); refresh(w)
+  assertEq(w.frame.colorKey, "normal")
+  assertEq(w.ui.valueArc.props.color, COLOR_THEME_ACTIVE,
+    "normal state is green by default (owner request, Tanda 5)")
+
+  local w2 = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold",
+                              Accent = COLOR_THEME_FOCUS })
+  mock.setValue(ID_RSSI, 70); refresh(w2)
+  assertEq(w2.ui.valueArc.props.color, COLOR_THEME_FOCUS,
+    "an explicit Accent still overrides the green default")
+end)
+
+test("the needle keeps a fixed colour across every state", function()
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold" })
+  local needleColor = w.mods.theme.color.needle
+  mock.setValue(ID_RSSI, 70); refresh(w)
+  assertEq(w.ui.needle.props.color, needleColor, "normal")
+  mock.setValue(ID_RSSI, 45); refresh(w, 2)
+  assertEq(w.frame.colorKey, "warning")
+  assertEq(w.ui.needle.props.color, needleColor,
+    "needle stays fixed in WARN, does not turn amber")
+  mock.setValue(ID_RSSI, 10); refresh(w, 2)
+  assertEq(w.frame.colorKey, "critical")
+  assertEq(w.ui.needle.props.color, needleColor,
+    "needle stays fixed in CRIT, does not turn red")
+  assertEq(w.ui.needleTip.props.color, needleColor, "tip matches the body")
+end)
+
 test("style choice controls the needle", function()
   local w = newWidget(nil, { Source = ID_RSSI, Style = "Arc" })
   assertEq(w.ui.needle, nil, "arc style has no needle")
@@ -457,6 +487,37 @@ test("G-6: the value and unit stay inside the ring in balanced zones", function(
       end
     end
   end
+end)
+
+test("P1-1: the visible value + unit group stays centred at any digit count", function()
+  -- The value box is reserved at the widest sample's width and the ink is
+  -- CENTRED inside it, with the unit re-anchored to the ink's real edge on
+  -- every value change (layout.placeValue / renderer.anchorUnit) - so the
+  -- visible group must land on the same centre whether the value is "7" or
+  -- "78", not just the RESERVED box (Tanda 5 review 3.4).
+  local w = newWidget(nil, { Source = ID_RSSI })
+  local theme = w.mods.theme
+  local function groupCenter()
+    local L = w.layout
+    local vp = w.ui.valueLabel.props
+    local vw = theme.textWidth(vp.text, vp.font)
+    local vLeft = L.valueBox.x + math.floor((L.valueBox.w - vw) / 2)
+    local right = vLeft + vw
+    if w.ui.unitLabel then
+      local up = w.ui.unitLabel.props
+      right = up.x + theme.textWidth(up.text, up.font)
+    end
+    return (vLeft + right) / 2
+  end
+  mock.setValue(ID_RSSI, 7)
+  refresh(w)
+  local c1 = groupCenter()
+  mock.setValue(ID_RSSI, 78)
+  refresh(w)
+  local c2 = groupCenter()
+  assertTrue(math.abs(c1 - c2) <= 2,
+    string.format("group centre moved %.1f px between digit counts",
+      math.abs(c1 - c2)))
 end)
 
 test("G-7: the min/max row stays inside the ring and off the scale labels", function()
@@ -728,6 +789,31 @@ test("P0-2: the value cell clears the hub and the needle at critical angles", fu
     "needle tip keeps >= 2 px from the value cell at the critical angle")
 end)
 
+test("P0-4: the needle stops short of the state chip instead of crossing it", function()
+  local w = newWidget(ZONE, { Source = ID_RSSI, ColorMode = "Rail" })
+  mock.setValue(ID_RSSI, 50)   -- default Rail sweep: needle points straight up, WARN
+  refresh(w, 40)
+  assertTrue(w.frame.chipShown, "WARN chip is shown at this value")
+  local box = w.frame.chipBox
+  assertTrue(box ~= nil, "the chip's footprint is recorded for the clamp")
+  local function insideBox(x, y)
+    return x >= box.x and x <= box.x + box.w and y >= box.y and y <= box.y + box.h
+  end
+  local function crossesChip(pts)
+    for i = 0, 40 do
+      local t = i / 40
+      local x = pts[1][1] + (pts[2][1] - pts[1][1]) * t
+      local y = pts[1][2] + (pts[2][2] - pts[1][2]) * t
+      if insideBox(x, y) then return true end
+    end
+    return false
+  end
+  assertTrue(not crossesChip(w.ui.needle.props.pts),
+    "needle body stays clear of the chip (Tanda 5 review 3.12)")
+  assertTrue(not crossesChip(w.ui.needleTip.props.pts),
+    "needle tip stays clear of the chip (Tanda 5 review 3.12)")
+end)
+
 test("P-B: the state chip gains padding, vertical centring and an edge", function()
   local w = newWidget(nil, { Source = ID_RSSI })
   mock.setValue(ID_RSSI, 10)   -- critical -> CRIT chip
@@ -762,6 +848,25 @@ test("P-B: the bar chip gets the same padding, centring and edge", function()
   assertTrue(w.ui.chipEdge ~= nil, "bar pill has the 1 px outline")
   local off = math.floor((L.chipHeight - w.mods.theme.fontHeight(L.stateFont)) / 2)
   assertEq(w.ui.chip.props.y, L.stateBox.y - off, "bar pill is centred")
+end)
+
+test("ShowChip=Off hides the state pill even when critical", function()
+  local w = newWidget(nil, { Source = ID_RSSI, ShowChip = false })
+  mock.setValue(ID_RSSI, 5)
+  refresh(w)
+  assertEq(w.data.state, "critical")
+  assertEq(w.ui.chip, nil, "chip never built when ShowChip is off")
+  assertEq(w.ui.chipEdge, nil)
+  assertEq(w.ui.stateLabel, nil)
+end)
+
+test("ShowChip defaults to on", function()
+  local w = newWidget(nil, { Source = ID_RSSI })
+  mock.setValue(ID_RSSI, 5)
+  refresh(w)
+  assertEq(w.data.state, "critical")
+  assertTrue(w.ui.chip ~= nil, "chip built by default")
+  assertEq(w.frame.stateStr, "CRIT")
 end)
 
 test("P-C: ticks are at least 2 px and use the lighter role", function()
@@ -801,6 +906,25 @@ test("P-E: rail bands dim behind the value arc and clear it by the rail gap", fu
   assertEq(L.railRadius, L.radius + math.floor(L.trackThickness / 2)
     + L.railThickness + w.mods.theme.px(1),
     "the rail band radius clears the value arc by the gap")
+end)
+
+test("P1-3: the passive rail bands dim further only while critical", function()
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Rail",
+                             Scale = "Manual", Min = 0, Max = 100,
+                             Warn = 60, Crit = 30 })
+  mock.setValue(ID_RSSI, 70)   -- normal: reference opacity, same as P-E
+  refresh(w)
+  for _, r in ipairs(w.ui.rails) do
+    assertEq(r.props.bgOpacity, w.mods.theme.opacity.railBand,
+      "rail bands stay at the reference opacity outside critical")
+  end
+  mock.setValue(ID_RSSI, 10)   -- critical: dim one step further
+  refresh(w)
+  assertEq(w.data.state, "critical", "value 10 is below Crit=30")
+  for _, r in ipairs(w.ui.rails) do
+    assertEq(r.props.bgOpacity, w.mods.theme.opacity.railBandCrit,
+      "rail bands dim further once critical (Tanda 5 review 3.6)")
+  end
 end)
 
 test("P2-9: the neutral track sits at ~35% opacity", function()
