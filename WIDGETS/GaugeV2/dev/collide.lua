@@ -73,7 +73,7 @@ local function report(name, w, zone)
   -- or a threshold mark (which MUST not cross text).
   local sweep = {}
   if w.ui.needle then sweep[w.ui.needle] = true end
-  if w.ui.tail then sweep[w.ui.tail] = true end
+  if w.ui.needleTip then sweep[w.ui.needleTip] = true end
   for _, o in ipairs(mock.objects()) do
     if not o.visible then goto cont end
     if o.kind == "label" then

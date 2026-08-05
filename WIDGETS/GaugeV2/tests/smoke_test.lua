@@ -650,6 +650,170 @@ test("P1-10: the bar chips and pulses its state like the dial", function()
   assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.full)
 end)
 
+-- ---- designer review repair plan (dev/design-review-response.md) --------
+
+test("P-A: the needle is a tapered two-line blade with a solid hub", function()
+  local w = newWidget(nil, { Source = ID_RSSI, Style = "Needle" })
+  refresh(w)
+  assertTrue(w.ui.needle ~= nil and w.ui.needleTip ~= nil,
+    "body and tip both built")
+  assertEq(w.ui.tail, nil, "the counterweight/tail is gone (P0-1)")
+  assertEq(w.ui.needle.kind, "line", "needle body stays a line (P2-1)")
+  assertEq(w.ui.needleTip.kind, "line", "needle tip stays a line (P2-1)")
+  local L = w.layout
+  assertTrue(L.needleInner < L.needleBodyOuter
+    and L.needleBodyOuter < L.needleOuter,
+    "the body stops short of the scale and the tip carries the rest")
+  assertTrue(w.ui.needle.props.thickness > w.ui.needleTip.props.thickness,
+    "the tip is thinner than the body")
+  assertTrue(w.ui.needleTip.props.thickness >= w.mods.theme.px(2)
+    and w.ui.needleTip.props.thickness <= w.mods.theme.px(4),
+    "tip thickness in the 2-4 px band")
+  local p = w.ui.needleTip.props.pts[2]
+  local d = math.sqrt((p[1] - L.cx) ^ 2 + (p[2] - L.cy) ^ 2)
+  assertTrue(math.abs(d - L.needleOuter) <= 1.5, "the tip reaches the scale")
+  assertEq(w.ui.pivotDot, nil, "no accent dot remains on the pivot")
+  assertEq(w.ui.pivotRing.kind, "circle", "the hub is a single circle")
+  assertEq(w.ui.pivotRing.props.filled, 1, "the hub is solid")
+  assertEq(w.ui.pivotRing.props.color, COLOR_THEME_SECONDARY1,
+    "the hub uses the neutral rail role")
+  assertTrue(objIndex(w.ui.pivotRing) > objIndex(w.ui.needle),
+    "the hub paints on top of the needle")
+end)
+
+test("P-A: the tip sweeps with the body on every angle change", function()
+  local w = newWidget(nil, { Source = ID_RSSI, Style = "Needle" })
+  mock.setValue(ID_RSSI, 20)
+  refresh(w, 2)               -- angle moves to ~the 20% position
+  local L = w.layout
+  local a = w.frame.angle
+  local function endRadius(line)
+    local pt = line.props.pts[2]
+    return math.sqrt((pt[1] - L.cx) ^ 2 + (pt[2] - L.cy) ^ 2)
+  end
+  assertTrue(math.abs(endRadius(w.ui.needleTip) - L.needleOuter) <= 1.5,
+    "tip points at the scale at angle " .. tostring(a))
+  assertTrue(w.ui.needleTip.visible, "the tip shows with the needle")
+end)
+
+test("P0-2: the value cell clears the hub and the needle at critical angles", function()
+  local w = newWidget({ x = 0, y = 0, w = 200, h = 160 }, { Source = ID_RSSI })
+  mock.setValue(ID_RSSI, 22)          -- critical: the needle sweeps up-left
+  refresh(w)
+  local L = w.layout
+  -- the cell used to start inside the pivot's vertical span (measured 6 px
+  -- of overlap at 200x160); it must now start at or below the hub's lower edge
+  assertTrue(L.valueBox.y >= L.cy + L.pivotRadius,
+    "value cell top clears the hub (P0-2)")
+  local cell = { x1 = L.valueBox.x, y1 = L.valueBox.y,
+                 x2 = L.valueBox.x + L.valueBox.w, y2 = L.valueBox.y + L.valueBox.h }
+  local function distToCell(x, y)
+    local cx = math.max(cell.x1, math.min(x, cell.x2))
+    local cy = math.max(cell.y1, math.min(y, cell.y2))
+    return math.sqrt((x - cx) ^ 2 + (y - cy) ^ 2)
+  end
+  local function segGap(pts)
+    local best = math.huge
+    for i = 0, 60 do
+      local t = i / 60
+      local x = pts[1][1] + (pts[2][1] - pts[1][1]) * t
+      local y = pts[1][2] + (pts[2][2] - pts[1][2]) * t
+      best = math.min(best, distToCell(x, y))
+    end
+    return best
+  end
+  assertTrue(segGap(w.ui.needle.props.pts) >= 2,
+    "needle body keeps >= 2 px from the value cell at the critical angle")
+  assertTrue(segGap(w.ui.needleTip.props.pts) >= 2,
+    "needle tip keeps >= 2 px from the value cell at the critical angle")
+end)
+
+test("P-B: the state chip gains padding, vertical centring and an edge", function()
+  local w = newWidget(nil, { Source = ID_RSSI })
+  mock.setValue(ID_RSSI, 10)   -- critical -> CRIT chip
+  refresh(w)
+  local L = w.layout
+  local theme = w.mods.theme
+  assertEq(L.chipPad, theme.px(7), "side padding 4 -> 7 px")
+  assertEq(L.chipHeight, theme.fontHeight(L.stateFont) + theme.px(6),
+    "pill height stateH + 6")
+  local off = math.floor((L.chipHeight - theme.fontHeight(L.stateFont)) / 2)
+  assertEq(w.ui.chip.props.y, L.stateBox.y - off,
+    "the pill is vertically centred on the state text")
+  assertTrue(w.ui.chipEdge ~= nil, "the pill has a 1 px outline")
+  local edge = w.ui.chipEdge.props
+  assertEq(edge.x, w.ui.chip.props.x - 1, "edge hugs the pill left")
+  assertEq(edge.y, w.ui.chip.props.y - 1, "edge hugs the pill top")
+  assertEq(edge.w, w.ui.chip.props.w + 2, "edge hugs the pill right")
+  assertEq(edge.h, w.ui.chip.props.h + 2, "edge hugs the pill bottom")
+  assertEq(edge.color, COLOR_THEME_SECONDARY1, "edge in the lighter label role")
+  assertTrue(objIndex(w.ui.chipEdge) < objIndex(w.ui.chip)
+    and objIndex(w.ui.chip) < objIndex(w.ui.stateLabel),
+    "paint order: edge, pill, text")
+end)
+
+test("P-B: the bar chip gets the same padding, centring and edge", function()
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_RSSI, Style = "Bar" })
+  mock.setValue(ID_RSSI, 10)
+  refresh(w)
+  local L = w.layout
+  assertEq(L.chipPad, w.mods.theme.px(7), "bar chipPad matches the dial")
+  assertTrue(w.ui.chipEdge ~= nil, "bar pill has the 1 px outline")
+  local off = math.floor((L.chipHeight - w.mods.theme.fontHeight(L.stateFont)) / 2)
+  assertEq(w.ui.chip.props.y, L.stateBox.y - off, "bar pill is centred")
+end)
+
+test("P-C: ticks are at least 2 px and use the lighter role", function()
+  for _, z in ipairs({ { 60, 60 }, { 100, 100 }, { 200, 200 } }) do
+    local w = newWidget({ x = 0, y = 0, w = z[1], h = z[2] }, {})
+    refresh(w)
+    assertTrue(w.layout.tickThickness >= 2,
+      string.format("%dx%d ticks must be >= 2 px", z[1], z[2]))
+  end
+  local w = newWidget(nil, {})
+  refresh(w)
+  assertEq(w.ui.ticks[1].props.color, COLOR_THEME_SECONDARY1,
+    "tick colour remapped to the lighter role")
+  assertEq(w.ui.ticks[1].props.thickness, w.layout.tickThickness,
+    "major ticks draw at the layout thickness")
+end)
+
+test("P-D: the unit sits one ramp step below the value where space allows", function()
+  local w = newWidget(nil, { Source = ID_RSSI })
+  refresh(w)
+  assertEq(w.layout.unitFont, w.mods.theme.smallerFont(w.layout.valueFont, 1),
+    "the unit font is exactly one ramp step below the value font")
+end)
+
+test("P-E: rail bands dim behind the value arc and clear it by the rail gap", function()
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Rail",
+                             Scale = "Manual", Min = 0, Max = 100,
+                             Warn = 60, Crit = 30 })
+  refresh(w)
+  assertTrue(w.ui.rails ~= nil, "rail bands built in Rail mode")
+  assertTrue(#w.ui.rails >= 2, "warning and critical bands present")
+  for _, r in ipairs(w.ui.rails) do
+    assertEq(r.props.bgOpacity, w.mods.theme.opacity.railBand,
+      "rail bands draw at reduced opacity")
+  end
+  local L = w.layout
+  assertEq(L.railRadius, L.radius + math.floor(L.trackThickness / 2)
+    + L.railThickness + w.mods.theme.px(1),
+    "the rail band radius clears the value arc by the gap")
+end)
+
+test("P2-9: the neutral track sits at ~35% opacity", function()
+  local w = newWidget(nil, { Source = ID_RSSI })
+  assertEq(w.mods.theme.opacity.rail, 90, "track opacity 25% -> ~35%")
+end)
+
+test("P2-10: the name label drops to the smallest font", function()
+  local w = newWidget(nil, { Source = ID_RSSI })
+  assertEq(w.layout.nameFont, w.mods.theme.FONTS.XXS,
+    "name uses the smallest font")
+end)
+
 test("P1-3: an elapsed timer fits its value box", function()
   -- widestSample used to reserve "00:00:00" (8 chars); an elapsed timer
   -- prints "-00:01:05" (9 chars) and wrapped inside the box, clipping the

@@ -33,8 +33,16 @@ de qué cambió y qué test lo verifica. Progreso por tanda (ver §9 para el ord
   (precisión de sensor cacheada por nombre).
 - **Tanda 5** (higiene: P3-1 a P3-8) — pendiente.
 
-`run_tests.lua` 38/38 · `smoke_test.lua` 79/79 tras las Tandas 3 y 4 (42 tests nuevos, todos de
-regresión sobre hallazgos concretos de este informe).
+**Plan de reparación del análisis gráfico (`dev/design-review-response.md`) — ✅ implementado**
+(2026-08-05): P0 (aguja afilada en dos líneas + pivote sólido + holgura de valor + badge con
+padding/centrado vertical/borde), P1 (ticks ≥ 2 px y rol más claro, rails de referencia a
+opacidad 200 con separación de banda, unidad un paso por debajo del valor, compensación óptica
+de 1 px), P2 (pista neutra al ~35 %, nombre en la fuente más pequeña). Verificado con
+`dev/collide.lua` limpio en la matriz completa y en los tres barridos; suite de regresión ampliada
+con 9 tests nuevos (P-A, P-B dial+bar, P-C, P-D, P-E, P2-9, P2-10).
+
+`run_tests.lua` 38/38 · `smoke_test.lua` 88/88 tras las Tandas 3 y 4 y el plan del análisis
+gráfico (51 tests nuevos, todos de regresión sobre hallazgos concretos de este informe).
 
 ---
 

@@ -39,15 +39,19 @@ M.FONTS = {
 }
 
 -- Ordered candidate ramp used by the auto-fit search (largest first).
-M.RAMP = { M.FONTS.XXL, M.FONTS.XL, M.FONTS.L, M.FONTS.M, M.FONTS.XS,
-           M.FONTS.XXS }
+-- STDSIZE is deliberately IN the ramp: the old M(24) -> XS(13) jump skipped
+-- the 16 px step, so a chord that barely missed 24 px threw the value down to
+-- 13 px (AUDIT.md P3-4; P0-2's value clearance narrows the chord at 200x160).
+M.RAMP = { M.FONTS.XXL, M.FONTS.XL, M.FONTS.L, M.FONTS.M, M.FONTS.S,
+           M.FONTS.XS, M.FONTS.XXS }
 
 M.color = {
   accent  = COLOR_THEME_PRIMARY1,    -- normal state / static mode
   warn    = COLOR_THEME_WARNING,
   crit    = RED,                     -- no theme role exists for critical
   rail    = COLOR_THEME_SECONDARY1,  -- track + rail base (used with opacity)
-  tick    = COLOR_THEME_SECONDARY2,
+  tick    = COLOR_THEME_SECONDARY1,  -- scale ticks: the LIGHTER role, so 1 px
+                                     -- marks read on dark themes (review P-C)
   label   = COLOR_THEME_SECONDARY1,
   muted   = COLOR_THEME_DISABLED,
   history = COLOR_THEME_SECONDARY1,
@@ -55,23 +59,30 @@ M.color = {
 }
 
 M.opacity = {
-  full  = 255,
-  rail  = 64,    -- inactive track: visible, never competing with the value
-  ghost = 110,   -- peak-hold segment
-  muted = 120,   -- whole gauge when data is not live
-  pulse = 150,   -- critical pulse trough
+  full     = 255,
+  rail     = 90,    -- inactive track: ~35% - a crisper silhouette that still
+                    -- never competes with the value arc (review P2-9)
+  railBand = 200,   -- reference rail bands (Rail mode): drawn at reduced
+                    -- opacity so the value arc - and with it the critical
+                    -- red - stays the foreground (review P-E)
+  ghost    = 110,   -- peak-hold segment
+  muted    = 120,   -- whole gauge when data is not live
+  pulse    = 150,   -- critical pulse trough
 }
 
 -- Logical spacing steps; always passed through px().
 M.space = { xs = 2, sm = 4, md = 6, lg = 10 }
 
 M.ratio = {
-  unitToValue   = 0.55,  -- unit font relative to the value font
-  trackToRadius = 0.14,
-  railToTrack   = 0.34,
-  needleWidth   = 0.06,  -- half-width of the needle base, relative to radius
-  tailLength    = 0.20,  -- counterweight length, relative to needle length
-  pivotRadius   = 0.09,
+  unitToValue     = 0.55,  -- unit font relative to the value font
+  trackToRadius   = 0.14,
+  railToTrack     = 0.34,
+  needleWidth     = 0.06,  -- half-width of the needle base, relative to radius
+  needleBodyReach = 0.55,  -- body end of the two-line needle, as a fraction of
+                           -- its reach: the thick segment stops here and a
+                           -- thin tip carries the last stretch (review P-A)
+  needleTipToHalf = 0.35,  -- tip half-width relative to the body half-width
+  pivotRadius     = 0.09,
 }
 
 -- Physical size helper: LCD_SCALE is 0.8 / 1.0 / 1.375 for 320 / 480 / 800 px
@@ -121,11 +132,15 @@ function M.fitFont(candidates, available)
 end
 
 -- Font one step smaller in the ramp (used for the unit next to the value).
+-- The unit never lands on STDSIZE: a 24 px value keeps its 13 px unit (the
+-- ~0.55 ratio of the Tanda-4 design), even though STDSIZE is a valid VALUE
+-- font in the ramp (P0-2 / AUDIT P3-4).
 function M.smallerFont(font, steps)
   steps = steps or 1
   for i = 1, #M.RAMP do
     if M.RAMP[i] == font then
       local j = i + steps
+      while j <= #M.RAMP and M.RAMP[j] == M.FONTS.S do j = j + 1 end
       if j > #M.RAMP then j = #M.RAMP end
       return M.RAMP[j]
     end

@@ -275,6 +275,12 @@ for _, m in ipairs({ "Static", "Threshold", "Rail", "Gradient", "Sections" }) do
   shot("mode-" .. m .. "-crit", { 200, 160 }, { ColorMode = m }, 22)
 end
 
+-- Rail mode needle positions (P0-2 review): the same dial with the needle at
+-- the start cap, the top and the end cap, to check the blade at three angles.
+shot("mode-Rail-pos1", { 200, 160 }, { ColorMode = "Rail" }, 0)
+shot("mode-Rail-pos2", { 200, 160 }, { ColorMode = "Rail" }, 50)
+shot("mode-Rail-pos3", { 200, 160 }, { ColorMode = "Rail" }, 100)
+
 -- bar
 shot("bar-300x70-crit", { 300, 70 }, { Style = "Bar" }, 95)
 shot("bar-300x44", { 300, 44 }, { Style = "Bar" }, 95)

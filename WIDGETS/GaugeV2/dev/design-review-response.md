@@ -8,6 +8,21 @@ geometry (measured from the real object tree that produced the screenshot),
 so what applies is separated from what is perceptual or was caused by the
 rendering tool.
 
+> **STATUS (2026-08-05): the repair plan below is fully implemented.** Every
+> P0/P1/P2 change is in the widget code, verified by the collision audit
+> (`dev/collide.lua` clean on the 12-zone matrix + value extremes + all three
+> sweeps) and by 9 new regression tests (P-A body/tip/hub, P-A sweep, P-B
+> dial + bar, P-C, P-D, P-E, P2-9, P2-10). Suites: 38/38 unit, 88/88 smoke.
+> Measured on the reviewed frame (`200×160`, Rail, value 22, dark): see the
+> per-item notes in the repair plan and the acceptance table at the end.
+>
+> **Versioned renders for inspection** (in `dev/shots/`, which is gitignored):
+> - `mode-Rail-crit-v1.png` — the exact baseline the designer reviewed,
+>   regenerated from the pre-repair code (commit `353b96370`), for traceability.
+> - `mode-Rail-crit.png` / `mode-Rail-crit-v2.png` — the repaired frame
+>   (current working tree). Inspect `mode-Rail-crit.png`; the `-v2` suffix is
+>   an explicit copy so the baseline is never silently replaced.
+
 ---
 
 ## How the review maps to the code
@@ -209,37 +224,39 @@ transition red→amber is a clean range boundary.
 
 ### P0 — Reading correctness (do first)
 
-| # | Change | Files |
-|---|---|---|
-| 1 | **Tapered needle as two lines**: body (2×`needleHalf`) from hub to ~55 % of reach, 2–3 px tip to the scale; both `lvgl.line`, both updated in the existing guarded `pts` path | `layout.lua`, `renderer.lua` |
-| 2 | **Solid hub**: one filled circle (~8–10 px, light neutral), created after the needle so it covers the needle base | `renderer.lua` |
-| 3 | **Value clearance**: keep ≥4 px between the needle's inner segment and the value box where the geometry allows (thin tip + hub already achieve most of this) | `layout.lua` |
-| 4 | **Badge padding**: `chipPad` 4→7 px, `chipHeight` `stateH+2`→`stateH+6`, state text vertically centred; subtle pill edge | `layout.lua`, `renderer.lua` |
+| # | Change | Files | Status |
+|---|---|---|---|
+| 1 | **Tapered needle as two lines**: body (2×`needleHalf`) from hub to ~55 % of reach, 2–3 px tip to the scale; both `lvgl.line`, both updated in the existing guarded `pts` path | `layout.lua`, `renderer.lua` | ✅ Done — body 6 px from r8 to r28 (55 %), tip 2 px from r27 to r46 on the reviewed frame; both lines, swept together; tip clears the value ink at value 22 (angle 194°) |
+| 2 | **Solid hub**: one filled circle (~8–10 px, light neutral), created after the needle so it covers the needle base | `renderer.lua` | ✅ Done — single `circle` (r4 → 8 px), rail role, no accent dot; paints over the needle |
+| 3 | **Value clearance**: keep ≥4 px between the needle's inner segment and the value box where the geometry allows (thin tip + hub already achieve most of this) | `layout.lua` | ✅ Done by the taper — measured ≥4 px clearance on the critical frame |
+| 4 | **Badge padding**: `chipPad` 4→7 px, `chipHeight` `stateH+2`→`stateH+6`, state text vertically centred; subtle pill edge | `layout.lua`, `renderer.lua` | ✅ Done — 7 px pad, 19 px pill, centred (offset = `(h−stateH)/2`), 1 px outline in the lighter label role; bar gets the same pill (bar budget reserves the overhang; short bars fall back to the minimal `stateH+2` pill so the state row survives, P1-2) |
 
 ### P1 — Visual refinement
 
-| # | Change | Files |
-|---|---|---|
-| 5 | **Ticks**: minimum 2 px; tick colour remapped to the lighter theme role | `theme.lua`, `layout.lua` |
-| 6 | **Rail-mode hierarchy**: reference rail bands at reduced opacity (≈200) so the value arc and critical red dominate; consistent 1–2 px band-to-arc separation | `renderer.lua` |
-| 7 | **Unit legibility**: unit font one step below the value (not two) where space allows; wider gap | `layout.lua` |
-| 8 | **Optical centering**: after P0, verify the value+unit group and apply a 1–2 px left optical shift if the minus/unit weight calls for it | `layout.lua` |
+| # | Change | Files | Status |
+|---|---|---|---|
+| 5 | **Ticks**: minimum 2 px; tick colour remapped to the lighter theme role | `theme.lua`, `layout.lua` | ✅ Done — `tick` = `SECONDARY1`; `tickThickness = clamp(floor(side/90), px(2), px(3))` |
+| 6 | **Rail-mode hierarchy**: reference rail bands at reduced opacity (≈200) so the value arc and critical red dominate; consistent 1–2 px band-to-arc separation | `renderer.lua` | ✅ Done — `bgOpacity = opacity.railBand` (200); `railGap = px(1)` gives a measured 3 px band-to-arc separation on the reviewed frame |
+| 7 | **Unit legibility**: unit font one step below the value (not two) where space allows; wider gap | `layout.lua` | ✅ Done — `smallerFont(font, 1)`; gap `sm`→`md`; fit check still the arbiter |
+| 8 | **Optical centering**: after P0, verify the value+unit group and apply a 1–2 px left optical shift if the minus/unit weight calls for it | `layout.lua` | ✅ Done — 1 px left shift when a unit is shown and the region has room; reserved group centre measured 1 px left of the dial centre (98 vs 99) |
 
 ### P2 — Polish
 
-| # | Change | Files |
-|---|---|---|
-| 9 | Neutral track opacity 25 % → ~35 % for a crisper silhouette | `theme.lua` |
-| 10 | Name label: smaller/less prominent so value → unit → name reads as a clean hierarchy | `layout.lua` |
+| # | Change | Files | Status |
+|---|---|---|---|
+| 9 | Neutral track opacity 25 % → ~35 % for a crisper silhouette | `theme.lua` | ✅ Done — `opacity.rail` 64 → 90 |
+| 10 | Name label: smaller/less prominent so value → unit → name reads as a clean hierarchy | `layout.lua` | ✅ Done — dial name font `XS`→`XXS` |
 
 ### Verification after every change
 
-- `dev/collide.lua` (12-zone matrix + value extremes + 270°/180°/360° sweeps) stays clean.
+- `dev/collide.lua` (12-zone matrix + value extremes + 270°/180°/360° sweeps) stays clean. ✅
 - `run_tests.lua` (38) and `smoke_test.lua` (79) stay green; the P2-1, P2-2,
   P1-2, P1-10 and G-series regression tests are the guard rails for the
-  needle/badge/tick changes.
+  needle/badge/tick changes. ✅ — suites now 38/38 and 88/88 (9 new
+  regression tests cover this plan).
 - Regenerate `dev/audit-preview.html` and `dev/shots/*.png` and re-review the
-  same `mode-Rail-crit` frame plus `bar-*`, `value-*` and `zone-*` shots.
+  same `mode-Rail-crit` frame plus `bar-*`, `value-*` and `zone-*` shots. ✅ —
+  both galleries regenerated (42 shots + audit-preview).
 
 ---
 
@@ -247,10 +264,15 @@ transition red→amber is a clean range boundary.
 
 The review is considered addressed when, on the native render (no enlargement):
 
-- The pointer has a pointed outward tip and never visually merges with a digit.
-- The value `22` is the first thing noticed; the hub is a clean solid circle.
-- The value + unit are optically centred as one group; the `B` in `dB` is clear.
+- The pointer has a pointed outward tip and never visually merges with a digit. ✅
+  (2 px tip from r27 to r46; at value 22 the tip/body sit clear above-left of
+  the digits — no digit reads as a continuation of the needle.)
+- The value `22` is the first thing noticed; the hub is a clean solid circle. ✅
+- The value + unit are optically centred as one group; the `B` in `dB` is clear. ✅
+  (reserved group centre 1 px left of the dial centre; unit one ramp step below.)
 - Every rail segment uses the same radial alignment and thickness; the
-  red→amber transition is a clean boundary; the red dominates in critical.
-- The `CRIT` badge has clear padding and enough contrast to read as a label.
-- All ticks are 2 px, uniform in length, radius and angle.
+  red→amber transition is a clean boundary; the red dominates in critical. ✅
+  (rails at 200 opacity, same radius, 3 px clear of the arc; arc stays full.)
+- The `CRIT` badge has clear padding and enough contrast to read as a label. ✅
+  (7 px side pad, `stateH+6` pill, centred text, 1 px lighter outline.)
+- All ticks are 2 px, uniform in length, radius and angle. ✅

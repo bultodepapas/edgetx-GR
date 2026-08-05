@@ -327,7 +327,7 @@ Dial object tree (large mode, worst case ≈ 30 objects; the tests assert ≤ 40
 | Min/max text labels | 2 | large + "Markers + text" |
 | Scale end labels | 2 | large, sweep < 360 |
 
-Per-frame writes: arc `endAngle`, needle/tail `pts` (only when the angle
+Per-frame writes: arc `endAngle`, needle body/tip `pts` (only when the angle
 changed), `color`/`opacity` on a state change, label `text` when the string
 changed, and show/hide on data loss.
 

@@ -96,14 +96,18 @@ end
 -- Largest font whose text fits both the width and the height available.
 local function pickValueFont(sample, unitText, maxW, maxH, cap)
   local ramp = T.RAMP
-  local gap = T.px(T.space.sm)
+  local gap = T.px(T.space.md)
   local started = (cap == nil)
   for i = 1, #ramp do
     local font = ramp[i]
     if not started and font == cap then started = true end
     if started then
       if T.fontHeight(font) <= maxH then
-        local unitFont = T.smallerFont(font, 2)
+        -- The unit is one ramp step below the value (review P-D): two steps
+        -- shrank the `B` of `dB` to where it blurred into an `E` at small
+        -- sizes; one step keeps it secondary and legible where the width
+        -- allows (the fit check below is the arbiter).
+        local unitFont = T.smallerFont(font, 1)
         local w = T.textWidth(sample, font)
         local uw = 0
         if unitText and unitText ~= "" then
@@ -138,9 +142,17 @@ local function placeValue(L, region, sample, unitText, cap)
   L.unitFont = unitFont
   local vh = T.fontHeight(valueFont)
   local uh = T.fontHeight(unitFont)
-  local gap = T.px(T.space.sm)
+  local gap = T.px(T.space.md)
   local groupW = vw + uw
-  local x0 = region.x + floor((region.w - groupW) / 2)
+  -- A trailing unit adds visual weight on the right of the group, so centre
+  -- it ~1 px left of the geometric centre when a unit is shown (review
+  -- P1-8). Only when there is room: never let the box leave the region, so
+  -- the G-6 chord guarantee holds.
+  local optical = 0
+  if unitText ~= "" and groupW + T.px(1) <= region.w then
+    optical = T.px(1)
+  end
+  local x0 = region.x + floor((region.w - groupW - optical) / 2)
   local y0 = region.y + floor((region.h - vh) / 2)
   if y0 < region.y then y0 = region.y end
   L.valueBox = box(x0, y0, vw, vh)
@@ -173,7 +185,10 @@ local function dialLayout(widget, cfg, L, w, h)
   L.showScale = (mode == "large") and (L.sweep < 360)
   L.showGhost = (mode ~= "micro")
 
-  L.nameFont = T.FONTS.XS
+  -- The name is the least important text on the dial: the smallest font keeps
+  -- the hierarchy value -> unit -> name clean (review P2-10). The state text
+  -- stays one step larger because WARN/CRIT carry the severity.
+  L.nameFont = T.FONTS.XXS
   L.stateFont = T.FONTS.XS
   L.minMaxFont = T.FONTS.XXS
   L.scaleFont = T.FONTS.XXS
@@ -217,6 +232,12 @@ local function dialLayout(widget, cfg, L, w, h)
     -- value lives inside the dial circle. A micro dial draws no state chip
     -- and no needle, so its value can sit in the MIDDLE of the circle, where
     -- the clear chord is widest; larger modes must clear the state chip.
+    -- P0-2: the normal/large value region is dropped `valueDrop` px so the
+    -- text cell clears the pivot and the needle blade at critical angles
+    -- (measured: the cell used to start 6 px inside the pivot's vertical
+    -- span at 200x160). The min/max row below is chord-clipped further down,
+    -- and the region's own chord clip keeps the fit honest.
+    local valueDrop = T.px(7)
     if mode == "micro" then
       -- centred exactly on the dial centre: the clear chord is widest there,
       -- and a micro dial's value is only a few px wide (no unit, no state)
@@ -227,7 +248,7 @@ local function dialLayout(widget, cfg, L, w, h)
       valueRegion = box(dial.x, dial.y + floor(dial.h * 0.50),
                         dial.w, floor(dial.h * 0.26))
     else
-      valueRegion = box(dial.x, dial.y + floor(dial.h * 0.45),
+      valueRegion = box(dial.x, dial.y + floor(dial.h * 0.45) + valueDrop,
                         dial.w, floor(dial.h * 0.26))
     end
   end
@@ -245,7 +266,9 @@ local function dialLayout(widget, cfg, L, w, h)
   L.railThickness = max(T.px(2), floor(L.trackThickness * T.ratio.railToTrack))
   L.ghostThickness = max(T.px(2), floor(L.trackThickness * 0.45))
   L.tickCount = (mode == "micro") and 3 or ((mode == "large") and 7 or 5)
-  L.tickThickness = clamp(floor(side / 90), 1, T.px(3))
+  -- Minimum 2 px: at 1 px the scale marks vanished into the background on
+  -- dark themes (~2.5:1 contrast, review P-C). The max is the same as before.
+  L.tickThickness = clamp(floor(side / 90), T.px(2), T.px(3))
   L.minorTicks = (mode == "large") and (L.tickCount - 1) or 0
 
   local tickLength = clamp(floor(side / 40), T.px(2), T.px(6))
@@ -253,7 +276,13 @@ local function dialLayout(widget, cfg, L, w, h)
     + T.px(T.space.xs) + tickLength + 1
   local half = floor(min(dial.w, dial.h) / 2)
   L.radius = max(half - outerReserve, T.px(8))
+  -- The rail band radius clears the value arc's outer edge by `railGap`: when
+  -- the value is critical both layers are red at adjacent radii, and touching
+  -- them read as one bevelled blob (review P-E). The 1 px band gap keeps the
+  -- red->amber transition a clean range boundary.
+  L.railGap = T.px(1)
   L.railRadius = L.radius + floor(L.trackThickness / 2) + L.railThickness
+    + L.railGap
   L.tickInner = L.railRadius + T.px(T.space.xs)
   L.tickOuter = L.tickInner + tickLength
 
@@ -274,7 +303,16 @@ local function dialLayout(widget, cfg, L, w, h)
     L.needleInner = clamp(floor(L.radius * 0.16), T.px(3), T.px(20))
     L.needleOuter = L.radius - floor(L.trackThickness / 2) - T.px(1)
     L.needleHalf = clamp(floor(L.radius * T.ratio.needleWidth), T.px(2), T.px(7))
-    L.tailOuter = floor(L.needleOuter * T.ratio.tailLength)
+    -- Tapered blade from two LINES (P2-1 keeps the needle a line family):
+    -- the thick body stops at ~55 % of the reach and a 2-3 px tip overlaps
+    -- its end and runs to the scale, so the pointer reads as pointing
+    -- outward instead of blunt at the scale (review P-A).
+    L.needleBodyOuter = L.needleInner
+      + floor((L.needleOuter - L.needleInner) * T.ratio.needleBodyReach)
+    L.needleTipHalf = clamp(floor(L.needleHalf * T.ratio.needleTipToHalf), 1, 2)
+    L.needleTipThickness = max(T.px(2), L.needleTipHalf * 2)
+    L.needleTipInner = max(L.needleInner,
+                           L.needleBodyOuter - floor(L.needleTipThickness * 0.75))
     L.pivotRadius = clamp(floor(L.radius * T.ratio.pivotRadius),
                           T.px(3), T.px(9))
   end
@@ -410,9 +448,11 @@ local function dialLayout(widget, cfg, L, w, h)
     if L.scaleMinBox.y + sh > h then L.showScale = false end
   end
 
-  -- chip behind the state text
-  L.chipPad = T.px(T.space.sm)
-  L.chipHeight = stateH + T.px(2)
+  -- chip behind the state text. 7 px side padding and stateH + 6 height give
+  -- the C/T letters breathing room, and the text is centred in the pill by
+  -- (chipHeight - stateH) / 2 (review P-B).
+  L.chipPad = T.px(7)
+  L.chipHeight = stateH + T.px(6)
 end
 
 -- ------------------------------------------------------------------- bar --
@@ -445,18 +485,39 @@ local function barLayout(widget, cfg, L, w, h)
   -- before the value area, trims the bar to its minimum before giving up,
   -- and drops the state row only when the zone is too short for even the
   -- smallest value font.
-  local rowH = (L.showState or L.showName) and stateH or 0
+  --
+  -- The state PILL is taller than the text and centred on it (review P-B):
+  -- the row budget reserves the pill's overhang below the text, so the
+  -- taller pill never leaves the zone. A zone too short to reserve it falls
+  -- back to the minimal pill (stateH + 2), whose 1 px overhang sits inside
+  -- the zone's tolerance - keeping the state row alive where it matters
+  -- most (P1-2).
+  local chipExtra = L.showState and T.px(6) or 0
+  local chipOff = floor(chipExtra / 2)
+  local rowH = (L.showState or L.showName) and (stateH + chipOff) or 0
   local barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
   local textH = h - barH - rowH - pad * 3
   if textH < minText then
     barH = max(h - minText - rowH - pad * 3, T.px(8))
     textH = h - barH - rowH - pad * 3
-    if textH < minText then
-      L.showState = false
-      rowH = (L.showName) and nameH or 0
+    if textH < minText and L.showState then
+      chipExtra = T.px(2)
+      chipOff = 0
+      rowH = (L.showState or L.showName) and stateH or 0
       barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
       textH = h - barH - rowH - pad * 3
-      if textH < minText then textH = minText end
+      if textH < minText then
+        barH = max(h - minText - rowH - pad * 3, T.px(8))
+        textH = h - barH - rowH - pad * 3
+        if textH < minText then
+          L.showState = false
+          chipExtra = 0
+          rowH = (L.showName) and nameH or 0
+          barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
+          textH = h - barH - rowH - pad * 3
+          if textH < minText then textH = minText end
+        end
+      end
     end
   end
 
@@ -473,8 +534,9 @@ local function barLayout(widget, cfg, L, w, h)
   L.nameAlign = LEFT
   L.stateAlign = RIGHT
   L.textAlign = LEFT
-  L.chipPad = T.px(T.space.xs)
-  L.chipHeight = stateH + T.px(2)
+  -- same pill as the dial (review P-B), sized to what the zone could reserve
+  L.chipPad = T.px(7)
+  L.chipHeight = stateH + chipExtra
   L.markThickness = max(1, T.px(2))
 end
 

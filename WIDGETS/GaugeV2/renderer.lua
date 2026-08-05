@@ -12,7 +12,7 @@
 ---- #   track           full sweep at low opacity - the scale               #
 ---- #   ghost           peak-hold segment at reduced opacity                #
 ---- #   value arc       thick, rounded, semantic colour                     #
----- #   needle          tapered triangle + counterweight + pivot ring       #
+---- #   needle          two-line tapered blade + hub                        #
 ---- #   text            value + unit (baseline aligned), name, state chip   #
 ---- #                                                                       #
 ---- # Verified binding facts (radio/src/lua/lua_lvgl_widget.cpp):           #
@@ -148,7 +148,11 @@ local function buildTrack(widget)
   end
 
   -- threshold rail: a thin permanent reminder of where the bands are, drawn
-  -- outside the track so the value arc keeps the foreground to itself.
+  -- outside the track so the value arc keeps the foreground to itself. The
+  -- bands draw at reduced opacity (railBand) so they read as the reference
+  -- behind the value arc: in a critical state, the red of the arc dominates
+  -- the red of the band instead of merging into one bevelled blob
+  -- (review P-E).
   if cfg.colorMode == M.COLOR_RAIL then
     ui.rails = {}
     for i = 1, #widget.ranges do
@@ -161,7 +165,7 @@ local function buildTrack(widget)
             x = L.cx, y = L.cy, radius = L.railRadius,
             startAngle = a1, endAngle = a2,
             bgStartAngle = a1, bgEndAngle = a2,
-            color = c, bgColor = c, bgOpacity = 255, opacity = 0,
+            color = c, bgColor = c, bgOpacity = T.opacity.railBand, opacity = 0,
             thickness = L.railThickness, rounded = 0,
           }
         end
@@ -206,23 +210,28 @@ local function buildNeedle(widget)
   -- damping the smoothed value moves almost every frame, so the audit
   -- measured ~46 canvas rebuilds in 20 frames and ~24 KB of heap churn per
   -- frame on a 200x200 zone (AUDIT.md P2-1). LvglWidgetLine::refresh only
-  -- rewrites the points: the needle loses its taper, and gains an order of
-  -- magnitude and - the point of the fix - no allocation churn at all.
+  -- rewrites the points: no allocation churn at all.
+  --
+  -- The taper lost by P2-1 is restored with a second line (review P-A): the
+  -- body is thick from the hub to ~55% of the reach, the 2-3 px tip overlaps
+  -- the body end and runs to the scale, so the pointer reads as a blade
+  -- pointing outward instead of a blunt constant-width line.
   ui.needle = lvgl.line{
-    pts = G.linePoints(L.cx, L.cy, L.needleInner, L.needleOuter, a),
+    pts = G.linePoints(L.cx, L.cy, L.needleInner, L.needleBodyOuter, a),
     thickness = max(1, L.needleHalf * 2), color = T.color.accent,
   }
-  ui.tail = lvgl.line{
-    pts = G.linePoints(L.cx, L.cy, L.needleInner, L.tailOuter, a + 180),
-    thickness = max(1, floor(L.needleHalf * 1.4)), color = T.color.accent,
+  ui.needleTip = lvgl.line{
+    pts = G.linePoints(L.cx, L.cy, L.needleTipInner, L.needleOuter, a),
+    thickness = L.needleTipThickness, color = T.color.accent,
   }
+  -- Solid hub: ONE filled circle in the neutral rail role, created after the
+  -- needle so it covers the blade's inner end. The old ring+accent-dot pair
+  -- read as pixel noise where needle, value and pivot meet; a clean solid
+  -- circle reads as a deliberate centre (review P-A). The hub keeps the
+  -- neutral tone in every state - it is the pivot, not a state indicator.
   ui.pivotRing = lvgl.circle{
     x = L.cx, y = L.cy, radius = L.pivotRadius,
     filled = 1, color = T.color.rail,
-  }
-  ui.pivotDot = lvgl.circle{
-    x = L.cx, y = L.cy, radius = max(1, floor(L.pivotRadius * 0.45)),
-    filled = 1, color = T.color.accent,
   }
 end
 
@@ -288,11 +297,25 @@ function M.build(widget)
                          widget.nameText)
   end
   if L.showState then
+    -- The pill is taller than the state text and centred on it, so the
+    -- letters sit in the middle of the pill, not 1 px from its top edge
+    -- (review P-B).
+    local chipOff = floor((L.chipHeight - T.fontHeight(L.stateFont)) / 2)
+    -- 1 px outline in the lighter label role, behind the dark pill, so the
+    -- chip reads as a label with a defined edge instead of "a piece of the
+    -- rail behind the text" (review P-B).
+    ui.chipEdge = lvgl.rectangle{
+      x = L.stateBox.x - T.px(1), y = L.stateBox.y - chipOff - T.px(1),
+      w = L.stateBox.w + T.px(2), h = L.chipHeight + T.px(2),
+      color = T.color.label, filled = 1,
+      rounded = floor((L.chipHeight + T.px(2)) / 2),
+    }
     ui.chip = lvgl.rectangle{
-      x = L.stateBox.x, y = L.stateBox.y - T.px(1),
+      x = L.stateBox.x, y = L.stateBox.y - chipOff,
       w = L.stateBox.w, h = L.chipHeight,
       color = T.color.chip, filled = 1, rounded = floor(L.chipHeight / 2),
     }
+    lvgl.hide(ui.chipEdge)
     lvgl.hide(ui.chip)
     ui.stateLabel = label(L.stateBox, L.stateFont, T.color.label, L.stateAlign)
   end
@@ -367,8 +390,7 @@ local function applyColors(widget, key)
   setProp(widget, ui.valueArc, "opacity", opa)
   setProp(widget, ui.valueLabel, "color", c)
   setProp(widget, ui.needle, "color", c)
-  setProp(widget, ui.tail, "color", c)
-  setProp(widget, ui.pivotDot, "color", c)
+  setProp(widget, ui.needleTip, "color", c)
   if ui.stateLabel then
     local sc = T.color.label
     if key == "warning" then sc = T.color.warn
@@ -420,8 +442,14 @@ function M.updateChip(widget, s)
     end
     setProp(widget, ui.chip, "x", x)
     setProp(widget, ui.chip, "w", w)
+    if ui.chipEdge then
+      setProp(widget, ui.chipEdge, "x", x - T.px(1))
+      setProp(widget, ui.chipEdge, "w", w + T.px(2))
+    end
+    lvgl.show(ui.chipEdge)
     lvgl.show(ui.chip)
   else
+    lvgl.hide(ui.chipEdge)
     lvgl.hide(ui.chip)
   end
   frame.chipShown = show
@@ -475,8 +503,7 @@ local function updateArc(widget)
     if frame.needleShown then
       frame.needleShown = false
       if ui.needle then lvgl.hide(ui.needle) end
-      if ui.tail then lvgl.hide(ui.tail) end
-      if ui.pivotDot then lvgl.hide(ui.pivotDot) end
+      if ui.needleTip then lvgl.hide(ui.needleTip) end
     end
     return
   end
@@ -490,17 +517,18 @@ local function updateArc(widget)
     frame.angle = a
     setProp(widget, ui.valueArc, "endAngle", a)
     if ui.needle then
+      -- two line segments, both rewritten with the same guarded pts path as
+      -- before: body + tip sweep together, nothing allocates (P2-1)
       lvgl.set(ui.needle, { pts = G.linePoints(L.cx, L.cy, L.needleInner,
+        L.needleBodyOuter, a) })
+      lvgl.set(ui.needleTip, { pts = G.linePoints(L.cx, L.cy, L.needleTipInner,
         L.needleOuter, a) })
-      lvgl.set(ui.tail, { pts = G.linePoints(L.cx, L.cy, L.needleInner,
-        L.tailOuter, a + 180) })
     end
   end
   if not frame.needleShown then
     frame.needleShown = true
     if ui.needle then lvgl.show(ui.needle) end
-    if ui.tail then lvgl.show(ui.tail) end
-    if ui.pivotDot then lvgl.show(ui.pivotDot) end
+    if ui.needleTip then lvgl.show(ui.needleTip) end
   end
 end
 
