@@ -72,17 +72,28 @@ widget on the card, used or not. Everything else loads on first use:
 Stock Lua 5.3, no radio needed:
 
 ```sh
-lua5.3 tests/run_tests.lua  ./     # pure modules   (36 tests)
-lua5.3 tests/smoke_test.lua ./     # lifecycle      (46 tests)
-lua5.3 dev/preview.lua      ./     # writes dev/preview.html
+lua5.3 tests/run_tests.lua  ./     # pure modules        (38 tests)
+lua5.3 tests/smoke_test.lua ./     # lifecycle           (96 tests)
+lua5.3 dev/collide.lua      ./     # geometric collision audit
+lua5.3 dev/gallery.lua      ./     # visual contract sheet + manifest
 ```
 
 The mock enforces the firmware's real contract — property allow-lists per
 object type, `{x, y}` point arrays, the missing string metatable, 10 ms
 `getTime()` ticks, and the **integer option wire format with 1-based
-choices**. `dev/preview.lua` renders the real object tree to SVG in dark and
-light palettes, so a visual change can be reviewed in a browser
-(`dev/preview.html` is generated — regenerate it rather than editing it).
+choices**.
+
+`dev/gallery.lua` renders every scene in the catalogue (`dev/scenes.lua`) into
+one self-contained SVG in both the dark and light palettes, plus a
+deterministic manifest of what each scene resolved to — layout mode,
+availability, colour key, scale, object census. It also reports which widget
+options no scene ever varies. Use `--baseline <manifest>` to get a field-level
+diff of what a change moved. See **DOCS.md §7.1–7.2** for the workflow and for
+how to add a scene, a source or an option.
+
+`dev/shots.lua` writes the same scenes as individual SVGs for close-up review;
+`dev/preview.lua` is the older single-page preview (`dev/preview.html` is
+generated — regenerate it rather than editing it).
 
 ## Compatibility
 

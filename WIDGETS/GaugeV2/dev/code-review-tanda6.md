@@ -396,6 +396,26 @@ audit de colisiones limpio antes de pasar a la siguiente.
 Los tests van **primero y en rojo**: F-1 existe justamente porque el test que
 recorría esa secuencia no comprobaba el efecto.
 
+> **Base visual ya congelada.** `dev/gallery.lua` (77 escenas, ambos temas)
+> tiene una instantánea etiquetada del estado **anterior** a esta reparación:
+>
+> ```text
+> dev/shots/gallery/manifest-pre-tanda6.lua
+> dev/shots/gallery/gallery-{dark,light}-pre-tanda6.svg
+> ```
+>
+> Después de cada fase:
+>
+> ```sh
+> lua5.3 dev/gallery.lua . --baseline dev/shots/gallery/manifest-pre-tanda6.lua
+> ```
+>
+> El diff nombra el campo exacto de la escena exacta que se movió, así que
+> cada arreglo tiene que justificar **todo** lo que cambió y nada más. Dos
+> escenas del catálogo ya documentan defectos de este informe y deben cambiar
+> de valor al repararlos: `ba-pct-low` (`displayValue 0 -> ~55`, F-2) y
+> `sc-descending` (`warn/crit 45/65 -> 55/35`, F-3).
+
 - **0.1** `smoke_test`: `update()` repetido + transición de estado, dial y barra.
 - **0.2** `run_tests`: `saneThresholds` con `min > max` (high-good y low-good).
 - **0.3** `smoke_test`: Battery % sobre `Cels` en los tres modos de agregación.

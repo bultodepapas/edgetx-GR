@@ -508,6 +508,106 @@ fonts and theme roles — as SVG in both dark and light palettes. It is the
 fastest way to review a visual change, and it is how the layout, chip sizing
 and gradient mapping in this version were checked.
 
+### 7.1 The visual contract sheet
+
+`dev/gallery.lua` composes **every** scene in the catalogue into one
+self-contained SVG plus a machine-readable manifest. It is pure Lua — no
+browser, no Python, no image library — so it runs anywhere the test suites do.
+
+```
+lua5.3 dev/gallery.lua .                       # dark + light sheets, manifest
+lua5.3 dev/gallery.lua . --only bateria        # one section
+lua5.3 dev/gallery.lua . --tag pre-tanda6      # keep a named snapshot
+lua5.3 dev/gallery.lua . --baseline dev/shots/gallery/manifest-pre-tanda6.lua
+lua5.3 dev/gallery.lua . --list                # the catalogue, no rendering
+lua5.3 dev/gallery.lua . --png                 # also rasterise, if a
+                                               # rasteriser is installed
+```
+
+| File | Role |
+|---|---|
+| `dev/svgkit.lua` | The LVGL → SVG emitter and the theme palettes. One emitter, shared. |
+| `dev/scenes.lua` | The scene catalogue and the fact extractor. One list, shared. |
+| `dev/gallery.lua` | Composition, manifest, coverage report, baseline diff. |
+| `dev/shots.lua` | The same scenes as individual SVGs, for close-up review. |
+
+Three things make it a verification tool rather than a picture:
+
+- **The manifest** records what a picture cannot show — layout mode and
+  orientation, availability, semantic colour key, resolved scale and
+  thresholds, the object census — for every scene, deterministically ordered
+  so two runs diff cleanly. `--baseline` reports exactly which field of which
+  scene moved, which is how a refactor proves it changed nothing it did not
+  intend to.
+- **The coverage panel** cross-checks the catalogue against `main.lua`'s
+  option declarations and names any option no scene ever varies. Options that
+  cannot appear in a still frame (alerts, haptics, the reset switch) are
+  listed as `n/a` with the reason, so the gap list stays honest. Append option
+  25 without a scene for it and the sheet says so.
+- **Both palettes**, because every colour the widget uses is a theme role.
+  The light pass is the only check that the fixed needle colour
+  (`COLOR_THEME_PRIMARY1`) still contrasts against every band when the theme
+  inverts the ramp.
+
+Render problems are not silently smoothed over: a label that does not fit its
+box is drawn wrapped **and** outlined in red, the scene gets a red badge, and
+the message is printed. `--strict` turns any such warning into a non-zero exit
+for CI.
+
+Output lands in `dev/shots/gallery/` (git-ignored — it is a build artefact).
+A filtered run (`--only`) writes to its own `-only-<filter>` file names, so a
+partial render can never overwrite the full sheet or, worse, the manifest a
+baseline comparison depends on.
+
+### 7.2 Extending the sheet
+
+**Add a scene** — one table appended to the right section's `cases` list in
+`dev/scenes.lua`. The full field reference (required vs optional, what `post`
+receives, how `opts` values are written) is the block comment at the top of
+that file; it is kept next to the code it describes rather than here, so it
+cannot drift. The short version:
+
+```lua
+{ name = "ba-pct-low", title = "Li-Po % / Lowest", zone = { 200, 160 },
+  source = "Cels", opts = { Battery = "Li-Po", Cells = "Lowest" },
+  value = { 3.85, 3.84, 3.86, 3.85 }, note = "deberia ser ~55 %" },
+```
+
+Options are written in **readable** form — `CHOICE` by its label, `BOOL` as
+`true`/`false` — and `mock.makeOptions()` converts them to the integer wire
+format the firmware actually delivers. Nothing else has to change: both tools
+pick the scene up, and `--list` will show it.
+
+**Add a source** — an entry in `scenes.SOURCES` carrying `id`, the
+`TelemetryUnit` enum as `unit`, `prec`, the optional `minId`/`maxId` history
+siblings and the 0-based `sensor` index. Omit `unit` for a non-telemetry
+source (stick, timer): `telemetry.lua` keys `isTelemetry` off its presence.
+
+**Add an option** — after appending it to `main.lua`'s `DEFS`, give it a scene.
+If you do not, the coverage panel lists it as `SIN COBERTURA` and the run says
+so on stdout. If the option genuinely cannot show up in a still frame, add it
+to `scenes.NON_VISUAL` with the reason instead; it then reports as `n/a`
+rather than as a gap. That choice is deliberately explicit — an option should
+never fall out of coverage by silence.
+
+**Regression workflow.** Snapshot before a change, compare after:
+
+```sh
+lua5.3 dev/gallery.lua . --tag before
+# ... make the change ...
+lua5.3 dev/gallery.lua . --baseline dev/shots/gallery/manifest-before.lua
+```
+
+The diff names the exact field of the exact scene that moved, so a refactor
+has to account for everything it changed and nothing else.
+
+**Harness traps**, all of them real and all documented in `dev/scenes.lua`:
+`tests/mock_env.lua` removes the string metatable on purpose (EdgeTX builds
+without `LUA_ENABLE_STRLIB_MT`), so `("%d"):format(n)` raises in dev tooling
+exactly as it would on the radio — use `string.format`. And the mock is global
+state: a scene's objects must be captured before the next `build()` resets
+them.
+
 ## 8. Distribution
 
 - The widget ships from this repository; the folder is the SD-card payload.

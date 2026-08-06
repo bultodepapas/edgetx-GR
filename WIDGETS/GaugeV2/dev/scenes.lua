@@ -10,6 +10,70 @@
 -- something". dev/gallery.lua cross-checks the catalogue against main.lua's
 -- option declarations and reports which options no scene ever varies - so the
 -- sheet cannot quietly stop covering an option someone added later.
+--
+-- =========================================================================
+-- ADDING A SCENE
+-- =========================================================================
+--
+-- Append one table to the `cases` list of the right section in M.sections:
+--
+--   { name    = "ba-pct-low",       -- REQUIRED, unique. Used as the SVG file
+--                                   -- name, the manifest key and the label in
+--                                   -- render warnings. Keep the section's
+--                                   -- prefix (st- / color- / sc- / op- / ...).
+--     title   = "Li-Po % / Lowest", -- caption heading; falls back to `name`
+--     zone    = { 200, 160 },       -- REQUIRED, { width, height } in px
+--     source  = "Cels",             -- key into M.SOURCES below; default "RSSI"
+--     opts    = { Battery = "Li-Po", Cells = "Lowest" },
+--                                   -- widget options in READABLE form: CHOICE
+--                                   -- by label, BOOL as true/false, numbers as
+--                                   -- numbers. mock.makeOptions() converts to
+--                                   -- the integer wire format. A colour may be
+--                                   -- written "@COLOR_THEME_FOCUS" and is
+--                                   -- resolved late by M.resolveOpts().
+--     value   = { 3.85, 3.84 },     -- what the source reads. A TABLE simulates
+--                                   -- a CELLS sensor (one entry per cell).
+--     history = { 31, 92 },         -- optional; only lands if the source
+--                                   -- declares minId/maxId siblings
+--     frames  = 30,                 -- refresh() calls before capture (def. 30).
+--                                   -- Lower it to catch the needle mid-glide.
+--     noSource = true,              -- optional; forces Source = 0
+--     note    = "deberia ser ~55 %",-- optional caption line, drawn in accent
+--     alias   = "mode-Rail-crit",   -- optional extra file name for shots.lua,
+--                                   -- for scenes older documents cite
+--     post    = function(ctx) ... end,
+--                                   -- optional: mutate the radio AFTER the
+--                                   -- initial frames, then refresh again.
+--                                   -- ctx = { mock, mod, widget, opts, srcId,
+--                                   --         zone, case }. This is how the
+--                                   --   stale / no-link / damping scenes work.
+--   }
+--
+-- `section` and `sectionTitle` are injected by M.allCases(); do not set them.
+--
+-- A new SOURCE goes in M.SOURCES: { id, unit, prec, minId, maxId, sensor }.
+-- `unit` is the TelemetryUnit enum (telemetry.lua UNIT_NAMES), `sensor` is the
+-- 0-based index model.getSensor() reports - needed for precision lookup and
+-- for model.resetSensor(). Omit `unit` for a non-telemetry source (a stick,
+-- a timer): telemetry.lua keys isTelemetry off its presence.
+--
+-- A new OPTION in main.lua needs a scene here, or gallery.lua's coverage panel
+-- will list it as SIN COBERTURA. If it genuinely cannot be seen in a still
+-- frame, add it to M.NON_VISUAL below with the reason instead.
+--
+-- =========================================================================
+-- TRAPS (all of these have bitten; they are properties of the harness)
+-- =========================================================================
+--
+--  * tests/mock_env.lua strips the string metatable on purpose, because EdgeTX
+--    builds without LUA_ENABLE_STRLIB_MT. So `("%d"):format(n)` raises here
+--    exactly as it would on the radio - write string.format(...) instead.
+--  * The mock is GLOBAL state: mock.reset() wipes the object list, so a scene's
+--    objects must be snapshotted before the next M.build() call. gallery.lua
+--    captures each scene immediately; anything new must do the same.
+--  * `value` reaches getSourceValue() untouched, so a nil value is a legitimate
+--    scene (no data) - set it inside `post`, not as the field, or the initial
+--    frames render nothing to look at.
 
 local M = {}
 
@@ -70,7 +134,7 @@ function M.build(mock, widgetDir, case)
 
   local mod = dofile(widgetDir .. "main.lua")
   local o = { Source = case.noSource and 0 or src.id }
-  for k, v in pairs(case.opts or {}) do o[k] = v end
+  for k, v in pairs(M.resolveOpts(case.opts) or {}) do o[k] = v end
   local opts = mock.makeOptions(mod.defs, o)
 
   local zone = { x = 0, y = 0, w = case.zone[1], h = case.zone[2] }
@@ -180,11 +244,16 @@ M.sections = {
       local out = {}
       for _, m in ipairs({ "Static", "Threshold", "Rail", "Gradient",
                            "Sections" }) do
+        -- `alias`: nombre historico con el que dev/shots.lua venia escribiendo
+        -- esta escena. dev/design-review-tanda5.md cita esos ficheros, asi que
+        -- se siguen emitiendo ademas del nombre nuevo.
         out[#out + 1] = { name = "color-" .. string.lower(m) .. "-ok",
           title = m .. " - normal", zone = { 200, 160 },
+          alias = (m == "Rail") and "mode-Rail-normal" or nil,
           opts = { ColorMode = m }, value = 78 }
         out[#out + 1] = { name = "color-" .. string.lower(m) .. "-crit",
           title = m .. " - critico", zone = { 200, 160 },
+          alias = (m == "Rail") and "mode-Rail-crit" or nil,
           opts = { ColorMode = m }, value = 22 }
       end
       return out
@@ -206,8 +275,20 @@ M.sections = {
         zone = { 220, 220 }, source = "Thr",
         opts = { Scale = "Manual", Min = 0, Max = 20000, Precision = "2" },
         value = 15400 },
-      { name = "sc-lowgood", title = "low-is-good (T1)", zone = { 220, 200 },
-        source = "T1", opts = { Scale = "Auto" }, value = 95 },
+      { name = "sc-lowgood", title = "low-is-good (preset T1)",
+        zone = { 220, 200 }, source = "T1", opts = { Scale = "Auto" },
+        value = 95 },
+      -- El preset de T1 trae highIsGood=false por su cuenta; estos dos fijan
+      -- la OPCION explicitamente sobre la misma escala, que es lo unico que
+      -- verifica de verdad el interruptor (lo pidio el informe de cobertura).
+      { name = "sc-highgood-on", title = "High is good = On",
+        zone = { 220, 200 }, source = "Thr",
+        opts = { Scale = "Manual", Min = 0, Max = 100, Warn = 55, Crit = 35,
+                 HighGood = true, ColorMode = "Sections" }, value = 45 },
+      { name = "sc-highgood-off", title = "High is good = Off",
+        zone = { 220, 200 }, source = "Thr",
+        opts = { Scale = "Manual", Min = 0, Max = 100, Warn = 55, Crit = 35,
+                 HighGood = false, ColorMode = "Sections" }, value = 45 },
       { name = "sc-descending", title = "descendente 100..0",
         zone = { 220, 200 }, source = "Thr",
         opts = { Scale = "Manual", Min = 100, Max = 0, Warn = 55, Crit = 35 },
@@ -241,6 +322,7 @@ M.sections = {
       { name = "op-chip-on", title = "State chip ON", zone = { 200, 160 },
         opts = { ColorMode = "Rail", ShowChip = true }, value = 22 },
       { name = "op-chip-off", title = "State chip OFF", zone = { 200, 160 },
+        alias = "mode-Rail-nochip",
         opts = { ColorMode = "Rail", ShowChip = false }, value = 22 },
       { name = "op-mm-off", title = "Min/max Off", zone = { 220, 200 },
         opts = { ShowMinMax = "Off" }, value = 78, history = { 31, 92 },
@@ -259,11 +341,11 @@ M.sections = {
       .. " del damping 3 frames despues de un escalon.",
     cases = {
       { name = "ne-pos0", title = "tope inicial", zone = { 200, 160 },
-        opts = { ColorMode = "Rail" }, value = 0 },
+        alias = "mode-Rail-pos1", opts = { ColorMode = "Rail" }, value = 0 },
       { name = "ne-pos50", title = "centro", zone = { 200, 160 },
-        opts = { ColorMode = "Rail" }, value = 50 },
+        alias = "mode-Rail-pos2", opts = { ColorMode = "Rail" }, value = 50 },
       { name = "ne-pos100", title = "tope final", zone = { 200, 160 },
-        opts = { ColorMode = "Rail" }, value = 100 },
+        alias = "mode-Rail-pos3", opts = { ColorMode = "Rail" }, value = 100 },
       { name = "ne-damp0", title = "Damping 0 (3 frames)", zone = { 200, 160 },
         opts = { Damping = 0 }, value = 10, frames = 30,
         post = function(c)
