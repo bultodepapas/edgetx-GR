@@ -88,6 +88,20 @@ local function objIndex(obj)
   return nil
 end
 
+local function deepCopy(t)
+  if type(t) ~= "table" then return t end
+  local out = {}
+  for k, v in pairs(t) do out[k] = deepCopy(v) end
+  return out
+end
+
+local function withOption(opts, key, value)
+  local out = {}
+  for k, v in pairs(opts) do out[k] = v end
+  out[key] = value
+  return out
+end
+
 -- ---- option contract -----------------------------------------------------
 
 local CORE_ORDER = {
@@ -1661,6 +1675,180 @@ test("scenario: a full flight keeps the object tree stable", function()
     refresh(w)
   end
   assertEq(mock.objectCount(), objects, "no object churn in flight")
+end)
+
+-- ---- Tanda 6 review: Phase 0 red tests ------------------------------------
+-- Every test below must FAIL for the stated reason until the matching fix
+-- lands (dev/code-review-tanda6-response.md Phase 0). Widget sources are
+-- NOT touched in this phase: these tests are the proof that the bug exists.
+
+test("F-1: repeated update() keeps layout intact, then CRIT renders", function()
+  -- update() runs on settings exit (even Cancel), fullscreen enter and zone
+  -- resize. configure() replaces widget.layout with a fresh table on every
+  -- call but only rebuilds on a signature change, so a no-op update loses
+  -- every field the renderer wrote into L at build time - chipOff first -
+  -- and the next CRIT/STALE chip render hits arithmetic on nil
+  -- (renderer.lua:479).
+  local zones = { { x = 0, y = 0, w = 200, h = 200 },   -- dial
+                  { x = 0, y = 0, w = 300, h = 60 } }   -- bar
+  for _, zone in ipairs(zones) do
+    local w = newWidget(zone, { Source = ID_RSSI })
+    refresh(w, 1)
+    local before = w.layout.chipOff
+    w.app.update(w, w.options)          -- identical options, no user edit
+    assertEq(w.layout.chipOff, before,
+      string.format("%dx%d: chipOff survives update()", zone.w, zone.h))
+    -- the transition that actually crashes the widget:
+    mock.setValue(ID_RSSI, 10)          -- critical -> the CRIT chip path
+    local ok, err = pcall(refresh, w, 1)
+    assertTrue(ok, string.format("%dx%d: refresh into CRIT after update(): %s",
+      zone.w, zone.h, tostring(err)))
+  end
+end)
+
+-- The generalised invariant that would have caught F-1 (Tanda 6 §B.2):
+-- layout is a pure function of (zone, cfg). Any field the renderers write
+-- at build time and update() fails to recompute shows up as a lost key.
+local function deepEq(a, b, path)
+  path = path or "L"
+  if a == nil and b ~= nil then error(path .. " appeared only after update()") end
+  if b == nil and a ~= nil then
+    error(path .. " was LOST by update() (was " .. tostring(a) .. ")")
+  end
+  if type(a) ~= type(b) then error(path .. " type " .. type(a) .. " ~= " .. type(b)) end
+  if type(a) ~= "table" then
+    if a ~= b then error(path .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
+    return
+  end
+  for k, v in pairs(a) do deepEq(v, b[k], path .. "." .. tostring(k)) end
+  for k, v in pairs(b) do deepEq(a[k], v, path .. "." .. tostring(k)) end
+end
+
+test("F-1 class: layout is identical before and after a no-op update()", function()
+  for _, zone in ipairs{ {x=0,y=0,w=200,h=200}, {x=0,y=0,w=300,h=60},
+                          {x=0,y=0,w=60,h=60}, {x=0,y=0,w=480,h=272} } do
+    local w = newWidget(zone)
+    refresh(w, 1)
+    -- TRAP: the snapshot must be a DEEP copy. configure() replaces
+    -- widget.layout with a fresh table, so a plain alias happens to work
+    -- today - but if that ever becomes an in-place mutation, the test would
+    -- silently compare a table with itself and pass forever. Copy.
+    local snapshot = deepCopy(w.layout)
+    w.app.update(w, w.options)
+    deepEq(snapshot, w.layout, "L@" .. zone.w .. "x" .. zone.h)
+  end
+end)
+
+test("F-2: battery % is correct for Lowest / Total / Average", function()
+  -- A 4S pack at 3.85 V/cell is ~55 % state of charge. The battery block
+  -- divides the aggregate by the cell count, but Lowest/Average are ALREADY
+  -- per-cell readings - so the documented default (Cells=Lowest) reads 0 %.
+  local cells = { 3.85, 3.85, 3.85, 3.85 }
+  for _, mode in ipairs{ { 1, "Lowest" }, { 2, "Total" }, { 3, "Average" } } do
+    local w = newWidget({ x = 0, y = 0, w = 200, h = 200 },
+      { Source = ID_CELLS, Battery = 2, Cells = mode[1] })
+    mock.setValue(ID_CELLS, cells)
+    refresh(w, 2)
+    assertTrue(w.data.displayValue > 45 and w.data.displayValue < 65,
+      mode[2] .. ": expected ~55 %, got " .. tostring(w.data.displayValue))
+  end
+end)
+
+test("F-4: theme.widthCache stops growing under a varying value", function()
+  -- anchorUnit measures the LIVE value string every time the text changes
+  -- (renderer.lua:499), one new permanent entry per frame at 2 decimals,
+  -- in a module-level cache shared by every gauge on the card. The cache
+  -- must SATURATE, not merely stay under an arbitrary ceiling.
+  local w = newWidget(nil, { Source = ID_RSSI, Precision = 4, Damping = 0 })
+  local theme = w.mods.theme
+  local function entries()                -- via debug.getupvalue
+    local i, n = 1, 0
+    while true do
+      local name, val = debug.getupvalue(theme.textWidth, i)
+      if not name then break end
+      if name == "widthCache" then
+        for _, byFont in pairs(val) do for _ in pairs(byFont) do n = n + 1 end end
+      end
+      i = i + 1
+    end
+    return n
+  end
+  local fed = 0
+  local function feedVaryingValues(widget, n)
+    for _ = 1, n do
+      fed = fed + 1
+      mock.setValue(ID_RSSI, fed * 0.01)  -- a new string every frame
+      refresh(widget, 1)
+    end
+  end
+  feedVaryingValues(w, 500); local a = entries()
+  feedVaryingValues(w, 500); local b = entries()
+  assertEq(b, a, "cache grew by " .. (b - a) .. " over 500 more frames")
+end)
+
+test("F-5: changing Accent recolours without a tree rebuild", function()
+  -- layout.signature() omits cfg.accent and the repaint is gated on the
+  -- SEMANTIC colour key, so an accent edit cannot reach objects whose
+  -- colour was set at build time (value arc, sections, rails, marks).
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = 5 })
+  refresh(w, 1)
+  w.app.update(w, withOption(w.options, "Accent", RED))
+  assertEq(w.layoutRebuilt, false, "an accent edit must not rebuild the tree")
+  refresh(w, 1)
+  assertEq(w.ui.valueArc.props.color, RED, "valueArc follows accent")
+end)
+
+test("F-6: sensor metadata does not leak between models", function()
+  -- sensorCache is module-scope and modules live for the whole radio
+  -- session, but a sensor's index and precision are MODEL data: on model B
+  -- the widget must re-resolve Curr (index 7, prec 2), not reuse model A's
+  -- cached (index 0, prec 1) - the index is what the Reset min/max switch
+  -- hands to model.resetSensor(), so a stale one resets the WRONG sensor.
+  setupRadio()
+  local mod = dofile(widgetDir .. "main.lua")
+  mock.addField(3200, "Curr", 1)
+  local zone = { x = 0, y = 0, w = 200, h = 160 }
+  local opts = mock.makeOptions(mod.defs, { Source = 3200 })
+  mock.sim.sensors = { [0] = { name = "Curr", prec = 1 } }   -- model A
+  local w1 = mod.create(zone, opts, widgetDir)
+  mod.update(w1, opts)
+  assertEq(w1.source.sensorIndex, 0, "model A: Curr is sensor index 0")
+  mock.sim.sensors = {                   -- model B
+    [0] = { name = "X" }, [1] = { name = "Y" }, [2] = { name = "Z" },
+    [3] = { name = "A" }, [4] = { name = "B" }, [5] = { name = "C" },
+    [6] = { name = "D" }, [7] = { name = "Curr", prec = 2 },
+  }
+  local w2 = mod.create(zone, opts, widgetDir)
+  mod.update(w2, opts)
+  assertEq(w2.source.sensorIndex, 7, "index re-resolved on the new model")
+  assertEq(w2.source.prec, 2, "precision re-resolved on the new model")
+end)
+
+test("contract: DEFS slot order and types are frozen", function()
+  -- Inserting an option anywhere but the end shifts every existing model's
+  -- saved values silently: WidgetPersistentData::setDefault only resets on
+  -- a TYPE change, and LuaWidgetFactory cannot override checkOptions() to
+  -- migrate (Tanda 6 §B.7). The (key, type) sequence below is the wire
+  -- contract every saved model depends on - APPEND only. This one is a
+  -- ratchet: it must be green from the start.
+  local mod = dofile(widgetDir .. "main.lua")
+  local defs = mod.defs
+  local FROZEN = {
+    { "Source", SOURCE }, { "Min", VALUE }, { "Max", VALUE },
+    { "Warn", VALUE }, { "Crit", VALUE }, { "HighGood", BOOL },
+    { "Style", CHOICE }, { "ColorMode", CHOICE }, { "Precision", CHOICE },
+    { "ShowMinMax", CHOICE },             -- core ten: 2.11
+    { "Accent", COLOR }, { "Label", STRING }, { "Suffix", STRING },
+    { "Scale", CHOICE }, { "Sweep", CHOICE }, { "Damping", SLIDER },
+    { "Cells", CHOICE }, { "Battery", CHOICE }, { "Alerts", CHOICE },
+    { "AlertSw", SWITCH }, { "Delay", VALUE }, { "Vibrate", BOOL },
+    { "ResetSw", SWITCH }, { "ShowChip", BOOL },
+  }
+  assertEq(#defs, #FROZEN, "option count changed - APPEND only")
+  for i, want in ipairs(FROZEN) do
+    assertEq(defs[i].key, want[1], "slot " .. i .. " key")
+    assertEq(defs[i].type, want[2], "slot " .. i .. " type")
+  end
 end)
 
 print(string.format("-- %d passed, %d failed", passed, failed))

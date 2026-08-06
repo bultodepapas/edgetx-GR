@@ -1111,3 +1111,57 @@ Re-run the byte probe **and** `dev/instructions.lua`. Record both here.
 ordinary as opening its settings and pressing Cancel, and with F-10 folded in
 that single commit closes every known path to a permanently disabled widget.
 It does not need to wait for anything else in this document.
+
+---
+
+## E. Phase 0 execution log (2026-08-06)
+
+Run on `e4f4809d6` (widget sources identical to the reviewed `c196e2b0e`;
+HEAD only added documentation). Interpreter: Lua 5.3.6. **No widget source
+was touched in this phase.**
+
+| Test | Result | Failure (exactly as predicted) |
+|---|---|---|
+| 0.1 F-1 · update() keeps layout, CRIT renders | **RED** | `200x200: chipOff survives update(): expected 3, got nil` (bar zone fails identically) |
+| 0.2 F-1 class · layout pure in (zone, cfg) | **RED** | `L@200x200.chipOff was LOST by update() (was 3)` |
+| 0.3 F-3 · saneThresholds normalises order | **RED** | `descending warn untouched: expected 55, got 45.0` (low-is-good mirror passes — see note) |
+| 0.4 F-2 · battery % per Cells mode | **RED** | `Lowest: expected ~55 %, got 0` (Average identical; Total passes) |
+| 0.5 F-4 · widthCache bounded | **RED** | `cache grew by 500 over 500 more frames: expected 509, got 1009` |
+| 0.6 F-5 · Accent recolours without rebuild | **RED** | `valueArc follows accent: expected 8192, got 12291`; `layoutRebuilt == false` holds |
+| 0.7 F-6 · sensor metadata per model | **RED** | `index re-resolved on the new model: expected 7, got 0` (prec 1 too) |
+| 0.8 · DEFS (key, type) frozen | **GREEN** | ratchet, as designed (§B.7) |
+| 0.9 · dev/instructions.lua | **NUMBERS** | see below |
+
+Suites after Phase 0: `run_tests` 38 passed / 1 failed (the F-3 red),
+`smoke_test` 97 passed / 6 failed (the six reds; 0.8 green added),
+`collide` all clean, gallery diff vs `manifest-pre-tanda6.lua`: **no changes**,
+`luacheck *.lua`: **5 warnings / 0 errors** (unchanged; the F-5 test's unused
+`before` was removed to keep it that way).
+
+**0.9 instruction-budget baseline — the Phase 5 acceptance numbers.** 1 fire =
+200 VM instructions; the kill switch fires at 100 (20 000). Counts include
+`pcall`/hook overhead, so they overestimate — safe for margin:
+
+```text
+scene                                  upd-noop  upd-bld ref-idle  ref-chg
+480x272 needle sections markers+text         19       50        3       12
+480x272 needle threshold markers+text        19       45        3       12
+200x200 needle sections markers+text         20       49        3       12
+200x200 arc sections markers                 18       43        3        8
+200x200 needle sections 360deg               15       55        3       12
+300x60 bar threshold                         10       21        2        8
+
+worst scene:   200x200 needle sections 360deg
+worst callback: update() with a structural change (full rebuild), 55 fires
+               = 11 000 instructions = 45 % headroom before the kill switch
+```
+
+Two observations for Phase 5, not action items here:
+
+- The rebuild path (`update()` after a structural option edit) is the
+  expensive callback (45–55 fires), not `refresh()` (3 idle / ≤ 12 moving).
+  Phases 2.4-B and 4.2, which trade rebuilds for repaints, lower this number
+  directly; 5.1/5.2 shave the 12-fire moving-refresh path.
+- Even with hook overhead included, no callback is close to the limit; the
+  probe's 50 % headroom warning threshold is what makes this worth running
+  in CI once Phase 5 lands.

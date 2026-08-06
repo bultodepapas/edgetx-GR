@@ -157,6 +157,23 @@ test("G-4: both thresholds out of range derive at the presets' proportions", fun
   assertEq(a, 500); assertEq(b, -500)
 end)
 
+test("F-3: saneThresholds normalises min/max order", function()
+  -- build() normalises a descending scale (Min > Max); saneThresholds does
+  -- not, so the guard fires on perfectly valid thresholds and derives them
+  -- over a NEGATIVE span - warn/crit inverted, a warning value rendered
+  -- red and firing the critical tone (Tanda 6 F-3).
+  local aw, ac = ranges.saneThresholds(0, 100, 55, 35, true)
+  assertEq(aw, 55, "ascending warn untouched")
+  assertEq(ac, 35, "ascending crit untouched")
+  local dw, dc = ranges.saneThresholds(100, 0, 55, 35, true)
+  assertEq(dw, 55, "descending warn untouched")
+  assertEq(dc, 35, "descending crit untouched")
+  -- low-is-good mirror: the same normalisation, mirrored bands
+  local lw, lc = ranges.saneThresholds(100, 0, 55, 35, false)
+  assertEq(lw, 55, "descending low-is-good warn")
+  assertEq(lc, 35, "descending low-is-good crit")
+end)
+
 test("determineState inside and outside", function()
   local r = ranges.build(0, 100, 55, 35, true)
   assertEq(ranges.determineState(80, r), "normal")
