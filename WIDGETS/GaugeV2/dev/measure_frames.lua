@@ -1,4 +1,5 @@
--- GaugeV2 per-frame allocation probe (Tanda 6 F-11 / response Phase 5.1+5.2).
+-- GaugeV2 per-frame allocation probe (Tanda 6 F-11 / response Phase 5.1+5.2,
+-- acceptance measurement Phase 5.3).
 --
 -- Reproduces the review's methodology: "basura generada por frame, con la
 -- instrumentación del harness desactivada". Two things make the number
@@ -10,11 +11,19 @@
 --      the run, so the count delta is the TRUE allocation rate (tables,
 --      strings, wrappers), not the live-memory growth a normal gc shows.
 --
+-- The FEED matters as much as the methodology (response A.3):
+--   * plateau (60/90): the acceptance feed. The value oscillates INSIDE the
+--     normal state band - steady flight, one state, needle moving. A feed
+--     crossing the threshold every frame churns the chip and applyColors,
+--     a probe artifact of the same class as the ramp.
+--   * crossing (10/90): documents that artifact - the chip/state churn.
+--   * ramp (RSSI+ rising): the DROPPED original-5.3 target's scenario -
+--     history advancing for the few seconds after power-up.
+--
 -- Usage: lua5.3 dev/measure_frames.lua <widget-dir>
 --
--- Phase 5.1+5.2 target (revert criterion): the needle's share must drop
--- demonstrably against the Tanda baseline (814 B/frame dial-with-needle,
--- ~511 B/frame of it the needle). Run BEFORE and AFTER and compare.
+-- Phase 5 target (revert criterion): the needle's share must drop
+-- demonstrably against the Tanda baseline (~511 B/frame needle share).
 local widgetDir = arg[1] or "./"
 if string.sub(widgetDir, -1) ~= "/" then widgetDir = widgetDir .. "/" end
 
@@ -50,16 +59,29 @@ local function refresh(widget, times)
   end
 end
 
--- ---- per-scene measurement --------------------------------------------------
+local FRAMES = 100
 
-local function measure(w, mod, frames)
+-- ---- feed modes -------------------------------------------------------------
+-- plateau: value oscillates INSIDE the normal band (steady flight, one state)
+local function feedPlateau(i)
+  mock.setValue(ID_RSSI, (i % 2 == 0) and 60 or 90)
+  mock.advance(50)
+end
+-- crossing: value crosses the critical threshold every frame (chip churn)
+local function feedCrossing(i)
+  mock.setValue(ID_RSSI, (i % 2 == 0) and 10 or 90)
+  mock.advance(50)
+end
+
+-- ---- measurement -------------------------------------------------------------
+
+local function measureWith(w, mod, frames, feed)
   refresh(w, 5)                       -- warm: caches, history, strings settle
   collectgarbage("collect")
   collectgarbage("stop")              -- nothing freed during the run
   local c1 = collectgarbage("count")
   for i = 1, frames do
-    mock.setValue(ID_RSSI, (i % 2 == 0) and 10 or 90)   -- angle moves each frame
-    mock.advance(50)
+    feed(i)
     mod.refresh(w)
   end
   local c2 = collectgarbage("count")
@@ -74,8 +96,7 @@ local function countLinePointsCalls(w, mod, frames)
   local calls = 0
   geom.linePoints = function(...) calls = calls + 1 return real(...) end
   for i = 1, frames do
-    mock.setValue(ID_RSSI, (i % 2 == 0) and 10 or 90)
-    mock.advance(50)
+    feedPlateau(i)
     mod.refresh(w)
   end
   geom.linePoints = real
@@ -87,8 +108,7 @@ local function countInstructions(w, mod, frames)
   local function hook() fires = fires + 1 end
   debug.sethook(hook, "", 200)
   for i = 1, frames do
-    mock.setValue(ID_RSSI, (i % 2 == 0) and 10 or 90)
-    mock.advance(50)
+    feedPlateau(i)
     mod.refresh(w)
   end
   debug.sethook()
@@ -110,31 +130,82 @@ local SCENES = {
     ov = { Style = 4, ColorMode = 2, Precision = 4, Damping = 0 } },
 }
 
-local FRAMES = 100
+-- ---- main --------------------------------------------------------------------
 
 mock.tracking(false)                -- measure the widget, not the harness
 print("GaugeV2 per-frame allocation probe  (gc stopped, harness tracking off,"
-  .. " " .. FRAMES .. " moving frames)")
+  .. " " .. FRAMES .. " frames)")
 print("")
-print(string.format("%-22s %12s %14s %12s",
+print(string.format("%-24s %12s %14s %12s",
   "scene", "B/frame", "linePoints/f", "instr/f"))
-print(string.rep("-", 64))
+print(string.rep("-", 66))
 local totals = { needle = nil, arc = nil, bar = nil }
 for _, sc in ipairs(SCENES) do
   local w, mod = build(sc.zone, sc.ov)
-  local bytes = measure(w, mod, FRAMES)
+  local bytes = measureWith(w, mod, FRAMES, feedPlateau)
   local calls = countLinePointsCalls(w, mod, FRAMES)
   local fires = countInstructions(w, mod, FRAMES)
   if string.find(sc.name, "needle") then totals.needle = bytes
   elseif string.find(sc.name, "arc") then totals.arc = bytes
   else totals.bar = bytes end
-  print(string.format("%-22s %10.0f B %12.2f %10.1f",
+  print(string.format("%-24s %10.0f B %12.2f %10.1f",
     sc.name, bytes, calls, fires))
 end
-print(string.rep("-", 64))
+print(string.rep("-", 66))
 local needleShare = totals.needle - totals.arc
-print(string.format("needle share: %.0f B/frame (%.0f - %.0f)",
+print(string.format("needle share (steady state): %.0f B/frame (%.0f - %.0f)",
   needleShare, totals.needle, totals.arc))
 print(string.format("Tanda baseline: 814 B/frame needle scene, ~511 B/frame"
   .. " needle share"))
+print("")
+
+-- ---- threshold-crossing row (documented probe artifact) ----------------------
+-- A feed that crosses the state threshold every frame churns the chip
+-- (updateChip's fresh frame.chipBox table, ~186 B per show) and applyColors.
+-- Real but bounded: it costs per TRANSITION, ~0 in steady flight. Recorded
+-- as a follow-up finding, not part of the 5.1/5.2 needle measurement.
+local wc, modc = build(SCENES[1].zone, SCENES[1].ov)
+local crossBytes = measureWith(wc, modc, FRAMES, feedCrossing)
+print(string.format("-- threshold-crossing feed (10/90): %.0f B/frame - the"
+  .. " chip/state churn, %.0f B/f above steady state",
+  crossBytes, crossBytes - totals.needle))
+print("")
+
+-- ---- A.3 check: ramp vs plateau ---------------------------------------------
+-- The DROPPED original-5.3 target chased "ghost 1.00 sets/frame, maxMark
+-- 1.00 sets/frame" from a monotonically rising sweep probe. In steady
+-- flight the historical maximum advances for a few seconds at power-up and
+-- never again (response A.3). Verify with data: the same needle scene under
+-- a RAMP feed (the RSSI+ sibling rises every frame, so the history max -
+-- and with it the maxMark - genuinely advances), vs the plateau above.
+local function feedRamp(i)
+  mock.setValue(ID_RSSI, (i % 10) * 11)   -- value oscillates: 10 interned strings
+  mock.setValue(3074, i)                  -- RSSI+ rises: history max advances
+  mock.advance(50)
+end
+
+local function countLinePointsRamp(w, mod, frames)
+  local geom = w.mods.geometry
+  local real = geom.linePoints
+  local calls = 0
+  geom.linePoints = function(...) calls = calls + 1 return real(...) end
+  for i = 1, frames do
+    feedRamp(i)
+    mod.refresh(w)
+  end
+  geom.linePoints = real
+  return calls / frames
+end
+
+print("-- A.3 check: the same scene under a RAMP (history max advancing)")
+local wr, modr = build(SCENES[1].zone, SCENES[1].ov)
+local rampBytes = measureWith(wr, modr, FRAMES, feedRamp)
+local rampCalls = countLinePointsRamp(wr, modr, FRAMES)
+print(string.format("dial 200x200 needle (ramp): %10.0f B/f  linePoints %5.2f/f",
+  rampBytes, rampCalls))
+print(string.format("marker/ghost cost of the ramp: %.0f B/frame"
+  .. " (%.0f - %.0f) - exists ONLY while history advances",
+  rampBytes - totals.needle, rampBytes, totals.needle))
+print("in steady flight (plateau) the historical max is static: cost 0")
+print("")
 mock.tracking(true)

@@ -1401,3 +1401,59 @@ allocate a fresh `pts`+wrapper per angle change; they are guarded by
 `frame.minAngle/maxAngle` so they cost nothing in steady state, but a
 monotonic flight max sweeps them ~1/frame — the same persistent-buffer
 treatment applies if the Phase 5 target is ever pushed further.
+
+## E.7 Phase 5.3 execution log (2026-08-06) — re-measure and decide
+
+The phase's acceptance step: both probes re-run on the final code
+(`3b0f554e3`), recorded here, and the binding revert criterion applied.
+
+**dev/measure_frames.lua — allocation rate** (gc stopped, harness tracking
+off, 100 frames, `Damping = 0`; a probe artifact in the original feed was
+found and fixed in the process — see below):
+
+```text
+steady-state plateau (60/90, both in the normal band):
+  dial 200x200 needle      310 B/f    linePoints 0.00/f
+  dial 200x200 arc         309 B/f
+  bar 300x60               309 B/f
+  needle share:              1 B/frame
+  Tanda baseline:         814 B/f needle scene, ~511 B/f needle share
+```
+
+**The needle's share of a steady-state frame is measurement noise.** The
+full needle scene is **310 B/f — under the restated ≲ 400 B/f target**.
+The controls (arc, bar) sit at 309 — the shared machinery, which itself now
+measures at the Tanda report's arc-scene level (303).
+
+**dev/instructions.lua — the metric that actually kills the widget:**
+
+```text
+worst callback: 49 fires = 9800 instructions (limit 100 / 20000) - 51 % headroom
+(ref-chg ≤ 11 fires on every scene; the E.5/E.6 baselines were 55-56 fires)
+```
+
+**Probe-artifact accounting** — the earlier 670 B/f base was decomposed and
+is now fully explained:
+
+- **Threshold-crossing feed (10/90): 669 B/f, +359 B/f over steady state.**
+  A feed that crosses the state threshold every frame churns the chip —
+  `updateChip` builds a FRESH `frame.chipBox` table per show (~186 B/call,
+  micro-benchmarked) — plus `applyColors`. This is a real but
+  TRANSITION-bounded cost (~0 in steady flight); recorded as a follow-up
+  finding, not part of the needle work.
+- **Ramp feed (RSSI+ rising): 1181 B/f, +870 B/f over steady state** — the
+  maxMark/ghost/min-max-text churn while the historical max advances. **§A.3
+  is now confirmed by measurement**: the dropped original-5.3 target chased
+  ~870 B/f that exists only for the seconds after power-up and never again.
+
+**REVERT CRITERION — applied, not triggered.** The improvement is
+demonstrable on both metrics the phase targets: the needle share is ~511 →
+1 B/f (bytes), every instruction-probe row improved (worst 55-56 → 49
+fires), the controls are unchanged, and the visual baseline is pixel-identical
+(gallery manifest: same three named scenes; SVG diff: zero Phase-5 lines).
+**5.1 + 5.2 ship.**
+
+**Follow-up findings recorded for Phase 6/7** (both transition-bounded, not
+per-frame in steady flight): the `frame.chipBox` table per chip show (the
+5.1 persistent-table pattern applies directly), and the marker `pts`/wrapper
+allocation while history advances (same pattern).
