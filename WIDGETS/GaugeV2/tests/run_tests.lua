@@ -355,6 +355,25 @@ test("widest sample covers the scale plus one character of slack", function()
   assertEq(format.widestSample(widget), "-00:00:00")
 end)
 
+test("F-10: RAMP degrades without a hole when a font constant is missing", function()
+  -- A firmware that lacks XXLSIZE must yield a six-font ramp with NO nil
+  -- entry: #RAMP used to report the full length regardless, so fitFont
+  -- indexed fontHeight(nil) and heightCache[nil] = h raised `table index
+  -- is nil` on the first layout pass (Tanda 6 F-10). theme.lua is loaded
+  -- in an isolated environment without XXLSIZE.
+  local env = {}
+  for k, v in pairs(_ENV or _G) do env[k] = v end
+  env.XXLSIZE = nil
+  local chunk = assert(loadfile(widgetDir .. "theme.lua", "t", env))
+  local theme = chunk()
+  assertEq(#theme.RAMP, 6, "XXLSIZE missing -> 6 usable fonts")
+  assertEq(theme.RAMP[1], theme.FONTS.XL,
+    "the ramp starts at the largest font that actually exists")
+  for i = 1, #theme.RAMP do
+    assertTrue(theme.RAMP[i] ~= nil, "RAMP[" .. i .. "] must not be a hole")
+  end
+end)
+
 -- ---- smoothing -----------------------------------------------------------
 
 test("damping maps to a time constant", function()

@@ -98,17 +98,16 @@ function M.build(widget)
   if L.showState then
     -- the state chip: same pill as the dial, so WARN/CRIT/STALE signal
     -- identically in bar zones (AUDIT.md P1-10). Text vertically centred and
-    -- a 1 px outline in the lighter label role (review P-B).
-    local chipOff = floor((L.chipHeight - T.fontHeight(L.stateFont)) / 2)
-    L.chipOff = chipOff
+    -- a 1 px outline in the lighter label role (review P-B). The centring
+    -- offset is LAYOUT data (L.chipOff) - see renderer.build (Tanda 6 F-1).
     ui.chipEdge = lvgl.rectangle{
-      x = L.stateBox.x - T.px(1), y = L.stateBox.y - chipOff - T.px(1),
+      x = L.stateBox.x - T.px(1), y = L.stateBox.y - L.chipOff - T.px(1),
       w = L.stateBox.w + T.px(2), h = L.chipHeight + T.px(2),
       color = T.color.label, filled = 1,
       rounded = floor((L.chipHeight + T.px(2)) / 2),
     }
     ui.chip = lvgl.rectangle{
-      x = L.stateBox.x, y = L.stateBox.y - chipOff,
+      x = L.stateBox.x, y = L.stateBox.y - L.chipOff,
       w = L.stateBox.w, h = L.chipHeight,
       color = T.color.chip, filled = 1, rounded = floor(L.chipHeight / 2),
     }

@@ -42,8 +42,21 @@ M.FONTS = {
 -- STDSIZE is deliberately IN the ramp: the old M(24) -> XS(13) jump skipped
 -- the 16 px step, so a chord that barely missed 24 px threw the value down to
 -- 13 px (AUDIT.md P3-4; P0-2's value clearance narrows the chord at 200x160).
-M.RAMP = { M.FONTS.XXL, M.FONTS.XL, M.FONTS.L, M.FONTS.M, M.FONTS.S,
-           M.FONTS.XS, M.FONTS.XXS }
+--
+-- Built by FILTERING, not by literal indexing: a firmware that does not
+-- define one of these constants (e.g. XXLSIZE on a target that has no
+-- double-size fonts) must degrade to a shorter ramp, never leave a HOLE.
+-- #RAMP keeps reporting the full length otherwise, so fitFont walks into
+-- fontHeight(nil) -> heightCache[nil] = h raises `table index is nil`
+-- (Tanda 6 F-10): a crash on the first layout pass, and the widget
+-- permanently disables itself.
+local RAMP_ORDER = { "XXL", "XL", "L", "M", "S", "XS", "XXS" }
+M.RAMP = {}
+for i = 1, #RAMP_ORDER do
+  local f = M.FONTS[RAMP_ORDER[i]]
+  if f ~= nil then M.RAMP[#M.RAMP + 1] = f end
+end
+assert(#M.RAMP > 0, "GaugeV2: firmware exposes no usable font constants")
 
 M.color = {
   -- Green: the conventional "all clear" colour a gauge should default to

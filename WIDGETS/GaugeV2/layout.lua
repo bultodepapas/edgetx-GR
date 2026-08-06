@@ -482,9 +482,14 @@ local function dialLayout(widget, cfg, L, w, h)
 
   -- chip behind the state text. 7 px side padding and stateH + 6 height give
   -- the C/T letters breathing room, and the text is centred in the pill by
-  -- (chipHeight - stateH) / 2 (review P-B).
+  -- (chipHeight - stateH) / 2 (review P-B). chipOff lives in LAYOUT, not in
+  -- the renderer: configure() replaces widget.layout on every update() but
+  -- only rebuilds on a signature change, so a field the renderer wrote at
+  -- build time was lost by the next no-op update() and the chip render
+  -- crashed on nil - the widget disabled itself (Tanda 6 F-1).
   L.chipPad = T.px(7)
   L.chipHeight = stateH + T.px(6)
+  L.chipOff = floor((L.chipHeight - stateH) / 2)
 end
 
 -- ------------------------------------------------------------------- bar --
@@ -525,8 +530,12 @@ local function barLayout(widget, cfg, L, w, h)
   -- the zone's tolerance - keeping the state row alive where it matters
   -- most (P1-2).
   local chipExtra = L.showState and T.px(6) or 0
-  local chipOff = floor(chipExtra / 2)
-  local rowH = (L.showState or L.showName) and (stateH + chipOff) or 0
+  -- The pill's OVERHANG reserve below the state text. NOT the same quantity
+  -- as L.chipOff (the render-time vertical centring of the pill): this is a
+  -- row-BUDGET reserve for the taller pill's footprint, applied at build
+  -- time only. The two were once confused under one name (Tanda 6 §B.1).
+  local chipReserve = floor(chipExtra / 2)
+  local rowH = (L.showState or L.showName) and (stateH + chipReserve) or 0
   local barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
   local textH = h - barH - rowH - pad * 3
   if textH < minText then
@@ -534,8 +543,8 @@ local function barLayout(widget, cfg, L, w, h)
     textH = h - barH - rowH - pad * 3
     if textH < minText and L.showState then
       chipExtra = T.px(2)
-      chipOff = 0
-      rowH = (L.showState or L.showName) and stateH or 0
+      chipReserve = 0
+      rowH = (L.showState or L.showName) and (stateH + chipReserve) or 0
       barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
       textH = h - barH - rowH - pad * 3
       if textH < minText then
@@ -569,6 +578,9 @@ local function barLayout(widget, cfg, L, w, h)
   -- same pill as the dial (review P-B), sized to what the zone could reserve
   L.chipPad = T.px(7)
   L.chipHeight = stateH + chipExtra
+  -- see the dial branch: chipOff must come from the layout, or a no-op
+  -- update() loses it and the next chip render crashes (Tanda 6 F-1)
+  L.chipOff = floor((L.chipHeight - stateH) / 2)
   L.markThickness = max(1, T.px(2))
 end
 
