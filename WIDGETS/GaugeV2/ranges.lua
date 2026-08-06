@@ -72,6 +72,12 @@ end
 -- a deliberate sharp cliff and is left alone.
 -- Returns (warning, critical).
 function M.saneThresholds(minimum, maximum, warning, critical, highIsGood)
+  -- Same normalisation as build(): a descending scale (Min > Max) is a
+  -- supported configuration, not a mistake. Without it the guard below
+  -- fires on perfectly valid thresholds and derives them over a NEGATIVE
+  -- span - warn/crit inverted, a warning value rendered red and firing
+  -- the critical alert tone (Tanda 6 F-3).
+  if maximum < minimum then minimum, maximum = maximum, minimum end
   local wl = math.min(warning, critical)
   local wh = math.max(warning, critical)
   if wh < minimum or wl > maximum then

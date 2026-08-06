@@ -136,13 +136,18 @@ local function buildTrack(widget)
       local a1, a2 = bandSpan(widget, r)
       if a2 > a1 then
         local c = T.stateColor(r.role, widget.accent)
-        ui.sections[#ui.sections + 1] = lvgl.arc{
+        local sec = lvgl.arc{
           x = L.cx, y = L.cy, radius = L.railRadius,
           startAngle = a1, endAngle = a2,
           bgStartAngle = a1, bgEndAngle = a2,
           color = c, bgColor = c, bgOpacity = 255, opacity = 0,
           thickness = L.railThickness, rounded = 0,
         }
+        -- role rides on the object so the repaint path can recolor the
+        -- accent-bearing normal band without pairing by index (degenerate
+        -- bands are skipped at build, so sections[i] is not ranges[i])
+        sec.role = r.role
+        ui.sections[#ui.sections + 1] = sec
       end
     end
   end
@@ -349,7 +354,8 @@ function M.build(widget)
     angle = -1, ghostAngle = -1, minAngle = -1, maxAngle = -1,
     needleShown = true, markersShown = false, chipShown = false,
     needleClampChip = false,
-    colorKey = "", valueStr = "", stateStr = "", minStr = "", maxStr = "",
+    colorKey = "", accentKey = nil, valueStr = "", stateStr = "",
+    minStr = "", maxStr = "",
     prevAvail = "unset", pulse = false, pulseAt = 0,
   }
   ui.built = true
@@ -410,6 +416,15 @@ local function applyColors(widget, key)
     if key == "warning" then sc = T.color.warn
     elseif key == "critical" then sc = T.color.crit end
     setProp(widget, ui.stateLabel, "color", sc)
+  end
+  if ui.sections then
+    -- The NORMAL band carries the accent and was painted at build time; an
+    -- Accent edit repaints here without a rebuild, so it must be recolored
+    -- in place (Tanda 6 F-5). The warn/crit bands are theme roles and
+    -- resolve to the same colour as before - setProp filters the no-ops.
+    for _, sec in ipairs(ui.sections) do
+      setProp(widget, sec, "color", T.stateColor(sec.role, widget.accent))
+    end
   end
   if ui.rails then
     -- P1-3 (Tanda 5 review 3.6): only while critical, drop every passive
@@ -494,10 +509,14 @@ end
 -- ink's REAL right edge whenever the text changes: shared by the dial and
 -- the bar (bar.lua calls this too) so both keep the visible "value + unit"
 -- group centred at any digit count, not just at the widest sample.
+-- The live value string is measured through theme.measureWidth - EXACT but
+-- deliberately NOT memoized. Measuring it through textWidth would add one
+-- permanent entry to the shared width cache per frame at high precision
+-- (Tanda 6 F-4).
 function M.anchorUnit(widget, str)
   local ui, L = widget.ui, widget.layout
   if not ui.unitLabel then return end
-  local actualW = T.textWidth(str, L.valueFont)
+  local actualW = T.measureWidth(str, L.valueFont)
   local inkRight = L.valueBox.x + floor((L.valueBox.w + actualW) / 2)
   setProp(widget, ui.unitLabel, "x", inkRight + T.px(T.space.md))
 end
@@ -646,12 +665,17 @@ local function updateHistory(widget)
     lvgl.set(ui.maxMark, { pts = G.linePoints(L.cx, L.cy, inner, outer, a) })
   end
 
-  -- peak-hold ghost: from the start of the scale to the highest value seen
+  -- peak-hold ghost: from the start of the scale to the extreme value seen.
+  -- The extreme is h.max on an ascending scale but h.MIN on a descending
+  -- one (Min > Max): there the highest value maps back onto startAngle, so
+  -- sweeping to it painted the tract never visited (Tanda 6 F-3).
   if ui.ghost then
-    if a ~= frame.ghostAngle then
-      frame.ghostAngle = a
-      setProp(widget, ui.ghost, "endAngle", a)
-      setProp(widget, ui.ghost, "bgEndAngle", a)
+    local peak = (widget.config.max >= widget.config.min) and h.max or h.min
+    local ga = angleOf(widget, peak)
+    if ga ~= frame.ghostAngle then
+      frame.ghostAngle = ga
+      setProp(widget, ui.ghost, "endAngle", ga)
+      setProp(widget, ui.ghost, "bgEndAngle", ga)
       lvgl.show(ui.ghost)
     end
   end
@@ -706,8 +730,14 @@ function M.update(widget)
   local frame = widget.frame
 
   local key = M.colorKey(widget)
-  if key ~= frame.colorKey then
+  -- The accent is an INPUT to the colour (normal band, Static mode), so an
+  -- Accent edit must repaint even when the semantic key did not change
+  -- (Tanda 6 F-5; cf. radio_info.cpp re-reading its colour options in
+  -- update()). frame.colorKey stays the SEMANTIC key - tests and the
+  -- gallery read it as the state label - the accent rides on its own gate.
+  if key ~= frame.colorKey or widget.accent ~= frame.accentKey then
     frame.colorKey = key
+    frame.accentKey = widget.accent
     applyColors(widget, key)
   end
 

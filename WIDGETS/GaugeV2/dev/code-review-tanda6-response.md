@@ -1165,3 +1165,94 @@ Two observations for Phase 5, not action items here:
 - Even with hook overhead included, no callback is close to the limit; the
   probe's 50 % headroom warning threshold is what makes this worth running
   in CI once Phase 5 lands.
+
+## E.2 Phase 2 execution log (2026-08-06)
+
+Run on the Phase 1 commit. Scope: 2.1 (F-6), 2.2 (F-2), 2.3 (F-3), 2.4 (F-5).
+
+| Test | Before → After |
+|---|---|
+| 0.3 F-3 · saneThresholds | RED → **GREEN** |
+| 0.4 F-2 · battery % per Cells mode | RED → **GREEN** (Lowest/Average ~55, Total unchanged) |
+| 0.6 F-5 · Accent without rebuild | RED → **GREEN** (`layoutRebuilt == false` holds — option B) |
+| 0.7 F-6 · sensor metadata per model | RED → **GREEN** (index 7 / prec 2 on model B) |
+| F-3 · ghost follows scale direction (new) | RED → **GREEN** |
+| F-5 · accent reaches sections bands + bar marks (new) | RED → **GREEN** |
+| P2-4 · re-resolution cache (rewritten) | contract ratchet, green |
+
+Suites: `run_tests` **40/40**, `smoke_test` **104/105** (only F-4 red — that
+is Phase 3), collide clean, `luacheck *.lua` **4 warnings / 0 errors**
+(unchanged), instruction probe identical to the E baseline (55 fires worst).
+
+Gallery diff vs `manifest-pre-tanda6.lua` — exactly two scenes, exactly the
+predicted fields:
+
+```text
+~ ba-pct-low       displayValue: 0 -> 53   chip: CRIT -> ""   colorKey: critical -> normal
+                   objects.total: 22 -> 20 (CRIT pill gone with the 0% reading)
+~ sc-descending    warn: 45 -> 55   crit: 65 -> 35   state/colorKey: critical -> warning
+                   chip: CRIT -> WARN
+```
+
+`ba-pct-tot` did not move. No `ac-*` scene moved in the manifest — those
+scenes are static constructions (accent applied at build), and the manifest
+records semantic facts only; the SVG colour of a hot accent edit is pinned by
+0.6 and the new F-5 coverage test instead.
+
+Deviations from the plan (all intentional, all covered by tests):
+
+- **2.2** — `isPerCellReading` is NOT the predicate inside
+  `historyTrustworthy`: Average is per-cell for the battery math, but its
+  mean is not the Cels-/Cels+ extreme, so history stays Lowest-only. The
+  review's "one source of truth" is honoured for the battery fix; history
+  semantics are unchanged (no gallery movement proves it).
+- **2.4** — the accent is folded into the repaint gate as a separate
+  `frame.accentKey` instead of a suffix on `frame.colorKey`, so the SEMANTIC
+  key contract (read by ~8 tests and the manifest) survives. `applyColors`
+  additionally recolors the section bands (role-tagged at build) and the
+  bar's threshold marks, which the plan's sketch alone would have missed —
+  those carry the accent but were only painted at build time.
+- **2.3** — the ghost direction fix also lands in `bar.lua`, whose peak-hold
+  marker had the identical root cause (review named only renderer.lua).
+
+## E.3 Phase 3 execution log (2026-08-06) — F-4
+
+**Candidate measurement first** (plan: "measure all three, then choose"):
+
+- **C (one LVGL container) is structurally INFEASIBLE in the Lua binding.**
+  Every Lua object is created flat under `lvglManager->getCurrentParent()`
+  (`LvglWidgetBox::build`, lua_lvgl_widget.cpp:1617); the Lua API has no
+  object parenting, so a Lua `box` with flexFlow lays out ZERO children
+  (`children` is a tolerated-but-ignored key, :659). The `value.cpp` idiom
+  cannot be expressed from Lua.
+- **A (char-count anchor) measured at up to 6 px of unit drift** on a
+  proportional font model (`dev/measure_anchor.lua`: worst case `"7"` vs
+  sample `-100.00`, 0.25 digit units each side of the ink) — six times the
+  phase's ≤ 1 px allowance. The headless mock cannot see this (its
+  `sizeText` is linear), which is exactly why the probe exists.
+- **B (unmemoised measure) wins on measurement**: exact on proportional
+  fonts, one `lcd.sizeText` per value change, and pixel-identical to the
+  frozen baseline by construction (same sizeText source, just not cached).
+
+**Shipped (B):** `theme.measureWidth(text, font)` — exact, deliberately
+NOT memoized, with the measuring contract restated in theme.lua's header
+(`textWidth` = layout/build only, bounded; `measureWidth` = the renderers'
+entry for live strings). `renderer.anchorUnit` now calls `measureWidth`;
+the call-site audit (`rg textWidth`) shows every remaining site is
+build-time or bounded (the state-chip vocabulary).
+
+**Tests:** 0.5 extended to the plan's 2000 frames (1000+1000) with an
+absolute bound (`< 100` entries) in addition to flatness; new contract test
+"F-4: measureWidth measures exactly but never memoizes" (200 distinct
+strings through `measureWidth` → cache byte-identical, result equals
+`textWidth`).
+
+| Gate | Result |
+|---|---|
+| 0.5 F-4 | RED → **GREEN** (flat 509 → 509 over 1000 more frames, < 100 bound) |
+| run_tests / smoke_test | **40/40** · **106/106** — full suites green for the first time since Phase 0 |
+| gallery manifest diff | unchanged from Phase 2: exactly `ba-pct-low` + `sc-descending`, nothing new |
+| gallery SVG byte-diff (pre/post F-4) | **identical geometry** — the only 2 differing lines are the header timestamp |
+| collide | clean |
+| luacheck | 4 warnings / 0 errors (widget), 0/0 on the new probe |
+| instruction probe | worst callback unchanged (55 fires, rebuild path); moving-refresh +1 fire (200 instr) on 2 of 6 scenes — the sizeText call's measured cost |

@@ -68,8 +68,12 @@ function M.build(widget)
       local r = widget.ranges[i]
       local t = G.normalize(r.to, cfg.min, cfg.max)
       if t > 0 and t < 1 then
-        ui.marks[#ui.marks + 1] = vline(markX(widget, r.to), b.y, b.h,
+        local m = vline(markX(widget, r.to), b.y, b.h,
           L.markThickness, T.stateColor(r.role, widget.accent))
+        -- role rides on the object so an accent edit can recolor the
+        -- normal-boundary mark without pairing by index (Tanda 6 F-5)
+        m.role = r.role
+        ui.marks[#ui.marks + 1] = m
       end
     end
   end
@@ -122,7 +126,8 @@ function M.build(widget)
     dirty = {},
     fillW = -1, ghostX = -1, minX = -1,
     needleShown = true, markersShown = false, chipShown = false,
-    colorKey = "", valueStr = "", stateStr = "", minStr = "", maxStr = "",
+    colorKey = "", accentKey = nil, valueStr = "", stateStr = "",
+    minStr = "", maxStr = "",
     prevAvail = "unset", pulse = false, pulseAt = 0,
   }
   ui.built = true
@@ -161,7 +166,11 @@ local function updateHistory(widget)
   local h = widget.history
   if h.max == nil then return end
   if ui.ghost then
-    local x = markX(widget, h.max)
+    -- peak-hold marker: the extreme of the SWEEP, which is h.min on a
+    -- descending scale (Min > Max) - h.max maps back onto the start there
+    -- and the ghost marked the tract never visited (Tanda 6 F-3)
+    local peak = (widget.config.max >= widget.config.min) and h.max or h.min
+    local x = markX(widget, peak)
     if x ~= frame.ghostX then
       frame.ghostX = x
       lvgl.set(ui.ghost, { pts = { { x, L.bar.y - T.px(2) },
@@ -208,8 +217,10 @@ function M.update(widget)
   if not ui.built then return end
 
   local key = R.colorKey(widget)
-  if key ~= frame.colorKey then
+  -- the accent is an input to the colour: see renderer.update (Tanda 6 F-5)
+  if key ~= frame.colorKey or widget.accent ~= frame.accentKey then
     frame.colorKey = key
+    frame.accentKey = widget.accent
     local c = (key == "static") and (widget.accent or T.color.accent)
       or T.stateColor(key, widget.accent)
     if string.sub(key, 1, 4) == "grad" then
@@ -219,6 +230,13 @@ function M.update(widget)
     R.setProp(widget, ui.fill, "opacity",
               (key == "muted") and T.opacity.muted or T.opacity.full)
     R.setProp(widget, ui.valueLabel, "color", c)
+    if ui.marks then
+      -- threshold marks were painted at build time; the normal-boundary
+      -- mark carries the accent and must follow an accent edit (F-5)
+      for _, m in ipairs(ui.marks) do
+        R.setProp(widget, m, "color", T.stateColor(m.role, widget.accent))
+      end
+    end
     if ui.stateLabel then
       local sc = T.color.label
       if key == "warning" then sc = T.color.warn

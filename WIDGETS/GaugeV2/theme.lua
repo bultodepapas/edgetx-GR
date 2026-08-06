@@ -19,6 +19,15 @@
 ---- # The reported height is >= the ink height, so using it for fitting is  #
 ---- # conservative - text never overflows its region.                       #
 ---- #                                                                       #
+---- # MEASURING CONTRACT (Tanda 6 F-4): M.textWidth is memoized and         #
+---- # therefore BOUNDED - it may only be called from layout/build paths,    #
+---- # over the fixed set of strings one configuration can produce. The      #
+---- # renderers must never measure a LIVE string through it: at high        #
+---- # precision the value string changes every frame, and each new string   #
+---- # would become a permanent entry in a cache shared by every gauge on    #
+---- # the card. M.measureWidth is the renderers' entry: exact, deliberately #
+---- # NOT memoized, one lcd.sizeText call per call.                         #
+---- #                                                                       #
 ---- # License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html               #
 ---- #########################################################################
 
@@ -147,8 +156,10 @@ function M.fontHeight(font)
   return h
 end
 
--- Width of a string, memoized per (font, text). Only called from layout /
--- build paths - never per frame (labels are aligned by LVGL, not by us).
+-- Width of a string, memoized per (font, text). BOUNDED by contract: only
+-- called from layout / build paths over the fixed string set one
+-- configuration produces (see the header). NEVER call this with a live
+-- value string - that is what M.measureWidth is for.
 function M.textWidth(text, font)
   local byFont = widthCache[font]
   if not byFont then
@@ -161,6 +172,14 @@ function M.textWidth(text, font)
     byFont[text] = w
   end
   return w
+end
+
+-- Exact width of a string, deliberately NOT memoized: one lcd.sizeText call
+-- per call, no cache write. The renderers' entry for the LIVE value string
+-- (anchorUnit): exact like textWidth but incapable of growing the shared
+-- cache one entry per frame (Tanda 6 F-4).
+function M.measureWidth(text, font)
+  return lcd.sizeText(text, font) or 0
 end
 
 -- Largest font from `candidates` whose height fits `available`.

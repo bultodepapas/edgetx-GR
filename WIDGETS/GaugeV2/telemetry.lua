@@ -84,23 +84,31 @@ end
 -- a MIXSRC id.
 --
 -- Each model.getSensor(i) call builds a fresh Lua table on the radio, so a
--- 60-sensor scan on every source resolution was pure allocation waste
--- (AUDIT.md P2-4). The name -> {prec, index} mapping is model data, stable
--- for the session, so hits are memoized (and shared between widget instances
--- now that the modules are shared, P2-3). Only HITS are cached: a sensor not
--- yet connected must be re-scanned once it appears, so a miss is never cached.
-local sensorCache = {}
-local function findSensor(name)
+-- 60-sensor scan is pure allocation, and the name -> {prec, index} mapping
+-- is MODEL data. The cache is therefore scoped to the WIDGET: the module
+-- table is shared for the whole radio session, and a module-level cache
+-- survived a model change and handed the next model a stale index - which
+-- model.resetSensor() then reset, destroying data on the model being flown
+-- (Tanda 6 F-6). resolveSource() only re-runs when the source changes, so
+-- the per-widget cache still avoids the repeated scan, with none of the
+-- cross-model hazard (review §B.4). Only HITS are cached: a sensor not yet
+-- connected must be re-scanned once it appears, so a miss is never cached.
+local function findSensor(widget, name)
   if type(model) ~= "table" or type(model.getSensor) ~= "function" then
     return nil, nil
   end
-  local hit = sensorCache[name]
-  if hit then return hit.prec, hit.index end
+  local cache = widget.sensorCache
+  if cache then
+    local hit = cache[name]
+    if hit then return hit.prec, hit.index end
+  end
   local count = tonumber(MAX_SENSORS) or 60
   for i = 0, count - 1 do
     local sn = model.getSensor(i)
     if sn and sn.name == name then
-      sensorCache[name] = { prec = sn.prec, index = i }
+      cache = cache or {}
+      widget.sensorCache = cache
+      cache[name] = { prec = sn.prec, index = i }
       return sn.prec, i
     end
   end
@@ -136,7 +144,7 @@ function M.resolveSource(widget)
       s.isTelemetry = (info.unit ~= nil)
       s.isTimer = isTimerSource(id, s.name, s.isTelemetry)
       if s.isTelemetry then
-        s.prec, s.sensorIndex = findSensor(s.name)
+        s.prec, s.sensorIndex = findSensor(widget, s.name)
         -- the radio already tracks per-sensor min/max as sibling sources
         local lo = getFieldInfo(s.name .. "-")
         local hi = getFieldInfo(s.name .. "+")
@@ -204,15 +212,27 @@ local function readHistorySiblings(widget)
   return gotAny
 end
 
+-- True when the reading is already a single cell's voltage: a Cels source
+-- aggregated as Lowest or Average is per-cell after aggregateCells(), so the
+-- battery block must NOT divide by the cell count again (Tanda 6 F-2 - the
+-- default Lowest configuration read 0 % at 3.85 V/cell because the per-cell
+-- aggregate was divided by four a second time).
+local function isPerCellReading(cfg, wasCells)
+  return wasCells and cfg.cells ~= M.CELLS_TOTAL
+end
+
 -- The radio's <name>-/<name>+ siblings track the RAW per-item sensor value.
 -- That is only the same quantity as the displayed value when neither
 -- transform below is active; otherwise the units silently mismatch (a
 -- percentage dial with volt history, or a pack total with a per-cell
 -- extreme) - api_general.cpp documents Cels+/Cels- as always a single
--- cell's value, never the pack total or average (AUDIT.md P0-7).
+-- cell's value, never the pack total or average (AUDIT.md P0-7). This is
+-- deliberately STRICTER than isPerCellReading(): Average is also a per-cell
+-- reading for the battery math, but its MEAN is not the siblings' extreme,
+-- so only Lowest may trust them.
 local function historyTrustworthy(cfg, wasCells)
   if cfg.battery and cfg.battery ~= M.BATTERY_OFF then return false end
-  if wasCells and cfg.cells ~= M.CELLS_LOWEST then return false end
+  if wasCells then return cfg.cells == M.CELLS_LOWEST end
   return true
 end
 M.historyTrustworthy = historyTrustworthy
@@ -288,7 +308,14 @@ function M.refresh(widget)
   if cfg.battery and cfg.battery ~= M.BATTERY_OFF then
     local chem = (cfg.battery == M.BATTERY_LIION) and "liion" or "lipo"
     local cells = latchCells(widget, value)
-    local perCell = (cells > 0) and (value / cells) or value
+    -- A Cels source aggregated as Lowest/Average is ALREADY per-cell volts:
+    -- dividing again turns ~55 % into ~0 % (Tanda 6 F-2). Only pack-total
+    -- readings - and non-table sources like RxBt, which report the pack
+    -- directly - need the /count conversion.
+    local perCell = value
+    if not isPerCellReading(cfg, wasCells) and cells > 0 then
+      perCell = value / cells
+    end
     local percent = widget.mods.presets.percentFromCell(perCell, chem)
     if percent then
       data.raw = value

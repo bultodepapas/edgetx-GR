@@ -253,11 +253,15 @@ test("P2-3: the module table is shared between instances", function()
   if not ok then error(err) end
 end)
 
-test("P2-4: re-resolving a sensor name hits the precision cache", function()
+test("P2-4: re-resolving a source hits the per-widget precision cache", function()
   -- findSensor() used to scan all MAX_SENSORS on every source resolution,
-  -- building a fresh table per model.getSensor call (AUDIT.md P2-4). Hits
-  -- are now memoized and the modules are shared, so a second instance
-  -- resolving the same sensor must not rescan.
+  -- building a fresh table per model.getSensor call (AUDIT.md P2-4). The
+  -- cache is now scoped to the WIDGET, not the module: sensor index and
+  -- precision are MODEL data, and a module-level cache handed the next
+  -- model a stale index - which model.resetSensor() then reset (Tanda 6
+  -- F-6). The allocation win that survives: once a widget has resolved a
+  -- sensor, editing the source away and back must not rescan - the
+  -- name-keyed cache on the widget holds the hit.
   setupRadio()
   local mod = dofile(widgetDir .. "main.lua")
   local real = model.getSensor
@@ -270,10 +274,12 @@ test("P2-4: re-resolving a sensor name hits the precision cache", function()
     mod.update(w1, opts)
     local afterFirst = scans
     assertTrue(afterFirst > 0, "the first resolution scans the sensor table")
-    local w2 = mod.create(zone, opts, widgetDir)
-    mod.update(w2, opts)
+    opts.Source = ID_STICK          -- a source change re-resolves...
+    mod.update(w1, opts)
+    opts.Source = ID_RSSI           -- ...and back must hit the widget cache
+    mod.update(w1, opts)
     assertEq(scans, afterFirst,
-      "re-resolving the same sensor must hit the cache, rescan="
+      "re-resolving a known sensor must hit the per-widget cache, rescan="
       .. (scans - afterFirst))
   end)
   model.getSensor = real
@@ -1755,10 +1761,11 @@ test("F-2: battery % is correct for Lowest / Total / Average", function()
 end)
 
 test("F-4: theme.widthCache stops growing under a varying value", function()
-  -- anchorUnit measures the LIVE value string every time the text changes
-  -- (renderer.lua:499), one new permanent entry per frame at 2 decimals,
-  -- in a module-level cache shared by every gauge on the card. The cache
-  -- must SATURATE, not merely stay under an arbitrary ceiling.
+  -- anchorUnit used to measure the LIVE value string every time the text
+  -- changed (renderer.lua anchorUnit), one new permanent entry per frame
+  -- at 2 decimals, in a module-level cache shared by every gauge on the
+  -- card. The cache must SATURATE, not merely stay under an arbitrary
+  -- ceiling: assert flat over 2000 frames AND bounded in absolute size.
   local w = newWidget(nil, { Source = ID_RSSI, Precision = 4, Damping = 0 })
   local theme = w.mods.theme
   local function entries()                -- via debug.getupvalue
@@ -1781,9 +1788,43 @@ test("F-4: theme.widthCache stops growing under a varying value", function()
       refresh(widget, 1)
     end
   end
-  feedVaryingValues(w, 500); local a = entries()
-  feedVaryingValues(w, 500); local b = entries()
-  assertEq(b, a, "cache grew by " .. (b - a) .. " over 500 more frames")
+  feedVaryingValues(w, 1000); local a = entries()
+  feedVaryingValues(w, 1000); local b = entries()
+  assertEq(b, a, "cache grew by " .. (b - a) .. " over 1000 more frames")
+  assertTrue(b < 100,
+    "cache must stay bounded, got " .. b .. " entries after 2000 frames")
+end)
+
+test("F-4: measureWidth measures exactly but never memoizes", function()
+  -- The renderers' entry for the live value string (anchorUnit): same
+  -- result as textWidth for the same string, but a call must never write
+  -- to the shared width cache - the contract that makes 0.5 hold.
+  local w = newWidget(nil, { Source = ID_RSSI })
+  local theme = w.mods.theme
+  local function cacheEntries()
+    local i, n = 1, 0
+    while true do
+      local name, val = debug.getupvalue(theme.textWidth, i)
+      if not name then break end
+      if name == "widthCache" then
+        for _, byFont in pairs(val) do for _ in pairs(byFont) do n = n + 1 end end
+      end
+      i = i + 1
+    end
+    return n
+  end
+  local f = w.layout.valueFont
+  local before = cacheEntries()
+  local first = theme.measureWidth("78", f)
+  for i = 1, 200 do
+    assertTrue(theme.measureWidth(string.format("v%04d", i), f) > 0)
+  end
+  assertEq(cacheEntries(), before,
+    "measureWidth must not grow the textWidth cache")
+  assertEq(theme.measureWidth("78", f), first,
+    "measureWidth is deterministic for the same string")
+  assertEq(theme.measureWidth("78", f), theme.textWidth("78", f),
+    "measureWidth matches textWidth for the same string")
 end)
 
 test("F-5: changing Accent recolours without a tree rebuild", function()
@@ -1849,6 +1890,60 @@ test("contract: DEFS slot order and types are frozen", function()
     assertEq(defs[i].key, want[1], "slot " .. i .. " key")
     assertEq(defs[i].type, want[2], "slot " .. i .. " type")
   end
+end)
+
+test("F-3: the peak-hold ghost follows the scale direction", function()
+  -- A descending scale maps the highest value back onto startAngle, so the
+  -- ghost must sweep to the scale's FAR extreme - h.min, not h.max - or it
+  -- paints the tract never visited (Tanda 6 F-3).
+  local w = newWidget({ x = 0, y = 0, w = 220, h = 200 },
+    { Source = ID_STICK, Scale = "Manual", Min = 100, Max = 0,
+      ShowMinMax = "Markers" })
+  mock.setValue(ID_STICK, 90); refresh(w)
+  mock.setValue(ID_STICK, 10); refresh(w)
+  assertEq(w.history.min, 10); assertEq(w.history.max, 90)
+  local R = w.mods.renderer
+  assertEq(w.ui.ghost.props.endAngle, R.angleOf(w, 10),
+    "descending ghost ends at the minimum (the far end of the sweep)")
+  assertTrue(w.ui.ghost.props.endAngle > w.layout.startAngle,
+    "the ghost has a real tract on a descending scale")
+
+  local w2 = newWidget({ x = 0, y = 0, w = 220, h = 200 },
+    { Source = ID_STICK, Scale = "Manual", Min = 0, Max = 100,
+      ShowMinMax = "Markers" })
+  mock.setValue(ID_STICK, 90); refresh(w2)
+  mock.setValue(ID_STICK, 10); refresh(w2)
+  assertEq(w2.ui.ghost.props.endAngle, R.angleOf(w2, 90),
+    "ascending ghost ends at the maximum")
+end)
+
+test("F-5: accent reaches the Sections bands and bar threshold marks", function()
+  -- The value arc is recoloured by applyColors, but the accent-bearing
+  -- NORMAL section band and the bar's normal-boundary mark were painted at
+  -- build time and must be recoloured in place on an accent edit - the
+  -- repaint path (Tanda 6 F-5) has to cover them too.
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = 5 })
+  refresh(w, 1)
+  local normalArc = nil
+  for _, s in ipairs(w.ui.sections) do
+    if s.role == "normal" then normalArc = s end
+  end
+  assertTrue(normalArc ~= nil, "a normal section band exists")
+  w.app.update(w, withOption(w.options, "Accent", RED))
+  refresh(w, 1)
+  assertEq(normalArc.props.color, RED, "the normal section band follows accent")
+
+  local wb = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_TEMP_T1, Style = "Bar", ColorMode = "Threshold" })
+  refresh(wb, 1)
+  local normalMark = nil
+  for _, m in ipairs(wb.ui.marks) do
+    if m.role == "normal" then normalMark = m end
+  end
+  assertTrue(normalMark ~= nil, "a normal-boundary mark exists (low-is-good)")
+  wb.app.update(wb, withOption(wb.options, "Accent", RED))
+  refresh(wb, 1)
+  assertEq(normalMark.props.color, RED, "the normal mark follows accent")
 end)
 
 print(string.format("-- %d passed, %d failed", passed, failed))
