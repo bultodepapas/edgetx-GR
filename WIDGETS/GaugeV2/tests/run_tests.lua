@@ -92,6 +92,29 @@ test("linePoints returns {x,y} pairs", function()
   assertEq(type(pts[2][1]), "number")
 end)
 
+test("F-11: linePointsInto mutates a persistent buffer in place", function()
+  -- Phase 5.1: the needle writes into a reused buffer instead of
+  -- allocating a fresh pts table per frame. The binding copies the values
+  -- out on every set and retains no reference (LvglWidgetLine::getPts), so
+  -- in-place mutation is safe - but the buffer must keep its shape: #buf
+  -- stays 2 (lua_rawlen drives getPts) and every value matches linePoints.
+  local buf = { { 0, 0 }, { 0, 0 } }
+  local pts = geometry.linePoints(50, 50, 10, 20, 37)
+  local ret = geometry.linePointsInto(buf, 50, 50, 10, 20, 37)
+  assertTrue(ret == buf, "returns the caller's buffer")
+  assertEq(#buf, 2, "the point count never grows")
+  for i = 1, 2 do
+    assertNear(buf[i][1], pts[i][1], 0.001, "x" .. i)
+    assertNear(buf[i][2], pts[i][2], 0.001, "y" .. i)
+  end
+  -- a second write overwrites the same slots, no growth, same result
+  geometry.linePointsInto(buf, 50, 50, 10, 20, 100)
+  assertEq(#buf, 2, "still two points after a second write")
+  local pts2 = geometry.linePoints(50, 50, 10, 20, 100)
+  assertNear(buf[1][1], pts2[1][1], 0.001, "overwritten x1")
+  assertNear(buf[2][2], pts2[2][2], 0.001, "overwritten y2")
+end)
+
 test("trianglePoints returns three distinct points", function()
   local pts = geometry.trianglePoints(50, 50, 5, 25, 4, 0)
   assertEq(#pts, 3, "point count")

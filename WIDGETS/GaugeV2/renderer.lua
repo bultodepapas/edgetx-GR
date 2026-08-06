@@ -228,16 +228,28 @@ local function buildNeedle(widget)
   -- needle must stay legible against every band colour (green/amber/red)
   -- and the dark/light theme alike, so it does not follow the state colour
   -- the way the arc and value do (owner request, Tanda 5 review).
+  -- The pts BUFFERS are persistent per segment (Phase 5.1): the binding
+  -- copies the coordinates out on every set and keeps no reference, so
+  -- updateArc can mutate them in place - the needle no longer allocates
+  -- nine tables per angle change (Tanda 6 F-11). They must NEVER go through
+  -- setProp: its cache compares tables by identity and would drop every
+  -- write after the first (5.1 TRAP 2) - the needle stays on direct lvgl.set.
+  ui.needlePts = { { 0, 0 }, { 0, 0 } }
+  ui.needleMidPts = { { 0, 0 }, { 0, 0 } }
+  ui.needleTipPts = { { 0, 0 }, { 0, 0 } }
   ui.needle = lvgl.line{
-    pts = G.linePoints(L.cx, L.cy, L.needleInner, L.needleBodyOuter, a),
+    pts = G.linePointsInto(ui.needlePts, L.cx, L.cy, L.needleInner,
+                           L.needleBodyOuter, a),
     thickness = max(1, L.needleHalf * 2), rounded = 1, color = T.color.needle,
   }
   ui.needleMid = lvgl.line{
-    pts = G.linePoints(L.cx, L.cy, L.needleMidInner, L.needleMidOuter, a),
+    pts = G.linePointsInto(ui.needleMidPts, L.cx, L.cy, L.needleMidInner,
+                           L.needleMidOuter, a),
     thickness = max(1, L.needleMidHalf * 2), rounded = 1, color = T.color.needle,
   }
   ui.needleTip = lvgl.line{
-    pts = G.linePoints(L.cx, L.cy, L.needleTipInner, L.needleOuter, a),
+    pts = G.linePointsInto(ui.needleTipPts, L.cx, L.cy, L.needleTipInner,
+                           L.needleOuter, a),
     thickness = L.needleTipThickness, rounded = 1, color = T.color.needle,
   }
   -- Solid hub: ONE filled circle in the neutral rail role, created after the
@@ -617,13 +629,16 @@ local function updateArc(widget)
     if ui.needle then
       local outer, midOuter, bodyOuter, midInner, tipInner = needleReach(widget, a)
       -- three line segments, all rewritten with the same guarded pts path
-      -- as before: base + mid + tip sweep together, nothing allocates (P2-1)
-      lvgl.set(ui.needle, { pts = G.linePoints(L.cx, L.cy, L.needleInner,
-        bodyOuter, a) })
-      lvgl.set(ui.needleMid, { pts = G.linePoints(L.cx, L.cy, midInner,
-        midOuter, a) })
-      lvgl.set(ui.needleTip, { pts = G.linePoints(L.cx, L.cy, tipInner,
-        outer, a) })
+      -- as before: base + mid + tip sweep together (P2-1). The pts tables
+      -- are the PERSISTENT buffers from buildNeedle, mutated in place by
+      -- linePointsInto - zero allocation per frame (Phase 5.1). Direct
+      -- lvgl.set, NEVER setProp (identity cache would freeze them, TRAP 2).
+      lvgl.set(ui.needle, { pts = G.linePointsInto(ui.needlePts, L.cx, L.cy,
+        L.needleInner, bodyOuter, a) })
+      lvgl.set(ui.needleMid, { pts = G.linePointsInto(ui.needleMidPts, L.cx,
+        L.cy, midInner, midOuter, a) })
+      lvgl.set(ui.needleTip, { pts = G.linePointsInto(ui.needleTipPts, L.cx,
+        L.cy, tipInner, outer, a) })
     end
   end
   if not frame.needleShown then

@@ -52,6 +52,20 @@ function M.linePoints(cx, cy, r1, r2, angle)
   return { { x1, y1 }, { x2, y2 } }
 end
 
+-- Same line, written INTO a caller-owned buffer instead of allocating:
+-- the binding copies the values out on every set (LvglWidgetLine::getPts,
+-- lua_lvgl_widget.cpp:1008-1029) and retains no reference to the Lua table,
+-- so mutating a reused buffer is legal and removes the per-frame allocation
+-- the needle's three segments made (Tanda 6 F-11 / Phase 5.1). The buffer
+-- must keep #buf == 2 (lua_rawlen drives getPts).
+function M.linePointsInto(buf, cx, cy, r1, r2, angle)
+  local x1, y1 = M.pointOnCircle(cx, cy, r1, angle)
+  local x2, y2 = M.pointOnCircle(cx, cy, r2, angle)
+  buf[1][1], buf[1][2] = x1, y1
+  buf[2][1], buf[2][2] = x2, y2
+  return buf
+end
+
 M.tickPoints = M.linePoints
 
 -- Tapered needle: tip at radius r2, base of width 2*halfWidth at radius r1,

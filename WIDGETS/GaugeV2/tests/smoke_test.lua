@@ -2074,5 +2074,75 @@ test("F-9: a source that appears after boot resolves without update()", function
   assertEq(w2.source.resolved, true, "resolved once the interval elapses")
 end)
 
+test("F-11: the needle reuses its pts buffers across frames", function()
+  -- Phase 5.1: three persistent buffers (one per segment), mutated in place
+  -- by geometry.linePointsInto - the binding copies the values out on every
+  -- set and retains no reference, so identity reuse is safe and removes the
+  -- 9 tables/frame the fresh linePoints tables allocated (Tanda 6 F-11).
+  local w = newWidget(nil, { Source = ID_RSSI, Style = "Needle", Damping = 0 })
+  refresh(w, 1)
+  mock.setValue(ID_RSSI, 10)
+  refresh(w, 2)
+  local body, mid, tip =
+    w.ui.needle.props.pts, w.ui.needleMid.props.pts, w.ui.needleTip.props.pts
+  local bx, by = body[1][1], body[1][2]
+  mock.setValue(ID_RSSI, 90)
+  refresh(w, 2)
+  assertTrue(w.ui.needle.props.pts == body,
+    "body buffer is reused, not reallocated")
+  assertTrue(w.ui.needleMid.props.pts == mid, "mid buffer reused")
+  assertTrue(w.ui.needleTip.props.pts == tip, "tip buffer reused")
+  assertTrue(w.ui.needle.props.pts[1][1] ~= bx
+    or w.ui.needle.props.pts[1][2] ~= by,
+    "the reused buffer carries the new coordinates")
+end)
+
+test("F-11: setProp's identity cache would freeze a reused pts buffer", function()
+  -- TRAP 2 (response 5.1): setProp compares tables BY IDENTITY, so a
+  -- persistent buffer mutated in place is never "changed" - the second
+  -- write is silently dropped and the needle would freeze at its first
+  -- angle. This is exactly why the needle bypasses the batching with
+  -- direct lvgl.set calls. Pin the trap so nobody routes the needle
+  -- through setProp as a "simplification".
+  local w = newWidget(nil, { Source = ID_RSSI, Style = "Needle" })
+  local R = w.mods.renderer
+  local obj = { kind = "line", props = {}, sets = {}, setCount = 0 }
+  local buf = { { 0, 0 }, { 10, 10 } }
+  R.setProp(w, obj, "pts", buf)          -- write 1: fresh buffer
+  R.flush(w)
+  assertEq(obj.setCount, 1, "the first write reached the object")
+  buf[2][1], buf[2][2] = 20, 20          -- mutate in place
+  R.setProp(w, obj, "pts", buf)          -- write 2: same identity
+  R.flush(w)
+  -- (props.pts is the same table as buf, so reading values proves nothing;
+  -- the set COUNT is the truth: a dropped write never reaches lvgl.set)
+  assertEq(obj.setCount, 1,
+    "TRAP: the mutated write was dropped - the needle freezes via setProp")
+end)
+
+test("F-11: needle coordinates stay non-negative at every sweep extreme", function()
+  -- TRAP 1 (response 5.1): LvglWidgetLine::getPt reads with
+  -- luaL_checkunsigned, so a negative coordinate raises a Lua error on the
+  -- radio - F-1 from a third door. Sweep every preset past both ends,
+  -- below-min and above-max, and assert the whole blade stays in the
+  -- non-negative quadrant (the mock now enforces the same rule).
+  for _, sweep in ipairs{ "270 deg", "180 deg", "360 deg" } do
+    for _, v in ipairs{ -9999, 0, 100, 9999 } do
+      local w = newWidget({ x = 0, y = 0, w = 200, h = 200 },
+        { Source = ID_RSSI, Style = "Needle", Sweep = sweep, Damping = 0 })
+      mock.setValue(ID_RSSI, v)
+      refresh(w, 2)
+      for _, seg in ipairs{ w.ui.needle.props.pts, w.ui.needleMid.props.pts,
+                            w.ui.needleTip.props.pts } do
+        for i = 1, 2 do
+          assertTrue(seg[i][1] >= 0 and seg[i][2] >= 0,
+            sweep .. " value " .. v .. ": negative coordinate "
+            .. seg[i][1] .. "," .. seg[i][2])
+        end
+      end
+    end
+  end
+end)
+
 print(string.format("-- %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

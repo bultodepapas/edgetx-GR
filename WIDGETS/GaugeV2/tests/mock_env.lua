@@ -73,6 +73,15 @@ local function checkPts(kind, pts)
        or type(pt[1]) ~= "number" or type(pt[2]) ~= "number" then
       error(string.format("mock: pts[%d] must be {x, y}", i), 4)
     end
+    -- Binding fidelity: LvglWidgetLine::getPt reads the coordinates with
+    -- luaL_checkunsigned (lua_lvgl_widget.cpp:1001,1004), so a negative
+    -- coordinate raises a Lua error ON THE RADIO - the widget disables
+    -- itself (Tanda 6 F-1, third door; 5.1 TRAP 1). The mock enforces it
+    -- so the harness can never hide that class of bug.
+    if pt[1] < 0 or pt[2] < 0 then
+      error(string.format("mock: pts[%d] negative coordinate (%d,%d)"
+        .. " - luaL_checkunsigned raises on the radio", i, pt[1], pt[2]), 4)
+    end
   end
 end
 

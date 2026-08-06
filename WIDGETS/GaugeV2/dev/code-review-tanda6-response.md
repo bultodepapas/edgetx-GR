@@ -1286,3 +1286,51 @@ seconds (1000 ms = 100 ticks), not in the wrong-scaled milliseconds.
 | luacheck | 4 warnings / 0 errors (widget, unchanged); no new test warnings |
 | instruction probe | worst callback unchanged (55 fires) — the F-9 retry gate costs one `getTime` compare only while a source is unresolved (all probe scenes resolve immediately) |
 | DOCS.md | §4.7 and §5.4 updated: the ghost is explicitly independent of the Min/max option, one semantic shared by dial and bar |
+
+## E.5 Phase 5.1 execution log (2026-08-06) — persistent needle buffers
+
+**Plan.** `geometry.linePointsInto(buf, …)` mutating variant + three persistent
+buffers on `widget.ui` (created in `buildNeedle`), used by `updateArc`'s three
+direct `lvgl.set` calls. Safety re-derived from the binding:
+`LvglWidgetLine::getPts` copies the values out at set time and keeps no
+reference (lua_lvgl_widget.cpp:1008-1029), so in-place mutation is legal.
+
+**Measurement first** — new `dev/measure_frames.lua` reproduces the review's
+gc-delta methodology (full gc, N moving frames, full gc, delta):
+
+```text
+                              BEFORE     AFTER
+dial 200x200 needle           1559 B/f   767 B/f   (-792 B/f, -51 %)
+dial 200x200 arc               442 B/f   442 B/f   (control: unchanged)
+bar 300x60                     440 B/f   440 B/f   (control: unchanged)
+needle share                  1117 B/f   325 B/f   (-71 %)
+geometry.linePoints calls     3.00 /f    0.00 /f   (the 9 tables/frame are gone)
+```
+
+The needle scene's absolute value exceeds the review's 814 B/f because the
+probe scene runs Precision=4 with the value string changing every frame; the
+config-independent needle SHARE is the honest metric and it dropped 71 %.
+**Revert criterion: the improvement is demonstrable (nearly 800 B/frame on
+the target scene), so 5.1 ships.** The remaining needle-scene cost is the
+value-string churn and the `{ pts = … }` wrapper tables — 5.2 (persistent
+wrappers) is the documented next step.
+
+**Tests** (heavy): `linePointsInto` unit test (values ≡ `linePoints`, `#buf`
+never grows, returns the caller's buffer); needle buffer-identity test (the
+three `props.pts` table identities survive an angle change while their values
+move); TRAP 2 ratchet (a reused buffer through `setProp` is dropped by the
+identity cache — asserted via the set count, pinned so nobody "simplifies"
+the needle into the batching); TRAP 1 guard (all three sweeps ×
+below-min/above-max: the whole blade stays non-negative — backed by a NEW
+mock fidelity rule: `checkPts` rejects negative coordinates exactly like
+`luaL_checkunsigned`, so the harness can no longer hide that class of bug at
+all; the existing 149 tests and 77 gallery scenes all pass under it).
+
+| Gate | Result |
+|---|---|
+| run_tests / smoke_test | **41/41 · 112/112** |
+| gallery manifest | unchanged: the same 3 named scenes, nothing new |
+| gallery SVG diff vs pre-5.1 | **zero needle pixels moved** — the only differing lines are the header timestamp and the Phase-4 `op-mm-off` ghost tile |
+| collide | clean |
+| luacheck | 4 warnings / 0 errors (widget) + 0/0 on the new probe |
+| instruction probe | per-frame costs unchanged; `upd-bld` +1 fire on needle scenes (the buffers are built once) — one-time cost for a permanent −792 B/frame |
