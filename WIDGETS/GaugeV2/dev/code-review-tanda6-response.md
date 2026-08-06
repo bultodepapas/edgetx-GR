@@ -1,0 +1,1113 @@
+# GaugeV2 — Senior review of `code-review-tanda6.md`, with firmware lessons
+
+**Reviewer role:** senior developer, second pass over the Tanda 6 report.
+**Scope:** (A) verdict on the 17 findings, (B) critique of the repair plan,
+(C) knowledge extracted from the official EdgeTX widgets and the widget
+firmware in this repo, mapped onto the plan.
+
+**Method.** Every finding below was re-derived by reading the widget source and
+cross-checking the firmware in this same tree (`radio/src/lua/`,
+`radio/src/gui/colorlcd/widgets/`).
+
+**Baseline re-run and confirmed.** Lua 5.3.6 was installed after the first
+pass of this review — the exact release EdgeTX embeds
+(`radio/src/thirdparty/Lua/src/lua.h` → `LUA_RELEASE "Lua 5.3.6"`). All three
+baselines reproduce exactly as the Tanda 6 report states:
+
+```text
+tests/run_tests.lua    38 passed, 0 failed
+tests/smoke_test.lua   96 passed, 0 failed
+dev/collide.lua ./     all zones clean (270/180/360 deg)
+dev/gallery.lua ./     renders clean, full option coverage
+```
+
+The individual A–Z probe outputs quoted in the report were not re-run
+one by one; their *mechanisms* are confirmed independently below.
+
+**Static analysis added.** `luacheck` 1.2.0 was run over the widget with a new
+`.luacheckrc` (§C.8). The shipping sources come back **5 warnings / 0 errors
+in 14 files**, and — importantly — **zero global writes**, so GaugeV2 cannot
+pollute the `lsWidgets` state it shares with every other widget on the card.
+Two of the five warnings independently corroborate findings in this review and
+are cited at the relevant points (§B.1, §A F-13 row).
+
+---
+
+## A. Verdict on the findings
+
+**All 17 stand.** Nothing was overstated on the mechanism, and two things were
+understated. Spot-checks that mattered:
+
+| # | Independent confirmation |
+|---|---|
+| F-1 | `grep` for `L.<field> =` outside `layout.lua` returns **exactly** [renderer.lua:315](../renderer.lua#L315) and [bar.lua:103](../bar.lua#L103). Firmware triggers all real: `WidgetSettings::onCancel` → `updateWithoutRefresh()`, `Widget::setFullscreen` ([widget.cpp:253-254](../../../radio/src/gui/colorlcd/mainview/widget.cpp#L253-L254)), `LuaWidget::updateZoneRect` ([lua_widget.cpp:441-442](../../../radio/src/lua/lua_widget.cpp#L441-L442)). Permanence confirmed at all four sites the report cites. |
+| F-2 | [telemetry.lua:268](../telemetry.lua#L268) then [288-298](../telemetry.lua#L288-L298); `historyTrustworthy` ([213-217](../telemetry.lua#L213-L217)) is the ready-made predicate. Default *is* the broken combination (`Cells` default 1 = Lowest, [main.lua:85-86](../main.lua#L85-L86)). |
+| F-3 | `ranges.build()` normalises `min`/`max` ([ranges.lua:36-38](../ranges.lua#L36-L38)); `saneThresholds()` ([74-85](../ranges.lua#L74-L85)) does not. Arithmetic reproduces exactly: `(100, 0, 55, 35, true)` → `warn 45 / crit 65`. Genuine internal inconsistency, not a judgement call. |
+| F-4 | 7 `T.textWidth` call sites; 5 are build-time and legitimate, **2 violate the contract** — [renderer.lua:499](../renderer.lua#L499) and `bar.lua:236`. |
+| F-6 | Module-scope cache ([telemetry.lua:92](../telemetry.lua#L92)) reached through `MODS_BY_PATH` + `sharedApp`. The `model.resetSensor()` consequence is the serious half. |
+| F-9 | `s.resolved = true` ([telemetry.lua:126](../telemetry.lua#L126)) is set **before** `getFieldInfo()` is even attempted at line 128. Unconditional latch, confirmed. |
+| F-13 | `options.translator` and `options.present`: **0 references anywhere**, tests included. `options.build`: 3, **all in `tests/run_tests.lua:295-302`**. `geometry.trianglePoints`: definition + `run_tests.lua:95-96`. So "dead in runtime" is accurate, but deleting them takes two tests with them — the plan should say so. |
+| F-15 | Confirmed: `resolveColor` [renderer.lua:389](../renderer.lua#L389) vs `bar.lua:214`; `updatePulse` [661](../renderer.lua#L661) vs `bar.lua:188`; `updateSourceLabels` [684](../renderer.lua#L684) vs `bar.lua:132`. |
+
+### A.1 Understated: the CPU limit is the same kill switch as F-1
+
+The report frames F-1's severity around a `nil` arithmetic error. There is a
+**second door into the identical permanent-disable path**, and the report never
+mentions it:
+
+```c
+// radio/src/lua/widgets.cpp:37
+#define MAX_INSTRUCTIONS (20000/100)
+```
+
+`luaHook()` ([widgets.cpp:50-89](../../../radio/src/lua/widgets.cpp#L50-L89))
+bumps a percent counter every 200 VM instructions and calls
+`luaL_error(L, "CPU limit")` past 100%. That is a hard budget of **20 000 Lua
+VM instructions per `update()` / `refresh()` / `background()` call, per widget
+instance** — and the error lands in the same `setErrorMessage()` that traces
+`"Widget disabled"`. Two consequences:
+
+1. **In DEBUG builds the limit is disabled** (widgets.cpp:54-65 — it only
+   traces the running maximum). A widget that dies on a production radio can
+   be perfectly healthy in the simulator. "It works in the sim" is not
+   evidence for this class of failure.
+2. The headless harness has no instruction budget at all, so neither is
+   `tests/`. **Nothing in this project currently measures the one resource
+   that silently kills the widget.** That is a bigger coverage hole than F-17
+   describes, and it is cheap to close (§C.5).
+
+### A.2 Understated: F-6 is a data-loss bug, not a display bug
+
+`model.resetSensor(idx)` ([app.lua:266](../app.lua#L266)) on an index cached
+from a *different model* resets a sensor the user did not ask to reset, on a
+model they are flying. Everything else in P1 is wrong pixels. This one
+destroys user data on the radio. It should be ordered **first** in Phase 2,
+not fourth.
+
+### A.3 Overstated: F-11's §5.3 measurement
+
+`updateHistory` already guards both writes on angle change
+([renderer.lua:640-656](../renderer.lua#L640-L656)). The "ghost 1.00
+sets/frame, maxMark 1.00 sets/frame" figure comes from a **monotonically
+rising sweep probe**, where the historical maximum genuinely advances on every
+frame — a scenario that exists for a few seconds at power-up and never again.
+In steady flight both cost ~0. Plan item 5.3 is therefore chasing a probe
+artifact: the fix belongs in the probe (measure a noisy plateau, not a ramp),
+not in the code.
+
+---
+
+## B. Critique of the repair plan
+
+The plan is sound in shape — tests-first, phase-gated on a frozen visual
+baseline, explicit revert criterion on the optional phase. Six changes.
+
+### B.1 Phase 1.1 has a name collision that will silently move a pixel
+
+`barLayout` **already has a local called `chipOff`**
+([layout.lua:528](../layout.lua#L528)) and it means something different: it is
+the *row-budget reserve*. In the degraded short-bar path it is deliberately
+forced to `0` while `chipHeight` becomes `stateH + px(2)`
+([layout.lua:536-537](../layout.lua#L536-L537),
+[571](../layout.lua#L571)) — whereas the render-time centring offset for that
+same case is `floor(2 / 2) = 1`.
+
+The tempting one-liner (`L.chipOff = chipOff`, since the name is right there)
+therefore shifts the state pill by 1 px in short bar zones. `br-short` is in
+the frozen gallery baseline, so it *will* surface as a diff — and the phase
+rule ("justify everything that changed") makes it likely someone justifies it
+as expected fallout of the move. Do this instead:
+
+- compute `L.chipOff = floor((L.chipHeight - stateH) / 2)` immediately after
+  **each** `L.chipHeight` assignment ([layout.lua:487](../layout.lua#L487) and
+  [571](../layout.lua#L571)) — same expression the renderers use today, so the
+  rendered result is provably unchanged;
+- rename the budget local to `chipReserve` so the two never get confused
+  again.
+
+### B.2 Phase 1.3's acceptance criterion tests the spelling, not the bug
+
+`grep` for `L.<field> =` only catches direct assignment through a local named
+`L`. The actual defect class is *"state derived once at build time that
+`update()` does not recompute"*, which also covers `widget.autoCells`,
+`widget.cellsApplied`, `widget.rangeSig` and the `frame.*` table. Replace the
+grep with an invariant test:
+
+> build → deep-copy `widget.layout` → call `update()` with **identical**
+> options → assert deep equality.
+
+That catches the whole class in one assertion, it is the test that would have
+caught F-1, and it stays true as the code grows. Keep the grep as a lint if
+you like, but not as the gate.
+
+### B.3 F-10 belongs in Phase 1, not Phase 4
+
+The report's own text says it: *"es F-1 otra vez (widget desactivado)"*. The
+fix is two lines (filter `nil` out of `M.RAMP`, assert at least one survivor).
+Anything whose failure mode is "widget permanently disabled" ships with the P0
+patch. It is the cheapest item in the whole document and it is currently
+sitting three phases away.
+
+### B.4 Phase 2 ordering
+
+`2.4 (F-6)` → `2.1 (F-2)` → `2.2 (F-3)` → `2.3 (F-5)`. Rationale in §A.2. On
+the fix itself: the plan offers "invalidate on model identity change **or**
+per-widget cache". Take the second and go further — **delete the module-level
+cache entirely.** `resolveSource` only runs when the source changes, so the
+cache saves at most one 60-sensor scan per source edit per widget. That is not
+worth a cross-model correctness hazard. A single-entry memo on `widget.source`
+keeps the P2-4 allocation win with none of the risk.
+
+### B.5 Phase 3.1 — measure the third option too
+
+The plan's preference (anchor by character count against an already-measured
+sample) restores the contract but keeps GaugeV2 measuring text to position
+things, which is what broke the contract in the first place. The firmware
+never does this: `value.cpp` positions its value/unit purely with
+`lv_style_set_text_align` inside a fixed box
+([value.cpp:254-261](../../../radio/src/gui/colorlcd/widgets/value.cpp#L254-L261)).
+Add a third candidate — **let LVGL align a value+unit pair inside one
+container and drop `anchorUnit` altogether** — and pick on measurement. It is
+strictly less code and structurally cannot regress. If the visual result is
+acceptable against the frozen baseline, it is the better answer.
+
+### B.6 Phase 5 — drop 5.3, restate the target
+
+Drop 5.3 (§A.3). Restate the acceptance target: bytes/frame is a proxy;
+**instructions/frame is the thing that actually kills the widget** (§A.1).
+Target both, and put the instruction probe in Phase 0 as a safety gate rather
+than in Phase 5 as an optimisation metric. Keep the revert criterion exactly
+as written — it is the best paragraph in the plan.
+
+### B.7 Missing entirely: the option-slot contract has no test
+
+Not a Tanda 6 finding, but it is the highest-cost latent bug in the widget and
+the firmware makes it **completely silent**:
+
+- `WidgetPersistentData::setDefault` ([widget.cpp:76-86](../../../radio/src/gui/colorlcd/mainview/widget.cpp#L76-L86))
+  resets a stored option only when the stored **type** differs from the
+  declared one.
+- `WidgetFactory::create` calls a `checkOptions()` migration hook
+  ([widget.cpp:379](../../../radio/src/gui/colorlcd/mainview/widget.cpp#L379));
+  the C++ Outputs widget overrides it to shift its saved options when a new
+  one was inserted
+  ([outputs.cpp:283-295](../../../radio/src/gui/colorlcd/widgets/outputs.cpp#L283-L295)).
+  **`LuaWidgetFactory` does not override it, and a Lua widget has no way to.**
+
+So inserting an option anywhere but the end gives every existing model
+shifted values of the same type, with no error and no visible symptom beyond
+"my gauge came back wrong". [main.lua:13-16](../main.lua#L13-L16) states the
+append-only rule as a *comment*. Add `0.7`: freeze the `(key, type)` sequence
+— first ten and full list — as a literal in `run_tests.lua` and assert `DEFS`
+matches. Ten lines, protects every user's saved models.
+
+---
+
+## C. What the official widgets teach
+
+Sources: `radio/src/gui/colorlcd/widgets/{gauge,value,timer,text,outputs,radio_info,modelbmp}.cpp`
+and the Lua widget host `radio/src/lua/{widgets,lua_widget,lua_widget_factory,lua_lvgl_widget}.cpp`.
+
+### C.1 `update()` is idempotent and total — it never assumes the constructor ran
+
+[text.cpp:61-88](../../../radio/src/gui/colorlcd/widgets/text.cpp#L61-L88) is
+the purest form: zero change detection, it re-applies text, colour, font,
+alignment and shadow visibility on **every** call.
+[gauge.cpp:83-98](../../../radio/src/gui/colorlcd/widgets/gauge.cpp#L83-L98)
+and `value.cpp:187-282` are the same. Not one official widget keeps a value
+that only the constructor computes and `update()` then reads.
+
+**That single invariant is F-1 and F-5 at once.** GaugeV2's build/update split
+is the deviation.
+
+The model to copy is not `text.cpp` (too dumb — GaugeV2's signature gate is a
+real improvement over re-doing everything) but
+**`OutputsWidget::update()`** ([outputs.cpp:181-230](../../../radio/src/gui/colorlcd/widgets/outputs.cpp#L181-L230)),
+which has exactly GaugeV2's architecture plus the piece GaugeV2 is missing:
+
+```text
+1. apply cheap non-structural properties  UNCONDITIONALLY   (lines 186-192)
+2. fold every option + geometry into last* members -> changed (200-217)
+3. rebuild children only if changed                          (219-229)
+```
+
+GaugeV2 has steps 2 and 3 (`layout.signature()`) and **no step 1**. The
+missing prelude *is* F-5: the accent has no update path because there is no
+place designed to hold one. Fixing F-5 by adding `cfg.accent` to the signature
+(plan 2.3) works and is cheap, but it buys a full tree rebuild for a colour
+change. The structurally right fix is to add step 1 — a small "re-apply
+non-structural properties" block at the top of `configure()` — and then F-5,
+and the next three findings of its shape, cost nothing.
+
+### C.2 Register what a state *means* once; toggle it at refresh
+
+Every official widget declares its colour/font variants against
+`LV_STATE_USER_1..3` at construction and then only toggles: `value.cpp:56-70`
+(warning / stale / large-font), `radio_info.cpp:99` + `112-114` + `162-170`
+(three battery colours registered from options, selected by state),
+`timer.cpp:28-32`.
+
+**Do not import the mechanism** — the Lua LVGL binding exposes no per-state
+styles, and GaugeV2's `frame.colorKey` + `setProp` is the correct Lua
+equivalent. Import the *discipline*: `radio_info.cpp:112-114` re-reads the
+three colour options in `update()` so an option edit lands even though the
+displayed state never changed. GaugeV2's colour key encodes only the semantic
+role, which is precisely why the accent cannot get through. Same lesson as
+C.1, from the other end.
+
+### C.3 Create-then-hide, don't create-then-destroy — and F-8 follows from it
+
+`timer.cpp:237-288` switches between its small and large layouts by hiding one
+set of objects and showing the other; both exist from `delayedInit()`.
+`radio_info.cpp:51-58` builds all five volume icons up front and toggles.
+Only `OutputsWidget` does `clear()` + recreate, and it is the heaviest widget
+of the set.
+
+GaugeV2's `lvgl.clear()` + full rebuild ([app.lua:198-201](../app.lua#L198-L201))
+is the Outputs shape. It is defensible — the geometry genuinely differs
+between modes — but it is worth naming as F-1's *architectural* root cause: a
+widget that never rebuilds cannot lose derived state.
+
+This settles **plan item 4.2**, which currently leaves the choice open. The
+firmware idiom is create-then-hide, driven by data. Take the first branch:
+**the ghost object is always created and its visibility follows the data, not
+the markers option.** The bar already does exactly that, so it is also the
+smaller diff.
+
+### C.4 Guard on the *formatted* value, and never measure live text to place things
+
+`ChannelValue::refresh` ([outputs.cpp:100-142](../../../radio/src/gui/colorlcd/widgets/outputs.cpp#L100-L142))
+nests its latches: raw value changed → format → **set the label only if the
+string differs** (117-120); separately, resize the bar only if the scaled
+width differs (126-134). GaugeV2's `frame.*` + `setProp` is the same idea,
+better factored.
+
+The divergence that matters: no official widget ever *measures* a live string.
+Positioning is fixed boxes plus alignment styles. `anchorUnit` measuring the
+live value string is what turned a documented build-time memo into an
+unbounded per-frame leak (F-4). See §B.5.
+
+### C.5 The 20 000-instruction budget, and the probe this project is missing
+
+Covered in §A.1. Concrete action, and it belongs in Phase 0 as a **safety**
+gate, not in Phase 5 as an optimisation metric:
+
+> `dev/instructions.lua` — run N refresh frames under
+> `debug.sethook(f, "", 200)`, count hook fires per `refresh()` and per
+> `update()`, assert a margin against 100 fires (= 20 000 instructions).
+> Report the worst zone × style × colour-mode combination.
+
+Run it on the largest zone with the needle, Sections colouring and scale
+labels — the most expensive scene the widget can produce. This also gives
+Phase 5 a real acceptance number instead of a byte count.
+
+### C.6 Phase 5 is feasible — the firmware source proves it, and warns about one thing
+
+`LvglWidgetLine::getPts` ([lua_lvgl_widget.cpp:1008-1029](../../../radio/src/lua/lua_lvgl_widget.cpp#L1008-L1029))
+copies the point values **out** of the Lua table into its own `lv_point_t[]`
+(reused; `ptAlloc` only grows), hashes the result, and skips
+`lv_line_set_points` when the hash is unchanged. Nothing on the C side retains
+a reference to the Lua table.
+
+→ **A persistent Lua table mutated in place is safe.** Plan items 5.1 and 5.2
+will work exactly as written. Two caveats:
+
+- `getPt` reads coordinates with `luaL_checkunsigned`
+  ([lines 1001, 1004](../../../radio/src/lua/lua_lvgl_widget.cpp#L1001-L1004)):
+  **a negative coordinate raises a Lua error** — F-1 again, from a third door.
+  Whatever clamping `geometry.linePoints` does today must survive the
+  refactor. Add an explicit test at the extreme sweep angles of all three
+  sweeps.
+- The firmware already dedupes identical point sets, so GaugeV2's
+  `frame.angle` guard buys nothing at the LVGL layer. Keep it anyway — it
+  saves the Lua-side table churn, which *is* the point — but do not add more
+  guards expecting LVGL savings.
+
+**The route not to take.** `pts` also accepts a **function**
+([lua_lvgl_widget.cpp:1035-1039](../../../radio/src/lua/lua_lvgl_widget.cpp#L1035-L1039),
+invoked from `callRefs`, [1047-1073](../../../radio/src/lua/lua_lvgl_widget.cpp#L1047-L1073)),
+and so does every colour / value / text parameter via
+`LvglParamFuncOrValue` / `LvglParamFuncOrString`
+([lua_lvgl_widget.cpp:74-129](../../../radio/src/lua/lua_lvgl_widget.cpp#L74-L129)) —
+register once, and the firmware calls it each frame and does its own change
+detection. It looks like the "modern" idiom and it is a **pessimisation
+here**: `callRefs` runs unconditionally on every `foreground()`, so all three
+needle segments would be evaluated every frame instead of only when the angle
+moves, and against a 20 000-instruction budget that is the wrong trade for a
+widget whose values are mostly static between frames. Recommendation: stay
+with guarded `setProp`, and record the divergence in `DOCS.md` so nobody
+"modernises" it in six months.
+
+### C.7 What NOT to bring back
+
+The old widgets are stable, not exemplary. Explicitly reject:
+
+- **`lastValue = -10000` sentinels** (`gauge.cpp:103`, `value.cpp:172`).
+  GaugeV2's `nil` + explicit availability model is strictly better; a magic
+  number reintroduces "is −10000 a real reading?" on a dBm or temperature
+  scale.
+- **`value.cpp`'s shadow-label trick** (a duplicate label offset by 1 px,
+  lines 49-53 / 60-65). Doubles the object count for a legibility effect the
+  chip already solves more cheaply — and object count is audited here.
+- **`gauge.cpp`'s descending-scale handling**
+  ([lines 73-77](../../../radio/src/gui/colorlcd/widgets/gauge.cpp#L73-L77):
+  `SWAP(min, max); value = value - min - max;`). It mirrors the *value*
+  instead of the *mapping*, which is why the official gauge has no
+  descending-scale bands at all. `geometry.normalize` is the right design.
+  F-3 is one missing normalisation call, not a reason to adopt the shortcut.
+- **Rebuilding children on every geometry change** (`OutputsWidget`).
+  GaugeV2's signature gate is the improvement; keep it.
+- **`Messaging::send` fan-out per frame** (`outputs.cpp:234`). No Lua
+  equivalent, no reason to want one.
+
+### C.8 Static analysis: `.luacheckrc`
+
+A `luacheck` config was added at `WIDGETS/GaugeV2/.luacheckrc`. Two decisions
+in it are load-bearing:
+
+- **`std = "lua53"`** — not a preference. It is the interpreter EdgeTX embeds
+  (`radio/src/thirdparty/Lua/src/lua.h` → `LUA_RELEASE "Lua 5.3.6"`). Linting
+  against 5.4/5.5 semantics would mask real incompatibilities.
+- **The whole EdgeTX API is declared `read_globals`** — so any *assignment* to
+  a firmware name is an error, not a warning. All Lua widgets on the radio
+  share one `lua_State` (`lsWidgets`, `radio/src/lua/widgets.cpp`), so an
+  accidental global here leaks into every other widget on the SD card. The
+  current code is clean on this (**zero global writes**), and the config keeps
+  it that way.
+
+Baseline on the shipping sources: **5 warnings / 0 errors in 14 files**. Two
+of the five are not noise:
+
+| Warning | Meaning |
+|---|---|
+| `layout.lua:537` — value assigned to `chipOff` is unused | Independent confirmation of §B.1: in the degraded short-bar path the local is written and then never read, because line 538 rebuilds `rowH` from `stateH` alone. The layout `chipOff` and the renderer `chipOff` really are different quantities. |
+| `options.lua:142` — unused argument `defs` | Sits inside `M.present()`, one of the three dead functions in F-13. The linter finds the dead code from the other direction. |
+
+The remaining three (`app.lua:273` unused `event`/`touch`, `renderer.lua:258`
+unused `cfg`) are cosmetic; `event`/`touch` are fixed by the firmware's
+`refresh(widget, event, touch)` signature and should be renamed `_event` /
+`_touch` rather than removed.
+
+Suggested gate, cheap enough for Phase 0: `luacheck *.lua` must stay at
+**0 errors**, and the widget sources must stay at zero global writes.
+
+---
+
+## D. Implementation plan
+
+All line numbers are as of **`c196e2b0e`** (`feat/gauge-v2`). They shift as
+edits land — re-anchor by the quoted code, not by the number.
+
+### D.0 Working setup
+
+Toolchain is installed and verified (§A). From `WIDGETS/GaugeV2/`:
+
+```sh
+export PATH="$HOME/scoop/shims:$PATH"
+
+lua5.3 tests/run_tests.lua          # 38/38   pure modules
+lua5.3 tests/smoke_test.lua         # 96/96   full lifecycle vs mock_env
+lua5.3 dev/collide.lua  ./          # geometry audit  (NOTE trailing "./")
+lua5.3 dev/gallery.lua  ./          # 77-scene visual sheet
+luacheck *.lua                      # 5 warnings / 0 errors
+```
+
+**Gallery gate after every phase:**
+
+```sh
+lua5.3 dev/gallery.lua ./ --baseline dev/shots/gallery/manifest-pre-tanda6.lua
+```
+
+Rule: every scene that moves must be named in the commit message with the
+finding that caused it. A scene that moves for a reason you cannot name is a
+regression, not fallout.
+
+Test helpers already available — use them, do not invent new ones:
+
+| Helper | File | Signature |
+|---|---|---|
+| `test` / `assertEq` / `assertTrue` | both suites | `test(name, fn)` |
+| `newWidget` | `smoke_test.lua:64` | `newWidget(zone, overrides, capacity, keepRadio)` |
+| `refresh` | `smoke_test.lua:76` | `refresh(widget, times)` |
+| `setupRadio` | `smoke_test.lua:43` | installs the fake firmware API |
+| `objIndex` | `smoke_test.lua:84` | object-tree introspection |
+
+---
+
+### Phase 0 — Red tests first (blocking)
+
+Nine tests. **Every one must fail for the stated reason before any fix
+lands** — that is the whole point: F-1 exists because a test walked this path
+and asserted the wrong thing.
+
+#### 0.1 · Lifecycle: `update()` must not destroy derived state → F-1
+
+*File:* `tests/smoke_test.lua`
+
+```lua
+test("F-1: repeated update() keeps layout intact, then CRIT renders", function()
+  local w = newWidget({w=200, h=200})
+  refresh(w, 1)
+  local before = w.layout.chipOff
+  w.app.update(w, w.options)          -- identical options, no user edit
+  assertEq(w.layout.chipOff, before, "chipOff survives update()")
+  -- and the transition that actually crashes:
+  w.data.state = "critical"
+  local ok, err = pcall(refresh, w, 1)
+  assertTrue(ok, "refresh into CRIT after update(): " .. tostring(err))
+end)
+```
+
+Repeat for `{w=300, h=60}` (bar). **Expected failure:** `chipOff` is `nil`,
+then `renderer.lua:479` — *attempt to perform arithmetic on a nil value*.
+
+#### 0.2 · Generalised: layout is a pure function of (zone, cfg) → F-1 class
+
+*File:* `tests/smoke_test.lua`. This is the one that matters — 0.1 catches one
+field, this catches the class (§B.2).
+
+```lua
+-- Verified on Lua 5.3.6 against all four failure shapes.
+local function deepEq(a, b, path)
+  path = path or "L"
+  if a == nil and b ~= nil then error(path .. " appeared only after update()") end
+  if b == nil and a ~= nil then
+    error(path .. " was LOST by update() (was " .. tostring(a) .. ")")
+  end
+  if type(a) ~= type(b) then error(path .. " type " .. type(a) .. " ~= " .. type(b)) end
+  if type(a) ~= "table" then
+    if a ~= b then error(path .. ": " .. tostring(a) .. " ~= " .. tostring(b)) end
+    return
+  end
+  for k, v in pairs(a) do deepEq(v, b[k], path .. "." .. tostring(k)) end
+  for k, v in pairs(b) do deepEq(a[k], v, path .. "." .. tostring(k)) end
+end
+
+test("F-1 class: layout is identical before and after a no-op update()", function()
+  for _, zone in ipairs{{w=200,h=200},{w=300,h=60},{w=60,h=60},{w=480,h=272}} do
+    local w = newWidget(zone)
+    refresh(w, 1)
+    local snapshot = deepCopy(w.layout)   -- NB: copy, not alias - see trap
+    w.app.update(w, w.options)
+    deepEq(snapshot, w.layout, "L@" .. zone.w .. "x" .. zone.h)
+  end
+end)
+```
+
+> **TRAP — snapshot must be a deep copy.** `app.configure()` replaces
+> `widget.layout` with a fresh table on every call (`app.lua:188-189`), so a
+> plain alias happens to work today — but if that ever becomes an in-place
+> mutation the test silently compares a table with itself and passes forever.
+> Copy.
+
+**Expected failure:** `L.chipOff was LOST by update() (was 3)`. Keep this test
+forever — it is the standing guard for §C.1's invariant.
+
+#### 0.3 · `saneThresholds` on a descending scale → F-3
+
+*File:* `tests/run_tests.lua`
+
+```lua
+test("F-3: saneThresholds normalises min/max order", function()
+  local aw, ac = ranges.saneThresholds(0, 100, 55, 35, true)
+  assertEq(aw, 55, "ascending warn untouched"); assertEq(ac, 35, "ascending crit")
+  local dw, dc = ranges.saneThresholds(100, 0, 55, 35, true)
+  assertEq(dw, 55, "descending warn untouched"); assertEq(dc, 35, "descending crit")
+end)
+```
+
+Add the low-is-good mirror (`highIsGood = false`). **Expected failure:**
+`45.0 / 65.0`.
+
+#### 0.4 · Battery percent across all three `Cells` modes → F-2
+
+*File:* `tests/smoke_test.lua`. Pack: 4S at 3.85 V/cell ≈ 55 %.
+
+```lua
+test("F-2: battery % is correct for Lowest / Total / Average", function()
+  for _, mode in ipairs{{1,"Lowest"},{2,"Total"},{3,"Average"}} do
+    local w = newWidget({w=200,h=200},
+      {Source="Cels", Battery=2, Cells=mode[1]})
+    -- mock_env should serve {3.85, 3.85, 3.85, 3.85}
+    refresh(w, 2)
+    assertTrue(w.data.displayValue > 45 and w.data.displayValue < 65,
+      mode[2] .. ": expected ~55 %, got " .. tostring(w.data.displayValue))
+  end
+end)
+```
+
+**Expected failure:** Lowest → `0`, Average → `0`; Total passes.
+
+#### 0.5 · `widthCache` is bounded → F-4
+
+*File:* `tests/smoke_test.lua`. Assert **"stops growing"**, never `< N` (§B.5
+of the original plan was vulnerable to passing by accident on a low-precision
+source):
+
+```lua
+test("F-4: theme.widthCache stops growing under a varying value", function()
+  local w = newWidget({w=200,h=200}, {Precision=4})  -- 2 decimals: worst case
+  local function entries()                            -- via debug.getupvalue
+    local i, n = 1, 0
+    while true do
+      local name, val = debug.getupvalue(theme.textWidth, i)
+      if not name then break end
+      if name == "widthCache" then
+        for _, byFont in pairs(val) do for _ in pairs(byFont) do n = n + 1 end end
+      end
+      i = i + 1
+    end
+    return n
+  end
+  feedVaryingValues(w, 500); local a = entries()
+  feedVaryingValues(w, 500); local b = entries()
+  assertEq(b, a, "cache grew by " .. (b - a) .. " over 500 more frames")
+end)
+```
+
+**Expected failure:** `b - a ≈ 500`.
+
+#### 0.6 · Accent applies without a rebuild → F-5
+
+*File:* `tests/smoke_test.lua`
+
+```lua
+test("F-5: changing Accent recolours without a tree rebuild", function()
+  local w = newWidget({w=200,h=200}, {ColorMode=5})   -- Sections
+  refresh(w, 1)
+  local before = objIndex(w.ui.valueArc).color
+  w.app.update(w, withOption(w.options, "Accent", RED))
+  refresh(w, 1)
+  assertEq(objIndex(w.ui.valueArc).color, RED, "valueArc follows accent")
+end)
+```
+
+**Expected failure:** colour unchanged (`12291`), `layoutRebuilt == false`.
+
+#### 0.7 · `sensorCache` does not cross models → F-6
+
+*File:* `tests/run_tests.lua` (or smoke, wherever `model` is mockable)
+
+```lua
+test("F-6: sensor metadata does not leak between models", function()
+  installModel("A", { {name="Curr", prec=1} })          -- index 2
+  local w1 = newWidget({w=200,h=200}, {Source="Curr"}); refresh(w1, 1)
+  installModel("B", { {name="X"},{name="Y"},{name="Curr", prec=2} })  -- index 7
+  local w2 = newWidget({w=200,h=200}, {Source="Curr"}); refresh(w2, 1)
+  assertEq(w2.source.sensorIndex, 7, "index re-resolved on the new model")
+  assertEq(w2.source.prec, 2, "precision re-resolved on the new model")
+end)
+```
+
+**Expected failure:** `2` and `1` — the first model's values.
+
+#### 0.8 · Option slots are append-only → latent, §B.7
+
+*File:* `tests/smoke_test.lua`. Guards a bug the firmware reports **silently**.
+
+```lua
+test("contract: DEFS slot order and types are frozen", function()
+  local FROZEN = {
+    {"Source",SOURCE},{"Min",VALUE},{"Max",VALUE},{"Warn",VALUE},
+    {"Crit",VALUE},{"HighGood",BOOL},{"Style",CHOICE},{"ColorMode",CHOICE},
+    {"Precision",CHOICE},{"ShowMinMax",CHOICE},          -- core ten: 2.11
+    {"Accent",COLOR},{"Label",STRING},{"Suffix",STRING},{"Scale",CHOICE},
+    {"Sweep",CHOICE},{"Damping",SLIDER},{"Cells",CHOICE},{"Battery",CHOICE},
+    {"Alerts",CHOICE},{"AlertSw",SWITCH},{"Delay",VALUE},{"Vibrate",BOOL},
+    {"ResetSw",SWITCH},{"ShowChip",BOOL},
+  }
+  assertEq(#defs, #FROZEN, "option count changed - APPEND only")
+  for i, want in ipairs(FROZEN) do
+    assertEq(defs[i].key, want[1], "slot " .. i .. " key")
+    assertEq(defs[i].type, want[2], "slot " .. i .. " type")
+  end
+end)
+```
+
+This one is **green from the start** — it is a ratchet, not a bug reproduction.
+Rationale in §B.7: `setDefault` only resets on a *type* change, and
+`LuaWidgetFactory` cannot override `checkOptions()`.
+
+#### 0.9 · Instruction-budget probe → §C.5
+
+*New file:* `dev/instructions.lua`. Not a pass/fail test yet — establishes the
+number nothing currently measures, and becomes Phase 5's acceptance criterion.
+
+```lua
+-- Counts Lua VM instructions per callback against the firmware's real budget:
+-- widgets.cpp MAX_INSTRUCTIONS (20000/100) -> hook every 200 instructions,
+-- error past 100 fires. Report worst-case scenes.
+local fires = 0
+debug.sethook(function() fires = fires + 1 end, "", 200)
+-- ... run update()/refresh() over the heaviest scene matrix ...
+debug.sethook()
+-- report: fires per call, and headroom vs 100
+```
+
+Run over the most expensive scene the widget can produce: largest zone,
+needle style, `ColorMode = Sections`, scale labels on, min/max text on.
+**Record the numbers in this document** — they are the Phase 5 baseline.
+
+> **Phase 0 acceptance:** 0.1–0.7 red for exactly the stated reason, 0.8 green,
+> 0.9 produces numbers. No widget source touched yet.
+
+---
+
+### Phase 1 — Close every path to a disabled widget (ship alone)
+
+The whole phase is about one outcome: **the widget can no longer be
+permanently disabled.** Both items below end in `setErrorMessage()` →
+`"Widget disabled"` → dead until model reload (§A.1).
+
+#### 1.1 · Move `chipOff` into layout — F-1
+
+*Files:* `layout.lua`, `renderer.lua`, `bar.lua`
+
+**Evidence.** `L.chipOff` is written only at `renderer.lua:315` and
+`bar.lua:103`, both inside `build()`. `app.configure()` replaces
+`widget.layout` unconditionally (`app.lua:188-189`) but only rebuilds on a
+signature change (`app.lua:195-202`). Firmware calls `update()` on settings
+exit (even Cancel), fullscreen enter, and zone resize.
+
+**Change — dial**, `layout.lua:486-487`:
+
+```lua
+  L.chipPad = T.px(7)
+  L.chipHeight = stateH + T.px(6)
++ L.chipOff = floor((L.chipHeight - stateH) / 2)
+```
+
+**Change — bar**, `layout.lua:570-571`:
+
+```lua
+  L.chipPad = T.px(7)
+  L.chipHeight = stateH + chipExtra
++ L.chipOff = floor((L.chipHeight - stateH) / 2)
+```
+
+Then delete the two local computations and read `L.chipOff` instead
+(`renderer.lua:314-315`, `bar.lua:102-103`).
+
+> **TRAP — do not write `L.chipOff = chipOff`.** `barLayout` already has a
+> local `chipOff` (`layout.lua:528`) meaning the *row-budget reserve*. The
+> degraded short-bar path forces it to `0` (`layout.lua:537`) while
+> `chipHeight` stays `stateH + px(2)` — so the render-time offset there is
+> `floor(2/2) = 1`, not `0`. Assigning the budget local shifts the pill 1 px
+> and moves the `br-short` gallery scene. luacheck already flags that local as
+> dead (`layout.lua:537`, §C.8) — **rename it `chipReserve`** while you are in
+> there so the two can never be confused again.
+
+**Verify:** 0.1 and 0.2 green · gallery **zero** scene changes (this is a pure
+refactor — any diff means the trap bit) · `luacheck` loses the `layout.lua:537`
+warning.
+
+#### 1.2 · Guard `theme.RAMP` against missing font constants — F-10
+
+*File:* `theme.lua:45-46`
+
+**Evidence.** `M.RAMP` is built from firmware globals. If one is absent (e.g.
+`XXLSIZE` on a target that does not define it), the constructor leaves a hole
+while `#RAMP` still reports the full length, so `fitFont` walks into
+`fontHeight(nil)`. Verified on Lua 5.3.6:
+
+```text
+#RAMP with XXLSIZE=nil : 3    RAMP[1] = nil     <- length unchanged by the hole
+```
+
+The failure is the **write**, not the read: `heightCache[font]` at
+`theme.lua:129` returns `nil` harmlessly for a `nil` key, but
+`heightCache[font] = h` at **`theme.lua:133`** raises
+`table index is nil`. That is a crash on the *first layout pass* — F-1 again,
+by a different door.
+
+```lua
+-- Built by filtering: a firmware that does not define one of these constants
+-- must degrade to a shorter ramp, never leave a hole. #RAMP keeps reporting
+-- the full length otherwise and fitFont indexes nil (Tanda 6 F-10).
+local RAMP_ORDER = { "XXL", "XL", "L", "M", "S", "XS", "XXS" }
+M.RAMP = {}
+for i = 1, #RAMP_ORDER do
+  local f = M.FONTS[RAMP_ORDER[i]]
+  if f ~= nil then M.RAMP[#M.RAMP + 1] = f end
+end
+assert(#M.RAMP > 0, "GaugeV2: firmware exposes no usable font constants")
+```
+
+**Verify:** new unit test in `run_tests.lua` nils `XXLSIZE` before loading
+`theme` and asserts `#RAMP == 6` and `RAMP[1] ~= nil` · gallery unchanged.
+
+> **Phase 1 acceptance:** 0.1, 0.2 green · gallery **byte-identical** · suites
+> 38/96 · collide clean. **Ship this commit on its own.**
+
+---
+
+### Phase 2 — Wrong output (order matters)
+
+#### 2.1 · Pin sensor metadata to the model — F-6 *(first: data loss)*
+
+*File:* `telemetry.lua:92-108`
+
+**Evidence.** `sensorCache` is module-scope and modules are shared per path for
+the whole radio session (`app.lua:38`, `main.lua:143`), but a sensor's index
+and precision are **model** data. Worst consequence: the *Reset min/max*
+switch calls `model.resetSensor(idx)` (`app.lua:266`) on another model's index
+— it resets a sensor the user never asked to touch.
+
+**Change:** delete the module-level cache; memoise on the widget instead.
+`resolveSource` already early-returns unless the source changed
+(`telemetry.lua:114`), so the cache saves at most one scan per source edit —
+not worth a cross-model hazard (§B.4).
+
+```lua
+-- Was a module table shared by every widget for the whole radio session.
+-- Sensor index and precision are MODEL data, so that cache survived a model
+-- change and handed the next model a stale index - which model.resetSensor()
+-- then reset (Tanda 6 F-6). Scoped to the widget: resolveSource() only runs
+-- on a source change, so this still avoids the repeated 60-sensor scan.
+local function findSensor(widget, name)
+  local hit = widget.sensorCache and widget.sensorCache[name]
+  if hit then return hit.prec, hit.index end
+  ...
+  widget.sensorCache = widget.sensorCache or {}
+  widget.sensorCache[name] = { prec = sn.prec, index = i }
+```
+
+**Verify:** 0.7 green · no gallery change (metadata only).
+
+#### 2.2 · Battery percent must not divide twice — F-2
+
+*File:* `telemetry.lua:288-298`
+
+**Evidence.** `refresh()` sets `src.cells = src.cells or count`
+(`telemetry.lua:268`) from the cells table, then the battery block divides by
+that count — but under `Lowest` or `Average` the aggregate is **already
+per-cell**. `Lowest` is the default (`main.lua:85-86`) and the value `DOCS.md`
+§4.8 recommends, so the documented-best configuration reads 0 %.
+
+**Change:** extract the predicate that already exists inside
+`historyTrustworthy` (`telemetry.lua:213-217`) and use it in both places — one
+source of truth:
+
+```lua
+-- True when the reading is already a single cell's voltage, so the battery
+-- block must NOT divide by the cell count again (Tanda 6 F-2), and the
+-- radio's Cels-/Cels+ siblings are the same quantity as what we display.
+local function isPerCellReading(cfg, wasCells)
+  return wasCells and cfg.cells ~= M.CELLS_TOTAL
+end
+```
+
+then in the battery block:
+
+```lua
+  local cells = latchCells(widget, value)
+- local perCell = (cells > 0) and (value / cells) or value
++ local perCell = value
++ if not isPerCellReading(cfg, wasCells) and cells > 0 then
++   perCell = value / cells
++ end
+```
+
+**Traps:** `wasCells` is local to `M.refresh` and set at line 259 — the battery
+block is downstream, so it is in scope. A non-`Cels` pack source (`RxBt`) has
+`wasCells == false` and must keep dividing.
+
+**Verify:** 0.4 green · gallery: `ba-pct-low` `displayValue 0 → ~55` and
+`ba-cels-avg` likewise; `ba-pct-tot` **must not move**.
+
+#### 2.3 · Normalise scale order in `saneThresholds` — F-3
+
+*File:* `ranges.lua:74-85`, plus the ghost in `renderer.lua:648-656`
+
+**Evidence.** `M.build` normalises (`ranges.lua:36-38`); `saneThresholds` does
+not. With `Min = 100, Max = 0` the guard fires on perfectly valid thresholds
+and recomputes them over a **negative** span → warn/crit inverted → a warning
+value renders red, pulses, and fires the *critical* alert tone.
+
+```lua
+ function M.saneThresholds(minimum, maximum, warning, critical, highIsGood)
++  -- Same normalisation as build(): a descending scale (Min > Max) is a
++  -- supported configuration, not a mistake (Tanda 6 F-3).
++  if maximum < minimum then minimum, maximum = maximum, minimum end
+   local wl = math.min(warning, critical)
+```
+
+**Also (same root cause):** the peak-hold ghost sweeps `L.startAngle →
+angleOf(h.max)` unconditionally. On a descending scale the peak maps back onto
+`startAngle`, so the ghost paints the tract **never visited**. Pick the extreme
+that matches the scale direction (`h.max` when `cfg.max >= cfg.min`, else
+`h.min`).
+
+**Verify:** 0.3 green · gallery: `sc-descending` `warn/crit 45/65 → 55/35`;
+all ascending scenes unchanged.
+
+#### 2.4 · Make the accent reach the screen — F-5
+
+*Files:* `layout.lua:592-601`, `renderer.lua:702-711`, `bar.lua:211-213`
+
+**Evidence.** `layout.signature()` omits `cfg.accent`, and the repaint path is
+gated on the **semantic colour key**, which does not change when only the
+accent does. Affects the value arc, value label, Sections bands, Rail rails and
+bar threshold marks.
+
+Two options — **prefer B**:
+
+- **A (cheap):** add `cfg.accent` to `layout.signature()`. One line, but buys a
+  full `lvgl.clear()` + rebuild for a colour change.
+- **B (correct, §C.1):** give `configure()` the *unconditional prelude* that
+  `OutputsWidget::update()` has and GaugeV2 lacks — re-apply non-structural
+  properties every update, before the signature gate. Fold the accent into
+  `frame.colorKey` so the existing repaint path carries it:
+
+```lua
+- local key = M.colorKey(widget)
++ -- The key must encode every INPUT to the colour, not just the semantic
++ -- role, or an accent edit cannot reach objects whose colour was set at
++ -- build time (Tanda 6 F-5; cf. radio_info.cpp re-reading its colour
++ -- options in update()).
++ local key = M.colorKey(widget) .. ":" .. tostring(widget.accent)
+```
+
+B also closes the next three findings of this shape before they are written.
+
+**Verify:** 0.6 green · gallery: `ac-*` scenes change colour, geometry
+identical; with option B, `layoutRebuilt` stays `false`.
+
+> **Phase 2 acceptance:** 0.3, 0.4, 0.6, 0.7 green · only the named gallery
+> scenes moved · collide clean.
+
+---
+
+### Phase 3 — Bounded resources (F-4)
+
+*Files:* `theme.lua:137-149`, `renderer.lua:499`, `bar.lua:236`
+
+**Evidence.** `theme.textWidth` memoises per `(font, text)` and its own comment
+promises *"Only called from layout / build paths — never per frame"*.
+`anchorUnit` broke that by measuring the **live value string** every time the
+text changes. At 2 decimals that is one new permanent entry per frame, in a
+module-level cache shared by every gauge instance.
+
+Three candidates. **Measure all three, then choose** (§B.5):
+
+| # | Approach | Cost |
+|---|---|---|
+| A | Anchor by character count against the already-measured widest sample | no measurement per frame; assumes fixed-width digits |
+| B | A separate, **unmemoised** measuring function | keeps exactness; one `lcd.sizeText` per text change |
+| **C** | **Drop `anchorUnit`; put value+unit in one LVGL container and let it align** | *least code*; structurally cannot regress; matches `value.cpp:254-261`, which never measures live text |
+
+C is the firmware idiom and is strictly less code. Ship it if the gallery
+accepts it; fall back to A.
+
+Whichever wins, **restore the contract in the header** of `theme.lua` so it
+states who may call what, and keep 0.5 as the standing guard.
+
+> **Phase 3 acceptance:** 0.5 green (cache flat over 2000 frames) · gallery:
+> value/unit spacing may shift by ≤1 px — name it — nothing else moves.
+
+---
+
+### Phase 4 — Behaviour
+
+#### 4.1 · Re-arm the alert delay on data loss — F-7
+
+*File:* `alerts.lua:73-82`
+
+**Evidence.** `a.armedAt` is set once and cleared only by `alerts.reset()`,
+which `app.update()` calls **only on a source change** (`app.lua:231`). Link
+loss sets `a.state = nil` but leaves `armedAt` in the past, so the first frame
+after a brownout alerts immediately — exactly the scenario the startup delay
+exists for (`alerts.lua:9-11`, `DOCS.md` §6.5).
+
+```lua
+   if data.availability ~= "valid" or data.state == nil then
+-    a.state = nil          -- re-arm once data comes back
++    a.state = nil
++    -- Re-arm the STARTUP DELAY too, not just the transition: a brownout is
++    -- precisely the "model powering up reports nonsense" case (Tanda 6 F-7).
++    a.armedAt = nil
+     return
+   end
+```
+
+**Verify:** new test — valid data → drop link 3 s → reconnect → assert **0**
+tones on the first frame and the delay honoured again.
+
+#### 4.2 · One ghost semantic, shared by both renderers — F-8
+
+*Files:* `layout.lua:200`, `renderer.lua:620`
+
+**Evidence.** `updateHistory` returns early when there are no markers
+(`renderer.lua:620`) but `L.showGhost` depends only on the mode
+(`layout.lua:201`) — so with *Min/max = Off* the dial creates a ghost object
+that can never be shown. `bar.lua` has no such coupling, so the two renderers
+disagree.
+
+**Decision — take the firmware idiom (§C.3):** the ghost is **independent of
+the markers option**, always created, visibility driven by data. That is
+already the bar's behaviour, so it is also the smaller diff. Move the
+marker-only early return below the ghost update, or split
+`updateHistory` into `updateMarkers` + `updateGhost`.
+
+**Verify:** dial and bar agree in a table-driven test across
+`ShowMinMax = Off / Markers / Markers+text` · gallery: `op-mm-off` gains the
+ghost — name it · update `DOCS.md` §5.
+
+#### 4.3 · Retry source resolution until it succeeds — F-9
+
+*File:* `telemetry.lua:114, 126`
+
+**Evidence.** `s.resolved = true` is set **before** `getFieldInfo()` is even
+attempted, and nothing ever clears it. A sensor that appears after boot (the
+normal case — telemetry arrives seconds after the widget) is lost forever:
+name, unit, precision, scale preset, the `-`/`+` siblings, and the NO LINK vs
+NO DATA distinction (`telemetry.lua:250`).
+
+```lua
+-  s.resolved = true
+   if id and id > 0 then
+     local info = getFieldInfo(id)
+     if info then
+       ...
++      s.resolved = true
++    else
++      -- Not resolved yet. Retry on later refreshes, but bounded so a genuinely
++      -- absent source does not rescan every frame (Tanda 6 F-9).
++      s.retries = (s.retries or 0) + 1
++      s.resolved = (s.retries >= MAX_RESOLVE_RETRIES)
+     end
++  else
++    s.resolved = true            -- "no source" is a resolved state
+   end
+```
+
+**Traps:** the early return at line 114 is `s.id == id and s.resolved` — with
+the above it re-enters while unresolved, which is intended. Bound the retries
+(a slow counter, not per-frame) or a missing sensor rescans forever.
+
+**Verify:** new test — source absent at boot, appears at frame 10, assert name
+and unit populate without an explicit `update()`.
+
+> **Phase 4 acceptance:** new tests for 4.1 and 4.3 green · 4.2 table test
+> green for both renderers · collide clean.
+
+---
+
+### Phase 5 — Optimisation (optional, explicit revert criterion)
+
+**Target:** dial-with-needle from **814 B/frame** to ≲ 400 B/frame, *and*
+report instructions/frame from 0.9. No visual change whatsoever.
+
+**Scope: 5.1 and 5.2 only.** Original 5.3 is **dropped** — `updateHistory`
+already guards both writes on angle change, and the "1.00 sets/frame" figure
+is an artifact of a monotonically-rising sweep probe (§A.3). Fix the probe
+instead: measure a noisy plateau, not a ramp.
+
+#### 5.1 · Persistent `pts` buffers
+
+*Files:* `renderer.lua:601-606`, `geometry.lua:49-53`
+
+**Evidence it is safe** (§C.6): `LvglWidgetLine::getPts`
+(`lua_lvgl_widget.cpp:1008-1029`) copies the coordinates **out** of the Lua
+table into its own reused `lv_point_t[]` and hashes them. Nothing on the C side
+retains a reference — so a persistent Lua table mutated in place is legal.
+
+Add a mutating variant beside `linePoints` and keep one buffer per line object
+on `widget.ui`:
+
+```lua
+-- Mutates `buf` in place instead of allocating. The binding copies the values
+-- out on every set (LvglWidgetLine::getPts), so reusing the table is safe and
+-- removes ~9 of the ~12 tables/frame the needle allocated (Tanda 6 F-11).
+function M.linePointsInto(buf, cx, cy, r1, r2, angle)
+  local x1, y1 = M.pointOnCircle(cx, cy, r1, angle)
+  local x2, y2 = M.pointOnCircle(cx, cy, r2, angle)
+  buf[1][1], buf[1][2] = x1, y1
+  buf[2][1], buf[2][2] = x2, y2
+  return buf
+end
+```
+
+> **TRAP 1 — negative coordinates raise a Lua error.** `getPt` reads with
+> `luaL_checkunsigned` (`lua_lvgl_widget.cpp:1001,1004`). That is F-1 from a
+> third door. Whatever clamping exists today must survive; add an explicit test
+> at the extreme angles of all three sweeps.
+>
+> **TRAP 2 — do NOT route the needle through `setProp`.** Its cache compares
+> by identity for tables (`renderer.lua:55`: `if cache[key] == value then
+> return end`). With a persistent buffer the reference never changes, so
+> **every write after the first is silently dropped** and the needle freezes
+> at its first angle. Reproduced on Lua 5.3.6:
+>
+> ```text
+> write 1 (fresh buffer)   -> true
+> write 2 (mutated in place) -> false   <- DROPPED: needle freezes
+> write 3 (new table)      -> true      <- why it works today
+> ```
+>
+> This is precisely why the needle currently bypasses the batching: a fresh
+> table each frame is what makes the cache notice. Keep the direct `lvgl.set`
+> calls; `frame.angle` is already the correct guard. If you ever *do* want the
+> needle batched, `setProp` needs an explicit "always dirty" opt-out — not a
+> value comparison.
+
+#### 5.2 · Reuse the `lvgl.set` wrapper table
+
+Hoist the `{ pts = buf }` wrapper to a per-object persistent table as well.
+Same trap 2 applies.
+
+#### 5.3 · Re-measure and decide
+
+Re-run the byte probe **and** `dev/instructions.lua`. Record both here.
+
+> **REVERT CRITERION (unchanged, and binding):** if the improvement is not
+> demonstrable, revert. The current code is legible and correct; it is not
+> worth trading that for a gain that cannot be shown.
+
+---
+
+### Phase 6 — Coherence and documentation
+
+- **6.1 (F-14)** Measure boot cost first. `main.lua:105-106` claims the
+  duplication is deliberate ("boot costs exactly one file read per widget") and
+  it is almost certainly right — `main.lua` runs at startup for **every**
+  widget on the card, used or not. Expect the measurement to confirm it, and
+  then do the *inverse* of the original plan: **delete** `options.build()`,
+  `options.translator()` and `options.present()`, and annotate the duplication
+  as intentional. Note that `run_tests.lua:95-96` and `:295-302` exercise the
+  deleted symbols and go with them.
+- **6.2 (F-15)** Lift `resolveColor`, `updatePulse` and `updateSourceLabels`
+  into shared helpers in `renderer.lua`, as was already done for `updateChip`,
+  `anchorUnit` and `label`. `bar.lua` keeps only what genuinely differs.
+- **6.3 (F-12, F-13)** Clear `widget.autoCells` on the non-auto branch
+  (`app.lua:121`) so it stops lying; remove the dead symbols; rename
+  `app.lua:273`'s unused `event`/`touch` to `_event`/`_touch` to clear the
+  luacheck warnings.
+- **6.4 (F-16)** Fix the three wrong rows of `DOCS.md` §5 against the real
+  tree (`arc 5, circle 1, label 8, line 18, rectangle 2` at 200×200) and
+  document the ghost semantics fixed in 4.2.
+- **6.5 (§C.6)** Record in `DOCS.md` that the callback form of `pts` / colour /
+  text params is **deliberately not used**, with the reason — otherwise someone
+  "modernises" it into a per-frame regression.
+
+> **Phase 6 acceptance:** `DOCS.md` object counts reproducible from the probe ·
+> `luacheck *.lua` at 0 errors and ≤3 warnings · suites green.
+
+---
+
+### D.1 Commit sequence
+
+| # | Contents | Ships |
+|---|---|---|
+| 1 | Phase 0 (nine tests, seven red) + `.luacheckrc` | with 2 |
+| 2 | **Phase 1** — F-1 + F-10 | **immediately, alone** |
+| 3 | Phase 2 — F-6, F-2, F-3, F-5 | together |
+| 4 | Phase 3 — F-4 | together with 3 |
+| 5 | Phase 4 — F-7, F-8, F-9 | when convenient |
+| 6 | Phase 5 — needle buffers | optional, revertible |
+| 7 | Phase 6 — hygiene and docs | when convenient |
+
+**Commit 2 is the urgent one.** F-1 disables the widget on an action as
+ordinary as opening its settings and pressing Cancel, and with F-10 folded in
+that single commit closes every known path to a permanently disabled widget.
+It does not need to wait for anything else in this document.
