@@ -231,12 +231,22 @@ local function buildNeedle(widget)
   -- The pts BUFFERS are persistent per segment (Phase 5.1): the binding
   -- copies the coordinates out on every set and keeps no reference, so
   -- updateArc can mutate them in place - the needle no longer allocates
-  -- nine tables per angle change (Tanda 6 F-11). They must NEVER go through
-  -- setProp: its cache compares tables by identity and would drop every
-  -- write after the first (5.1 TRAP 2) - the needle stays on direct lvgl.set.
+  -- nine tables per angle change (Tanda 6 F-11). The { pts = ... } WRAPPER
+  -- passed to lvgl.set is hoisted to a per-segment persistent table too
+  -- (Phase 5.2): luaLvglSet parses the params table at CALL TIME
+  -- (getParams -> parseParam, api_colorlcd_lvgl.cpp:116, lua_lvgl_widget.cpp
+  -- :763) and retains no reference, so the same wrapper can be passed
+  -- forever - its pts field points at the persistent buffer, whose fresh
+  -- contents are read on every set. Both buffers and wrappers must NEVER
+  -- go through setProp: its cache compares tables by identity and would
+  -- drop every write after the first (5.1/5.2 TRAP 2) - the needle stays
+  -- on direct lvgl.set.
   ui.needlePts = { { 0, 0 }, { 0, 0 } }
   ui.needleMidPts = { { 0, 0 }, { 0, 0 } }
   ui.needleTipPts = { { 0, 0 }, { 0, 0 } }
+  ui.needleSet = { pts = ui.needlePts }
+  ui.needleMidSet = { pts = ui.needleMidPts }
+  ui.needleTipSet = { pts = ui.needleTipPts }
   ui.needle = lvgl.line{
     pts = G.linePointsInto(ui.needlePts, L.cx, L.cy, L.needleInner,
                            L.needleBodyOuter, a),
@@ -631,14 +641,15 @@ local function updateArc(widget)
       -- three line segments, all rewritten with the same guarded pts path
       -- as before: base + mid + tip sweep together (P2-1). The pts tables
       -- are the PERSISTENT buffers from buildNeedle, mutated in place by
-      -- linePointsInto - zero allocation per frame (Phase 5.1). Direct
-      -- lvgl.set, NEVER setProp (identity cache would freeze them, TRAP 2).
-      lvgl.set(ui.needle, { pts = G.linePointsInto(ui.needlePts, L.cx, L.cy,
-        L.needleInner, bodyOuter, a) })
-      lvgl.set(ui.needleMid, { pts = G.linePointsInto(ui.needleMidPts, L.cx,
-        L.cy, midInner, midOuter, a) })
-      lvgl.set(ui.needleTip, { pts = G.linePointsInto(ui.needleTipPts, L.cx,
-        L.cy, tipInner, outer, a) })
+      -- linePointsInto, and the wrappers are the PERSISTENT { pts = ... }
+      -- tables too - zero allocation per frame (Phase 5.1 + 5.2). Direct
+      -- lvgl.set, NEVER setProp (identity cache would freeze both, TRAP 2).
+      G.linePointsInto(ui.needlePts, L.cx, L.cy, L.needleInner, bodyOuter, a)
+      lvgl.set(ui.needle, ui.needleSet)
+      G.linePointsInto(ui.needleMidPts, L.cx, L.cy, midInner, midOuter, a)
+      lvgl.set(ui.needleMid, ui.needleMidSet)
+      G.linePointsInto(ui.needleTipPts, L.cx, L.cy, tipInner, outer, a)
+      lvgl.set(ui.needleTip, ui.needleTipSet)
     end
   end
   if not frame.needleShown then

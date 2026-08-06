@@ -2116,6 +2116,10 @@ test("F-11: setProp's identity cache would freeze a reused pts buffer", function
   R.flush(w)
   -- (props.pts is the same table as buf, so reading values proves nothing;
   -- the set COUNT is the truth: a dropped write never reaches lvgl.set)
+  -- The same identity compare applies to ANY table value under a key - the
+  -- { pts = buf } wrapper included - so the needle's wrappers must also
+  -- stay on direct lvgl.set (Phase 5.2's guard is the wrapper-identity
+  -- test at the lvgl.set boundary).
   assertEq(obj.setCount, 1,
     "TRAP: the mutated write was dropped - the needle freezes via setProp")
 end)
@@ -2142,6 +2146,43 @@ test("F-11: needle coordinates stay non-negative at every sweep extreme", functi
       end
     end
   end
+end)
+
+test("F-11: the needle reuses its lvgl.set wrapper tables", function()
+  -- Phase 5.2: the { pts = buf } wrapper passed to lvgl.set is hoisted to a
+  -- per-segment persistent table, like the buffers themselves. The binding
+  -- parses the params table AT CALL TIME (luaLvglSet -> getParams ->
+  -- parseParam, api_colorlcd_lvgl.cpp:116, lua_lvgl_widget.cpp:763) and
+  -- retains no reference, so a wrapper whose pts field points at the
+  -- persistent buffer can be passed forever - the fresh contents are read
+  -- on every set. Observe the wrapper identities at the lvgl.set boundary.
+  local w = newWidget(nil, { Source = ID_RSSI, Style = "Needle", Damping = 0 })
+  local realSet = mock.lvgl.set
+  local seen = {}
+  mock.lvgl.set = function(obj, params)
+    if obj == w.ui.needle then seen.body = seen.body or {}; seen.body[#seen.body + 1] = params
+    elseif obj == w.ui.needleMid then seen.mid = seen.mid or {}; seen.mid[#seen.mid + 1] = params
+    elseif obj == w.ui.needleTip then seen.tip = seen.tip or {}; seen.tip[#seen.tip + 1] = params
+    end
+    return realSet(obj, params)
+  end
+  local ok, err = pcall(function()
+    refresh(w, 1)
+    mock.setValue(ID_RSSI, 10)
+    refresh(w, 2)
+    mock.setValue(ID_RSSI, 90)
+    refresh(w, 2)
+  end)
+  mock.lvgl.set = realSet
+  if not ok then error(err) end
+  assertTrue(#seen.body >= 2 and #seen.mid >= 2 and #seen.tip >= 2,
+    "each segment was set at least twice")
+  assertTrue(seen.body[1] == seen.body[2],
+    "the body wrapper is reused across frames, not reallocated")
+  assertTrue(seen.mid[1] == seen.mid[2], "mid wrapper reused")
+  assertTrue(seen.tip[1] == seen.tip[2], "tip wrapper reused")
+  assertEq(seen.body[1].pts, w.ui.needle.props.pts,
+    "the wrapper points at the persistent buffer")
 end)
 
 print(string.format("-- %d passed, %d failed", passed, failed))

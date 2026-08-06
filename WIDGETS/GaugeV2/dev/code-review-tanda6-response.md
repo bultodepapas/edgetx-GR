@@ -1334,3 +1334,70 @@ all; the existing 149 tests and 77 gallery scenes all pass under it).
 | collide | clean |
 | luacheck | 4 warnings / 0 errors (widget) + 0/0 on the new probe |
 | instruction probe | per-frame costs unchanged; `upd-bld` +1 fire on needle scenes (the buffers are built once) — one-time cost for a permanent −792 B/frame |
+
+## E.6 Phase 5.2 execution log (2026-08-06) — persistent `lvgl.set` wrappers
+
+**Binding verified before touching code**: `lvgl.set(obj, params)` →
+`LvglWidgetObjectBase::update` → `getParams(L, 2)` parses the params table
+**at call time** and retains no reference (api_colorlcd_lvgl.cpp:116-123,
+lua_lvgl_widget.cpp:763-767). A persistent wrapper whose `pts` field points
+at the persistent buffer can therefore be passed forever — the fresh buffer
+contents are read on every set, and the wrapper never even needs mutation.
+
+**Shipped:** `ui.needleSet/needleMidSet/needleTipSet = { pts = <buffer> }`
+built once in `buildNeedle`; `updateArc` mutates the buffers and passes the
+wrappers directly to `lvgl.set`. Never through `setProp` (TRAP 2).
+
+**Measurement** — the probe had to be made honest first; three harness
+defects were found and fixed along the way (all behavior-preserving):
+
+1. `mock.tracking(false)` toggle: the harness's `obj.sets` retention is
+   UNBOUNDED by design (it is the suite's audit trail) and drowned the
+   widget's own numbers.
+2. `allowedKeys` per-kind memoization: `checkParams` ran on EVERY
+   `lvgl.set`, allocating a fresh ~12-key table per call — the harness was
+   the dominant per-frame allocator (the "needle share" measured 1704 B/f
+   before the fix).
+3. The probe's feed: with needle damping on and an alternating target, the
+   smoothed value mints a distinct permanent interned string every frame —
+   `Damping = 0` in the scenes keeps the strings to two interned values
+   while the needle still moves every frame.
+
+Methodology: `collectgarbage("stop")` around the frames (nothing freed →
+the count delta is the TRUE allocation rate), tracking off, 100 moving
+frames:
+
+```text
+                              needle scene   arc scene   needle share
+Tanda baseline                   814 B/f        303 B/f     ~511 B/f
+after 5.1 (wrapper literals)     934 B/f        669 B/f      265 B/f
+after 5.2 (persistent wrappers)  670 B/f        669 B/f        1 B/f
+```
+
+**5.2 alone: −264 B/frame** — the three wrapper tables. Revert criterion
+demonstrably satisfied; 5.2 ships. Combined 5.1+5.2: the needle's ~511 B/f
+share is down to measurement noise, and the needle scene now equals the
+no-needle scene.
+
+**Tests**: wrapper-identity test at the `lvgl.set` boundary (mock's `set`
+wrapped to capture the params tables across two angle changes — identities
+must survive while values move, and `wrapper.pts == props.pts`); the 5.1
+TRAP-2 ratchet extended in comment to name the wrapper as the same
+identity-compare hazard (the mock's `checkPts` rejects the wrapper shape as
+a points array, so the ratchet stays on the buffer form it validates — the
+wrapper's real guard is the boundary test).
+
+| Gate | Result |
+|---|---|
+| run_tests / smoke_test | **41/41 · 113/113** |
+| gallery manifest | unchanged (the same 3 named scenes) |
+| gallery SVG diff | zero new lines — only the timestamp and the Phase-4 `op-mm-off` tile |
+| collide | clean |
+| luacheck | 4/0 widget · 0/0 on the changed probe and mock |
+| instruction probe | worst callback **49 fires** (was 55/56) — the `allowedKeys` memo removed per-set table construction from every `lvgl.set`, an unexpected bonus of the harness fix; the §E baselines are now conservative |
+
+**Follow-up (out of 5.2 scope, noted):** the min/max marker lines still
+allocate a fresh `pts`+wrapper per angle change; they are guarded by
+`frame.minAngle/maxAngle` so they cost nothing in steady state, but a
+monotonic flight max sweeps them ~1/frame — the same persistent-buffer
+treatment applies if the Phase 5 target is ever pushed further.

@@ -51,10 +51,18 @@ local KEYS = {
           active = true },
 }
 
+-- Memoized per kind: checkParams runs on EVERY lvgl.set, so a fresh table
+-- per call would make the harness the dominant per-frame allocator in the
+-- byte probes (dev/measure_frames.lua) - the widget would measure fine but
+-- the mock would drown it. The result is read-only.
+local allowedCache = {}
 local function allowedKeys(kind)
-  local t = {}
+  local t = allowedCache[kind]
+  if t then return t end
+  t = {}
   for k in pairs(BASE_KEYS) do t[k] = true end
   for k in pairs(KEYS[kind] or {}) do t[k] = true end
+  allowedCache[kind] = t
   return t
 end
 
@@ -112,15 +120,26 @@ local function makeObject(kind, params)
   return obj
 end
 
+-- Retain every lvgl.set params copy in obj.sets (the suite's audit trail:
+-- P2-2 batching tests, the set-count ratchets, the gallery census all read
+-- it). The retention is UNBOUNDED by design - it is harness instrumentation,
+-- not widget state - so allocation probes turn it off to measure the widget
+-- alone (dev/measure_frames.lua, the Tanda 6 F-11 methodology).
+local tracking = true
+
 local function recordSet(obj, params)
   checkParams(obj.kind, params)
-  local entry = {}
   for k, v in pairs(params) do
-    entry[k] = v
     obj.props[k] = v
   end
-  obj.sets[#obj.sets + 1] = entry
-  obj.setCount = obj.setCount + 1
+  if tracking then
+    local entry = {}
+    for k, v in pairs(params) do
+      entry[k] = v
+    end
+    obj.sets[#obj.sets + 1] = entry
+    obj.setCount = obj.setCount + 1
+  end
 end
 
 local lvgl = {
@@ -427,5 +446,6 @@ M.lvgl = lvgl
 M.lcd = lcd
 M.install = install
 M.makeObject = makeObject
+M.tracking = function(on) tracking = on end
 
 return M
