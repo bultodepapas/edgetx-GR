@@ -317,16 +317,26 @@ local function dialLayout(widget, cfg, L, w, h)
     L.needleInner = clamp(floor(L.radius * 0.16), T.px(3), T.px(20))
     L.needleOuter = L.radius - floor(L.trackThickness / 2) - T.px(1)
     L.needleHalf = clamp(floor(L.radius * T.ratio.needleWidth), T.px(2), T.px(7))
-    -- Tapered blade from two LINES (P2-1 keeps the needle a line family):
-    -- the thick body stops at ~55 % of the reach and a 2-3 px tip overlaps
-    -- its end and runs to the scale, so the pointer reads as pointing
-    -- outward instead of blunt at the scale (review P-A).
-    L.needleBodyOuter = L.needleInner
-      + floor((L.needleOuter - L.needleInner) * T.ratio.needleBodyReach)
-    L.needleTipHalf = clamp(floor(L.needleHalf * T.ratio.needleTipToHalf), 1, 2)
+    -- Tapered blade from three LINES (P2-1 keeps the needle a line family):
+    -- base -> mid -> tip, each a bit thinner than the last, so the width
+    -- steps down gradually instead of jumping straight from the thick base
+    -- to the 2 px tip in one cut (Tanda 4's two-part P-A read as a paddle
+    -- with a toothpick glued on at anything above micro sizes; owner
+    -- request, Tanda 5). Each segment overlaps the previous by 75% of its
+    -- OWN thickness so the rounded caps (renderer.buildNeedle) blend into
+    -- one another instead of leaving a visible seam.
+    local reach = L.needleOuter - L.needleInner
+    L.needleBodyOuter = L.needleInner + floor(reach * T.ratio.needleBodyReach)
+    L.needleMidOuter = L.needleInner + floor(reach * T.ratio.needleMidReach)
+    L.needleMidHalf = clamp(floor(L.needleHalf * T.ratio.needleMidToHalf),
+                            1, L.needleHalf)
+    L.needleTipHalf = clamp(floor(L.needleHalf * T.ratio.needleTipToHalf),
+                            1, L.needleMidHalf)
     L.needleTipThickness = max(T.px(2), L.needleTipHalf * 2)
-    L.needleTipInner = max(L.needleInner,
-                           L.needleBodyOuter - floor(L.needleTipThickness * 0.75))
+    L.needleMidInner = max(L.needleInner,
+                           L.needleBodyOuter - floor(L.needleMidHalf * 2 * 0.75))
+    L.needleTipInner = max(L.needleMidInner,
+                           L.needleMidOuter - floor(L.needleTipThickness * 0.75))
     L.pivotRadius = clamp(floor(L.radius * T.ratio.pivotRadius),
                           T.px(3), T.px(9))
   end

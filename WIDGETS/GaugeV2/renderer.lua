@@ -212,21 +212,28 @@ local function buildNeedle(widget)
   -- frame on a 200x200 zone (AUDIT.md P2-1). LvglWidgetLine::refresh only
   -- rewrites the points: no allocation churn at all.
   --
-  -- The taper lost by P2-1 is restored with a second line (review P-A): the
-  -- body is thick from the hub to ~55% of the reach, the 2-3 px tip overlaps
-  -- the body end and runs to the scale, so the pointer reads as a blade
-  -- pointing outward instead of a blunt constant-width line.
+  -- The taper lost by P2-1 is restored with three lines, not two (review
+  -- P-A, revised Tanda 5 on owner feedback): base -> mid -> tip. Two steps
+  -- (thick body straight to a 2 px tip) read as a paddle with a toothpick
+  -- glued to the end - the width more than halved in one jump. A middle
+  -- segment splits that into two smaller steps, and `rounded = 1` on all
+  -- three softens both the hub end and the two seams so they blend instead
+  -- of showing a hard edge.
   -- Fixed colour, set once here and never touched by applyColors: the
   -- needle must stay legible against every band colour (green/amber/red)
   -- and the dark/light theme alike, so it does not follow the state colour
   -- the way the arc and value do (owner request, Tanda 5 review).
   ui.needle = lvgl.line{
     pts = G.linePoints(L.cx, L.cy, L.needleInner, L.needleBodyOuter, a),
-    thickness = max(1, L.needleHalf * 2), color = T.color.needle,
+    thickness = max(1, L.needleHalf * 2), rounded = 1, color = T.color.needle,
+  }
+  ui.needleMid = lvgl.line{
+    pts = G.linePoints(L.cx, L.cy, L.needleMidInner, L.needleMidOuter, a),
+    thickness = max(1, L.needleMidHalf * 2), rounded = 1, color = T.color.needle,
   }
   ui.needleTip = lvgl.line{
     pts = G.linePoints(L.cx, L.cy, L.needleTipInner, L.needleOuter, a),
-    thickness = L.needleTipThickness, color = T.color.needle,
+    thickness = L.needleTipThickness, rounded = 1, color = T.color.needle,
   }
   -- Solid hub: ONE filled circle in the neutral rail role, created after the
   -- needle so it covers the blade's inner end. The old ring+accent-dot pair
@@ -544,20 +551,23 @@ end
 -- big, opaque shape a needle visibly bisects) gets this extra clearance.
 local function needleReach(widget, a)
   local L, frame = widget.layout, widget.frame
-  local outer, bodyOuter, tipInner =
-    L.needleOuter, L.needleBodyOuter, L.needleTipInner
+  local outer, midOuter, bodyOuter =
+    L.needleOuter, L.needleMidOuter, L.needleBodyOuter
+  local midInner, tipInner = L.needleMidInner, L.needleTipInner
   if frame.chipShown and frame.chipBox then
     local entry = G.rayBoxEntry(L.cx, L.cy, a, frame.chipBox)
     if entry and entry < outer then
       local safe = max(L.needleInner, entry - T.px(2))
       if safe < outer then
         outer = safe
-        bodyOuter = min(bodyOuter, safe)
-        tipInner = min(tipInner, bodyOuter)
+        midOuter = min(midOuter, safe)
+        bodyOuter = min(bodyOuter, midOuter)
+        midInner = min(midInner, midOuter)
+        tipInner = min(tipInner, midOuter)
       end
     end
   end
-  return outer, bodyOuter, tipInner
+  return outer, midOuter, bodyOuter, midInner, tipInner
 end
 
 local function updateArc(widget)
@@ -569,6 +579,7 @@ local function updateArc(widget)
     if frame.needleShown then
       frame.needleShown = false
       if ui.needle then lvgl.hide(ui.needle) end
+      if ui.needleMid then lvgl.hide(ui.needleMid) end
       if ui.needleTip then lvgl.hide(ui.needleTip) end
     end
     return
@@ -584,11 +595,13 @@ local function updateArc(widget)
     frame.needleClampChip = frame.chipShown
     setProp(widget, ui.valueArc, "endAngle", a)
     if ui.needle then
-      local outer, bodyOuter, tipInner = needleReach(widget, a)
-      -- two line segments, both rewritten with the same guarded pts path as
-      -- before: body + tip sweep together, nothing allocates (P2-1)
+      local outer, midOuter, bodyOuter, midInner, tipInner = needleReach(widget, a)
+      -- three line segments, all rewritten with the same guarded pts path
+      -- as before: base + mid + tip sweep together, nothing allocates (P2-1)
       lvgl.set(ui.needle, { pts = G.linePoints(L.cx, L.cy, L.needleInner,
         bodyOuter, a) })
+      lvgl.set(ui.needleMid, { pts = G.linePoints(L.cx, L.cy, midInner,
+        midOuter, a) })
       lvgl.set(ui.needleTip, { pts = G.linePoints(L.cx, L.cy, tipInner,
         outer, a) })
     end
@@ -596,6 +609,7 @@ local function updateArc(widget)
   if not frame.needleShown then
     frame.needleShown = true
     if ui.needle then lvgl.show(ui.needle) end
+    if ui.needleMid then lvgl.show(ui.needleMid) end
     if ui.needleTip then lvgl.show(ui.needleTip) end
   end
 end

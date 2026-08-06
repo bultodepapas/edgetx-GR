@@ -713,20 +713,30 @@ end)
 
 -- ---- designer review repair plan (dev/design-review-response.md) --------
 
-test("P-A: the needle is a tapered two-line blade with a solid hub", function()
+test("P-A: the needle is a tapered three-line blade with a solid hub", function()
   local w = newWidget(nil, { Source = ID_RSSI, Style = "Needle" })
   refresh(w)
-  assertTrue(w.ui.needle ~= nil and w.ui.needleTip ~= nil,
-    "body and tip both built")
+  assertTrue(w.ui.needle ~= nil and w.ui.needleMid ~= nil
+    and w.ui.needleTip ~= nil, "base, mid and tip all built")
   assertEq(w.ui.tail, nil, "the counterweight/tail is gone (P0-1)")
-  assertEq(w.ui.needle.kind, "line", "needle body stays a line (P2-1)")
+  assertEq(w.ui.needle.kind, "line", "needle base stays a line (P2-1)")
+  assertEq(w.ui.needleMid.kind, "line", "needle mid stays a line (P2-1)")
   assertEq(w.ui.needleTip.kind, "line", "needle tip stays a line (P2-1)")
+  assertEq(w.ui.needle.props.rounded, 1, "rounded caps blend the seams")
+  assertEq(w.ui.needleMid.props.rounded, 1, "rounded caps blend the seams")
+  assertEq(w.ui.needleTip.props.rounded, 1, "rounded caps blend the seams")
   local L = w.layout
   assertTrue(L.needleInner < L.needleBodyOuter
-    and L.needleBodyOuter < L.needleOuter,
-    "the body stops short of the scale and the tip carries the rest")
-  assertTrue(w.ui.needle.props.thickness > w.ui.needleTip.props.thickness,
-    "the tip is thinner than the body")
+    and L.needleBodyOuter < L.needleMidOuter
+    and L.needleMidOuter < L.needleOuter,
+    "base, mid and tip divide the reach in order")
+  -- three DECREASING widths, not two (Tanda 5, owner feedback: two steps
+  -- read as a paddle with a toothpick glued to the end)
+  assertTrue(w.ui.needle.props.thickness > w.ui.needleMid.props.thickness,
+    "mid is thinner than the base")
+  assertTrue(w.ui.needleMid.props.thickness > w.ui.needleTip.props.thickness
+    or w.ui.needleMid.props.thickness == w.ui.needleTip.props.thickness,
+    "tip is no thicker than mid (may collapse to equal at micro sizes)")
   assertTrue(w.ui.needleTip.props.thickness >= w.mods.theme.px(2)
     and w.ui.needleTip.props.thickness <= w.mods.theme.px(4),
     "tip thickness in the 2-4 px band")
@@ -755,6 +765,9 @@ test("P-A: the tip sweeps with the body on every angle change", function()
   assertTrue(math.abs(endRadius(w.ui.needleTip) - L.needleOuter) <= 1.5,
     "tip points at the scale at angle " .. tostring(a))
   assertTrue(w.ui.needleTip.visible, "the tip shows with the needle")
+  assertTrue(w.ui.needleMid.visible, "the mid segment shows with the needle")
+  assertTrue(math.abs(endRadius(w.ui.needleMid) - L.needleMidOuter) <= 1.5,
+    "mid segment sweeps to its own radius at angle " .. tostring(a))
 end)
 
 test("P0-2: the value cell clears the hub and the needle at critical angles", function()
@@ -785,6 +798,8 @@ test("P0-2: the value cell clears the hub and the needle at critical angles", fu
   end
   assertTrue(segGap(w.ui.needle.props.pts) >= 2,
     "needle body keeps >= 2 px from the value cell at the critical angle")
+  assertTrue(segGap(w.ui.needleMid.props.pts) >= 2,
+    "needle mid keeps >= 2 px from the value cell at the critical angle")
   assertTrue(segGap(w.ui.needleTip.props.pts) >= 2,
     "needle tip keeps >= 2 px from the value cell at the critical angle")
 end)
@@ -810,6 +825,8 @@ test("P0-4: the needle stops short of the state chip instead of crossing it", fu
   end
   assertTrue(not crossesChip(w.ui.needle.props.pts),
     "needle body stays clear of the chip (Tanda 5 review 3.12)")
+  assertTrue(not crossesChip(w.ui.needleMid.props.pts),
+    "needle mid stays clear of the chip (Tanda 5 review 3.12)")
   assertTrue(not crossesChip(w.ui.needleTip.props.pts),
     "needle tip stays clear of the chip (Tanda 5 review 3.12)")
 end)

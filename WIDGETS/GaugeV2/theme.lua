@@ -95,10 +95,21 @@ M.ratio = {
   trackToRadius   = 0.14,
   railToTrack     = 0.34,
   needleWidth     = 0.06,  -- half-width of the needle base, relative to radius
-  needleBodyReach = 0.55,  -- body end of the two-line needle, as a fraction of
-                           -- its reach: the thick segment stops here and a
-                           -- thin tip carries the last stretch (review P-A)
-  needleTipToHalf = 0.35,  -- tip half-width relative to the body half-width
+  -- Three-part taper (owner request, Tanda 5): two steps (thick body ->
+  -- thin tip, review P-A) read as a paddle with a toothpick glued to the
+  -- end - the width more than halves in one jump with almost no blend.
+  -- A middle segment splits that single big step into two smaller ones.
+  needleBodyReach = 0.38,  -- base ends here (fraction of the inner->outer
+                           -- reach) - shorter than before, closest to the
+                           -- hub, to leave room for the mid segment
+  needleMidReach  = 0.72,  -- mid ends here; the tip carries the rest
+  -- 0.62 looked right on paper but `floor(needleHalf * ratio)` collapses
+  -- mid onto the tip's width at the canonical 200x160 base (needleHalf=3:
+  -- floor(3*0.62)=1, same as the tip) - the 3rd step silently disappeared
+  -- at the most common size. 0.7 clears that floor (floor(3*0.7)=2).
+  needleMidToHalf = 0.7,   -- mid half-width relative to the BASE half-width
+  needleTipToHalf = 0.35,  -- tip half-width relative to the base half-width
+                           -- (unchanged - already the minimum legible 2 px)
   pivotRadius     = 0.09,
 }
 
