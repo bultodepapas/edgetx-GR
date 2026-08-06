@@ -1946,5 +1946,133 @@ test("F-5: accent reaches the Sections bands and bar threshold marks", function(
   assertEq(normalMark.props.color, RED, "the normal mark follows accent")
 end)
 
+test("F-7: a brownout re-arms the startup delay", function()
+  -- armedAt is set once and only cleared by alerts.reset(), which runs on a
+  -- source change - a brownout leaves it in the past, so the first frame
+  -- after reconnect alerts immediately, exactly the power-on-nonsense the
+  -- startup delay exists for (Tanda 6 F-7).
+  local w = newWidget(nil, { Source = ID_RSSI, Alerts = "Critical", Delay = 2 })
+  mock.setValue(ID_RSSI, 10)          -- critical
+  refresh(w, 1)                       -- armedAt := now + 2 s
+  mock.advance(3000)                  -- past the startup delay
+  refresh(w, 1)
+  local fired = #mock.sim.tones
+  assertTrue(fired > 0, "critical alerts after the initial delay")
+
+  -- brownout: link lost while critical, then restored
+  mock.setValue(ID_RSSI, nil)
+  mock.sim.rssi = 0
+  refresh(w, 4)
+  assertEq(#mock.sim.tones, fired, "no tones while the link is down")
+  mock.sim.rssi = 100
+  mock.setValue(ID_RSSI, 10)          -- critical immediately on reconnect
+  refresh(w, 1)
+  assertEq(#mock.sim.tones, fired,
+    "no tone on the first frame after a brownout - the delay re-arms")
+
+  -- and the delay is honoured again from the reconnect
+  refresh(w, 3)                       -- 150 ms: still inside the 2 s delay
+  assertEq(#mock.sim.tones, fired, "still quiet inside the re-armed delay")
+  mock.advance(3000)
+  refresh(w, 1)
+  assertTrue(#mock.sim.tones > fired,
+    "alerts resume once the re-armed delay elapses")
+end)
+
+test("F-8: the peak-hold ghost is independent of the markers option", function()
+  -- The dial's updateHistory early-returned on ui.minMark, so with
+  -- Min/max = Off the ghost existed but could never show; the bar had no
+  -- such coupling. The firmware idiom (C.3): always created, visibility
+  -- driven by DATA (history), never by the markers option. Dial and bar
+  -- must agree across every ShowMinMax value (Tanda 6 F-8).
+  local modes = { "Off", "Markers", "Markers + text" }
+  for _, m in ipairs(modes) do
+    local wd = newWidget({ x = 0, y = 0, w = 200, h = 200 },
+      { Source = ID_RSSI, ShowMinMax = m })
+    mock.setValue(ID_RSSI_MIN, 31)
+    mock.setValue(ID_RSSI_MAX, 92)
+    refresh(wd, 2)
+    assertTrue(wd.ui.ghost ~= nil, "dial ghost built with ShowMinMax=" .. m)
+    if m == "Off" then
+      assertEq(wd.ui.minMark, nil, "dial builds no markers when Off")
+    else
+      assertTrue(wd.ui.minMark ~= nil, "dial builds markers when " .. m)
+    end
+    assertEq(wd.ui.ghost.visible, true,
+      "dial ghost shows with history, ShowMinMax=" .. m)
+    assertTrue(wd.ui.ghost.props.endAngle > wd.layout.startAngle,
+      "dial ghost sweeps a real tract, ShowMinMax=" .. m)
+
+    local wb = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+      { Source = ID_RSSI, Style = "Bar", ShowMinMax = m })
+    mock.setValue(ID_RSSI_MIN, 31)
+    mock.setValue(ID_RSSI_MAX, 92)
+    refresh(wb, 2)
+    assertTrue(wb.ui.ghost ~= nil, "bar ghost built with ShowMinMax=" .. m)
+    assertEq(wb.ui.ghost.visible, true,
+      "bar ghost shows with history, ShowMinMax=" .. m)
+  end
+end)
+
+test("F-9: a source that appears after boot resolves without update()", function()
+  -- s.resolved latched TRUE before getFieldInfo was even attempted, so a
+  -- sensor that appears after boot (the normal case - telemetry arrives
+  -- seconds after the widget) was lost forever: name, unit, precision,
+  -- preset, the -/+ siblings, and the NO LINK vs NO DATA distinction
+  -- (Tanda 6 F-9). An unresolved source must be re-resolved - throttled -
+  -- from refresh() until it appears.
+  setupRadio()
+  local mod = dofile(widgetDir .. "main.lua")
+  local SRC = 3300                     -- a telemetry slot not yet discovered
+  local zone = { x = 0, y = 0, w = 200, h = 160 }
+  local opts = mock.makeOptions(mod.defs, { Source = SRC })
+  local w = mod.create(zone, opts, widgetDir)
+  mod.update(w, opts)
+  assertEq(w.source.resolved, false, "absent at boot: unresolved, retrying")
+  assertEq(w.source.name, "", "no name yet")
+
+  -- frames 1..9 (1 s each, past the 1 s retry interval): still absent,
+  -- each frame genuinely ATTEMPTS a re-resolution and stays unresolved
+  for i = 1, 9 do
+    mock.advance(1000)
+    mod.refresh(w)
+    assertEq(w.source.resolved, false, "still unresolved at frame " .. i)
+    assertEq(w.source.retries, i + 1,
+      "frame " .. i .. " made one throttled retry attempt")
+  end
+
+  -- frame 10: the sensor is discovered
+  mock.addField(SRC, "Curr", 1)
+  mock.sim.sensors[9] = { name = "Curr", prec = 2, unit = 1 }
+  mock.setValue(SRC, 16.4)
+  mock.advance(1000)
+  mod.refresh(w)                       -- no update() anywhere in this phase
+  assertEq(w.source.name, "Curr", "name populated by refresh alone")
+  assertEq(w.source.unitName, "V", "unit populated by refresh alone")
+  assertEq(w.source.sensorIndex, 9, "sensor index resolved by refresh alone")
+  assertEq(w.source.resolved, true, "resolution latches once the sensor lands")
+  assertEq(w.source.retries, nil, "retry state cleared on success")
+
+  -- the throttle: a refresh inside the retry interval does NOT rescan
+  local SRC2 = 3301
+  local opts2 = mock.makeOptions(mod.defs, { Source = SRC2 })
+  local w2 = mod.create(zone, opts2, widgetDir)
+  mod.update(w2, opts2)
+  assertEq(w2.source.resolved, false, "second widget also starts unresolved")
+  mock.advance(1000)                    -- past the interval: one attempt
+  mod.refresh(w2)                       -- still absent -> retryAt := now
+  assertEq(w2.source.resolved, false, "still absent, retrying")
+  mock.addField(SRC2, "Curr", 1)        -- sensor appears now...
+  mock.sim.sensors[9] = { name = "Curr", prec = 2, unit = 1 }
+  mock.setValue(SRC2, 16.4)
+  mock.advance(500)                     -- ...but only 50 ticks since the last try
+  mod.refresh(w2)
+  assertEq(w2.source.resolved, false,
+    "throttled: no rescan before the retry interval elapses")
+  mock.advance(1000)                    -- past the retry interval
+  mod.refresh(w2)
+  assertEq(w2.source.resolved, true, "resolved once the interval elapses")
+end)
+
 print(string.format("-- %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

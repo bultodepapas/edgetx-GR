@@ -164,11 +164,12 @@ end
 local function updateHistory(widget)
   local ui, L, frame = widget.ui, widget.layout, widget.frame
   local h = widget.history
-  if h.max == nil then return end
-  if ui.ghost then
+  if ui.ghost and h.min and h.max then
     -- peak-hold marker: the extreme of the SWEEP, which is h.min on a
     -- descending scale (Min > Max) - h.max maps back onto the start there
-    -- and the ghost marked the tract never visited (Tanda 6 F-3)
+    -- and the ghost marked the tract never visited (Tanda 6 F-3). Both
+    -- bounds are required: readHistorySiblings can populate one alone, and
+    -- the descending peak picks either one (Tanda 6 F-8 hardens the guard).
     local peak = (widget.config.max >= widget.config.min) and h.max or h.min
     local x = markX(widget, peak)
     if x ~= frame.ghostX then

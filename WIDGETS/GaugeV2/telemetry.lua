@@ -38,6 +38,14 @@ local UNIT_NAMES = {
 M.CELLS_LOWEST, M.CELLS_TOTAL, M.CELLS_AVERAGE = 1, 2, 3
 M.BATTERY_OFF, M.BATTERY_LIPO, M.BATTERY_LIION = 1, 2, 3
 
+-- F-9 retry policy: a telemetry source that is ABSENT at boot (the sensor
+-- not yet discovered - the normal case, telemetry arrives seconds after the
+-- widget) is re-resolved from refresh() at most once per second, for at most
+-- 30 attempts. Beyond that the source is treated as resolved-absent: a
+-- genuinely missing source must not rescan the 60-sensor table forever.
+local RESOLVE_RETRY_TICKS = 100     -- 1 s (getTime() counts 10 ms ticks)
+local MAX_RESOLVE_RETRIES = 30
+
 function M.unitName(unit)
   return UNIT_NAMES[unit] or ""
 end
@@ -115,7 +123,12 @@ local function findSensor(widget, name)
   return nil, nil
 end
 
--- Resolve and cache source metadata. Only does work when the source changed.
+-- Resolve and cache source metadata. Only does work when the source changed
+-- OR the previous resolution is still pending (F-9). A telemetry sensor
+-- that is absent at boot is the normal state - refresh() re-enters this
+-- throttled until getFieldInfo() answers, so name/unit/precision/preset,
+-- the -/+ siblings and the NO LINK vs NO DATA distinction all appear with
+-- the sensor, not before it.
 function M.resolveSource(widget)
   local id = (widget.config and widget.config.source) or 0
   local s = widget.source
@@ -131,7 +144,7 @@ function M.resolveSource(widget)
   s.minId = nil
   s.maxId = nil
   s.cells = nil
-  s.resolved = true
+  s.resolved = false
   if id and id > 0 then
     local info = getFieldInfo(id)
     if info then
@@ -151,7 +164,18 @@ function M.resolveSource(widget)
         s.minId = lo and lo.id or nil
         s.maxId = hi and hi.id or nil
       end
+      s.resolved = true
+      s.retries = nil
+      s.retryAt = nil
+    else
+      -- Not resolved yet: retry on later refreshes, but bounded so a
+      -- genuinely absent source does not rescan forever (Tanda 6 F-9).
+      s.retries = (s.retries or 0) + 1
+      s.resolved = (s.retries >= MAX_RESOLVE_RETRIES)
     end
+  else
+    -- "no source" is a resolved state
+    s.resolved = true
   end
   return s
 end
@@ -262,6 +286,18 @@ function M.refresh(widget)
     data.state = nil
     data.fresh = false
     return
+  end
+
+  -- F-9: a source that was absent at boot is still unresolved - keep
+  -- re-resolving it, throttled, until getFieldInfo() answers. The old
+  -- unconditional resolved=true latch lost the sensor forever (name, unit,
+  -- precision, preset, siblings, NO LINK vs NO DATA).
+  if not src.resolved then
+    local now = getTime()
+    if now - (src.retryAt or 0) >= RESOLVE_RETRY_TICKS then
+      src.retryAt = now
+      src = M.resolveSource(widget)
+    end
   end
 
   local value, current, fresh = getSourceValue(src.id)

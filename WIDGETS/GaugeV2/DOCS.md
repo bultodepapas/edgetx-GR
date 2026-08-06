@@ -211,7 +211,9 @@ sources without those siblings (sticks, channels, gvars) the widget tracks
 them itself. Either way the history drives:
 
 - two marker lines on the dial (hidden until data exists),
-- a **peak-hold ghost** arc segment,
+- a **peak-hold ghost** arc segment — deliberately INDEPENDENT of the
+  Min/max option (Tanda 6 F-8): always created, visibility driven by the
+  history data alone, so the dial and the bar share one ghost semantic,
 - an optional `min … max` text row in large zones,
 - and is cleared by a source change, a range change or the Reset switch.
 
@@ -328,7 +330,7 @@ Dial object tree (large mode, worst case ≈ 30 objects; the tests assert ≤ 40
 | Rail arcs (warning, critical) | 2 | Colours = Rail |
 | Major tick lines | 3 / 5 / 7 | always |
 | Minor tick lines | 6 | large mode |
-| Peak-hold ghost arc | 1 | ≥ compact |
+| Peak-hold ghost arc | 1 | always (hidden until history exists; NOT gated on the Min/max option — Tanda 6 F-8) |
 | Value arc | 1 | always |
 | Needle + counterweight triangles | 2 | needle shown |
 | Pivot ring + dot circles | 2 | needle shown |

@@ -71,7 +71,12 @@ function M.update(widget)
 
   local data = widget.data
   if data.availability ~= "valid" or data.state == nil then
-    a.state = nil          -- re-arm once data comes back
+    a.state = nil
+    -- Re-arm the STARTUP DELAY too, not just the transition: a brownout is
+    -- precisely the "model powering up reports nonsense" case the delay
+    -- exists for (Tanda 6 F-7). Leaving armedAt in the past made the first
+    -- frame after reconnect alert immediately.
+    a.armedAt = nil
     return
   end
 

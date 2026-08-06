@@ -637,6 +637,24 @@ end
 local function updateHistory(widget)
   local ui, L, frame = widget.ui, widget.layout, widget.frame
   local h = widget.history
+
+  -- peak-hold ghost: INDEPENDENT of the markers option (firmware idiom
+  -- C.3 - always created, visibility driven by DATA). The dial used to
+  -- early-return on ui.minMark, so with Min/max = Off the ghost existed
+  -- but could never show, while the bar's ghost worked (Tanda 6 F-8).
+  -- Both h.min and h.max are required: readHistorySiblings can populate
+  -- them independently, and the descending-scale peak picks either one.
+  if ui.ghost and h.min and h.max then
+    local peak = (widget.config.max >= widget.config.min) and h.max or h.min
+    local ga = angleOf(widget, peak)
+    if ga ~= frame.ghostAngle then
+      frame.ghostAngle = ga
+      setProp(widget, ui.ghost, "endAngle", ga)
+      setProp(widget, ui.ghost, "bgEndAngle", ga)
+      lvgl.show(ui.ghost)
+    end
+  end
+
   if not ui.minMark then return end
 
   local shown = (h.min ~= nil and h.max ~= nil)
@@ -663,21 +681,6 @@ local function updateHistory(widget)
   if a ~= frame.maxAngle then
     frame.maxAngle = a
     lvgl.set(ui.maxMark, { pts = G.linePoints(L.cx, L.cy, inner, outer, a) })
-  end
-
-  -- peak-hold ghost: from the start of the scale to the extreme value seen.
-  -- The extreme is h.max on an ascending scale but h.MIN on a descending
-  -- one (Min > Max): there the highest value maps back onto startAngle, so
-  -- sweeping to it painted the tract never visited (Tanda 6 F-3).
-  if ui.ghost then
-    local peak = (widget.config.max >= widget.config.min) and h.max or h.min
-    local ga = angleOf(widget, peak)
-    if ga ~= frame.ghostAngle then
-      frame.ghostAngle = ga
-      setProp(widget, ui.ghost, "endAngle", ga)
-      setProp(widget, ui.ghost, "bgEndAngle", ga)
-      lvgl.show(ui.ghost)
-    end
   end
 end
 

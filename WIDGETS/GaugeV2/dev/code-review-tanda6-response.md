@@ -1256,3 +1256,33 @@ strings through `measureWidth` → cache byte-identical, result equals
 | collide | clean |
 | luacheck | 4 warnings / 0 errors (widget), 0/0 on the new probe |
 | instruction probe | worst callback unchanged (55 fires, rebuild path); moving-refresh +1 fire (200 instr) on 2 of 6 scenes — the sizeText call's measured cost |
+
+## E.4 Phase 4 execution log (2026-08-06) — F-7, F-8, F-9
+
+Tests written red first, all three failing for exactly the stated reason
+(smoke: `no tone on the first frame after a brownout: expected 2, got 4`;
+`dial ghost shows with history, ShowMinMax=Off: expected true, got false`;
+`absent at boot: unresolved, retrying: expected false, got true`).
+
+| Fix | Change |
+|---|---|
+| 4.1 F-7 | `alerts.lua`: the invalid-data guard now clears `a.armedAt` too — a brownout re-arms the startup delay instead of alerting on the first frame after reconnect |
+| 4.2 F-8 | `renderer.lua` `updateHistory`: the ghost block moved ABOVE the markers' early return and guards on `h.min and h.max` — visibility driven by data, not the option. `bar.lua`: same guard hardened (the Phase-2 descending `peak = h.min` could hit nil on a partially-populated sibling history) |
+| 4.3 F-9 | `telemetry.lua`: `s.resolved` no longer latches before `getFieldInfo`; unresolved sources are re-resolved from `refresh()` throttled to 1 attempt/s (`RESOLVE_RETRY_TICKS = 100`) for at most 30 attempts (`MAX_RESOLVE_RETRIES`), after which the source is treated as resolved-absent |
+
+Tests added: F-7 (brownout → 0 tones on reconnect, delay honoured again),
+F-8 (table-driven dial + bar across Off / Markers / Markers+text), F-9
+(appears at frame 10, resolved by refresh alone with retry cadence pinned
+`retries == i + 1`; plus a throttle sub-test: a refresh inside the retry
+interval does not rescan). One harness trap found and fixed in the F-9 test:
+`mock.advance(ms)` adds `floor(ms/10)` TICKS, so the test advances in
+seconds (1000 ms = 100 ticks), not in the wrong-scaled milliseconds.
+
+| Gate | Result |
+|---|---|
+| run_tests / smoke_test | **40/40 · 109/109** — all green, including every Phase 0 red and both standing guards |
+| gallery manifest | exactly the three named scenes: `ba-pct-low`, `sc-descending` (Phase 2) and **`op-mm-off` gains the ghost** (objects.arc 4→5, total 27→28 — the review's named F-8 scene); nothing else |
+| collide | clean |
+| luacheck | 4 warnings / 0 errors (widget, unchanged); no new test warnings |
+| instruction probe | worst callback unchanged (55 fires) — the F-9 retry gate costs one `getTime` compare only while a source is unresolved (all probe scenes resolve immediately) |
+| DOCS.md | §4.7 and §5.4 updated: the ghost is explicitly independent of the Min/max option, one semantic shared by dial and bar |
