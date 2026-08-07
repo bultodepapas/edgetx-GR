@@ -354,8 +354,6 @@ function M.refresh(widget)
     end
     local percent = widget.mods.presets.percentFromCell(perCell, chem)
     if percent then
-      data.raw = value
-      data.perCell = perCell
       value = percent
     end
   end
@@ -380,7 +378,6 @@ end
 function M.resetHistory(widget)
   widget.history.min = nil
   widget.history.max = nil
-  widget.history.fromSensor = (widget.source.minId ~= nil)
 end
 
 return M

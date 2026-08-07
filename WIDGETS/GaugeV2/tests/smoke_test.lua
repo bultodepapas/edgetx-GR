@@ -2160,9 +2160,12 @@ test("F-11: the needle reuses its lvgl.set wrapper tables", function()
   local realSet = mock.lvgl.set
   local seen = {}
   mock.lvgl.set = function(obj, params)
-    if obj == w.ui.needle then seen.body = seen.body or {}; seen.body[#seen.body + 1] = params
-    elseif obj == w.ui.needleMid then seen.mid = seen.mid or {}; seen.mid[#seen.mid + 1] = params
-    elseif obj == w.ui.needleTip then seen.tip = seen.tip or {}; seen.tip[#seen.tip + 1] = params
+    if obj == w.ui.needle then
+      seen.body = seen.body or {}; seen.body[#seen.body + 1] = params
+    elseif obj == w.ui.needleMid then
+      seen.mid = seen.mid or {}; seen.mid[#seen.mid + 1] = params
+    elseif obj == w.ui.needleTip then
+      seen.tip = seen.tip or {}; seen.tip[#seen.tip + 1] = params
     end
     return realSet(obj, params)
   end
@@ -2185,5 +2188,40 @@ test("F-11: the needle reuses its lvgl.set wrapper tables", function()
     "the wrapper points at the persistent buffer")
 end)
 
+test("F-12: switching to Manual clears the auto-cell latch", function()
+  -- autoCells is auto-branch state; the old code only wrote it inside the
+  -- auto branch, so Auto -> Manual left a stale latch - the preset's
+  -- battery flag - lying around (Tanda 6 F-12). CHOICE options are stored
+  -- as 1-BASED INTEGERS (the wire format): "Manual" = 2, "Li-Po" = 2.
+  local w = newWidget(nil, { Source = ID_CELLS, Scale = "Auto" })
+  assertEq(w.autoCells, true, "Auto + Cels latches the preset battery flag")
+  w.app.update(w, withOption(w.options, "Scale", 2))
+  assertEq(w.autoCells, false, "Manual clears the stale latch")
+  w.app.update(w, withOption(w.options, "Battery", 2))
+  assertEq(w.autoCells, false, "Battery mode keeps it clear")
+end)
+
+test("F-15: the bar delegates to the shared renderer helpers", function()
+  -- Tanda 6 6.2: resolveColor, updatePulse and updateSourceLabels live in
+  -- renderer.lua; bar.lua keeps only what genuinely differs (build,
+  -- updateFill, updateHistory, the marks). One implementation per concept -
+  -- a coherence pin, so the bar can never drift back into a private copy.
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_RSSI, Style = "Bar" })
+  local R, B, T = w.mods.renderer, w.mods.bar, w.mods.theme
+  assertTrue(B.updateSourceLabels == R.updateSourceLabels,
+    "updateSourceLabels is the shared function, not a bar copy")
+  assertEq(R.resolveColor(w, "critical"), T.color.crit,
+    "resolveColor maps the critical key to the theme role")
+  assertEq(R.resolveColor(w, "warning"), T.color.warn)
+  assertEq(R.resolveColor(w, "static"), w.accent or T.color.accent,
+    "Static mode resolves the accent")
+  -- and the bar's colour path is the shared resolver: a critical bar uses
+  -- the same colour the dial would
+  mock.setValue(ID_RSSI, 10)
+  refresh(w, 2)
+  assertEq(w.ui.fill.props.color, R.resolveColor(w, "critical"),
+    "the bar fill colour came from the shared resolver")
+end)
 print(string.format("-- %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

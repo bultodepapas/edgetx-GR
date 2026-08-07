@@ -19,6 +19,10 @@ local T, G, F, R  -- theme, geometry, format, renderer (shared helpers)
 
 function M.setup(theme, geometry, format, renderer)
   T, G, F, R = theme, geometry, format, renderer
+  -- Source-edit text path: shared with the dial (Tanda 6 F-15). The bar has
+  -- no scale labels, so the shared helper's guarded fields no-op here. The
+  -- alias is assigned HERE - R is nil until setup runs.
+  M.updateSourceLabels = R.updateSourceLabels
 end
 
 local function markX(widget, value)
@@ -133,14 +137,6 @@ function M.build(widget)
   ui.built = true
 end
 
-function M.updateSourceLabels(widget)
-  local ui = widget.ui
-  R.setProp(widget, ui.unitLabel, "text", widget.unitText or "")
-  R.setProp(widget, ui.nameLabel, "text", widget.nameText or "")
-  -- runs from app.update(), outside the refresh frame: flush now (P0-6)
-  R.flush(widget)
-end
-
 local function updateFill(widget)
   local ui, L, frame = widget.ui, widget.layout, widget.frame
   local data = widget.data
@@ -192,26 +188,8 @@ end
 
 -- Critical state pulses the fill at ~1 Hz, exactly as the dial pulses its
 -- arc, so a bar communicates severity the same way a dial does
--- (AUDIT.md P1-10). Same P1-1 rule on exit: restore the opacity the NEW key
--- calls for, so losing the link mid-pulse leaves the bar dimmed, not at full.
-local function updatePulse(widget, key)
-  local ui, frame = widget.ui, widget.frame
-  if key ~= "critical" then
-    if frame.pulse then
-      frame.pulse = false
-      R.setProp(widget, ui.fill, "opacity",
-                (key == "muted") and T.opacity.muted or T.opacity.full)
-    end
-    return
-  end
-  local now = getTime()
-  if now - frame.pulseAt >= 50 then  -- 50 * 10 ms
-    frame.pulseAt = now
-    frame.pulse = not frame.pulse
-    R.setProp(widget, ui.fill, "opacity",
-              frame.pulse and T.opacity.pulse or T.opacity.full)
-  end
-end
+-- (AUDIT.md P1-10). Shared helper (Tanda 6 F-15): the dial pulses
+-- ui.valueArc, the bar pulses ui.fill.
 
 function M.update(widget)
   local ui, frame = widget.ui, widget.frame
@@ -222,11 +200,7 @@ function M.update(widget)
   if key ~= frame.colorKey or widget.accent ~= frame.accentKey then
     frame.colorKey = key
     frame.accentKey = widget.accent
-    local c = (key == "static") and (widget.accent or T.color.accent)
-      or T.stateColor(key, widget.accent)
-    if string.sub(key, 1, 4) == "grad" then
-      c = T.gradientColor((tonumber(string.sub(key, 5)) or 0) / 20)
-    end
+    local c = R.resolveColor(widget, key)
     R.setProp(widget, ui.fill, "color", c)
     R.setProp(widget, ui.fill, "opacity",
               (key == "muted") and T.opacity.muted or T.opacity.full)
@@ -264,7 +238,7 @@ function M.update(widget)
 
   updateFill(widget)
   updateHistory(widget)
-  updatePulse(widget, key)
+  R.updatePulse(widget, key, ui.fill)
 
   R.flush(widget)
   frame.prevAvail = widget.data.availability

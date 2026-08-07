@@ -1457,3 +1457,48 @@ fires), the controls are unchanged, and the visual baseline is pixel-identical
 per-frame in steady flight): the `frame.chipBox` table per chip show (the
 5.1 persistent-table pattern applies directly), and the marker `pts`/wrapper
 allocation while history advances (same pattern).
+
+## E.8 Phase 6 execution log (2026-08-06) — coherence and documentation
+
+- **6.1 (F-14)**: measured first (`dev/boot_cost.lua`): loading options.lua
+  costs ~1 KB and < 200 instructions — tiny, but paid once PER WIDGET at
+  boot (main.lua runs for every widget on the card); the two builders were
+  verified byte-identical today (inline=24, build=24, differences 0).
+  Deleted `options.build/translator/present` and their tests — ONE builder
+  (the inline one) remains, so F-14's drift risk is structurally gone.
+  main.lua's duplication is annotated as deliberate.
+- **6.2 (F-15)**: `resolveColor` (exported), `updatePulse(widget, key, obj)`
+  (the dial pulses `ui.valueArc`, the bar `ui.fill`), and
+  `updateSourceLabels` (already guarded per-field) now live only in
+  renderer.lua; bar.lua delegates. The alias is assigned in `setup()` — the
+  first attempt at load time hit nil `R` (caught by the suite immediately).
+  New coherence test pins the alias identity, the resolver's mappings, and
+  that the bar fill colour comes from the shared resolver.
+- **6.3**: F-12 — `autoCells` now defaults FALSE in `configure` (only the
+  auto branch may set it true); new test covers Auto→Manual and
+  Auto→Battery. F-13 — deleted `geometry.trianglePoints` (+ its test),
+  the `history.fromSensor` write, and the `data.raw`/`data.perCell` writes;
+  renamed `event`/`touch` → `_event`/`_touch`; removed the unused `cfg`
+  local in `renderer.build`. The `options.present` `defs` warning vanished
+  with the symbol.
+- **6.4 (F-16)**: new `dev/census.lua` renders the worst-case 200×200 scene
+  (needle, Sections, 270°, markers+text, CRIT state) and prints the
+  per-kind census: **35 objects = arc 6, circle 1, label 8, line 18,
+  rectangle 2** — reproduced F-16's quoted numbers exactly. DOCS §5.4's
+  table was rewritten as the probe's rows: the three wrong rows were the
+  needle (2 triangles → 3 lines), the pivot (ring+dot → 1 hub circle), and
+  "track OR sections" (Sections ADDS 3 bands to the track); the "≈ 30
+  objects" claim is now "35, reproducible". DOCS §6.3 retitled (triangle →
+  tapered needle, lines not triangles, P2-1 rationale).
+- **6.5 (§C.6)**: DOCS §5.9's callback-form note now names `pts`/colour/
+  `text`, the unconditional per-frame `callRefs`, and the instruction-budget
+  reason, with an explicit "do not modernise" warning.
+- DOCS §6.1 documents the single-builder invariant.
+
+| Gate | Result |
+|---|---|
+| run_tests / smoke_test | **38/38 · 115/115** (F-12 + F-15 tests added, 3 symbol tests removed with their symbols) |
+| luacheck | **0 warnings / 0 errors** in the 14 widget sources (was 4) — the acceptance's ≤3 is exceeded; 0/0 on the probes |
+| gallery | unchanged: the same 3 named scenes (ba-pct-low, op-mm-off, sc-descending) — every Phase 6 change is behavior-neutral on the sheet |
+| collide | clean |
+| census | reproduces the DOCS §5.4 numbers exactly (acceptance: counts reproducible from the probe) |

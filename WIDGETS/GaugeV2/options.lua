@@ -51,39 +51,12 @@ function M.capacity()
   return M.CORE_CAPACITY
 end
 
--- Firmware option declaration array from the declarative definitions.
--- Definitions whose `since` exceeds the capacity are dropped, so a 2.11 radio
--- sees exactly the core set instead of a truncated tail.
-function M.build(defs, capacity)
-  capacity = capacity or M.capacity()
-  local out = {}
-  for i = 1, #defs do
-    local d = defs[i]
-    local needs = (d.since == 212) and M.EXTENDED_CAPACITY or M.CORE_CAPACITY
-    if needs <= capacity and #out < capacity then
-      local entry
-      if d.type == CHOICE then
-        entry = { d.key, d.type, d.default, d.choices }
-      elseif d.type == VALUE or d.type == SLIDER then
-        entry = { d.key, d.type, d.default, d.min, d.max }
-      else
-        entry = { d.key, d.type, d.default }
-      end
-      out[#out + 1] = entry
-    end
-  end
-  return out
-end
-
--- translate(name) for the settings dialog. Labels may be indented with two
--- spaces to read as a child of the option above (ePowerbar convention).
-function M.translator(defs)
-  local labels = {}
-  for i = 1, #defs do
-    labels[defs[i].key] = defs[i].label
-  end
-  return function(name) return labels[name] end
-end
+-- NOTE (Tanda 6 F-14 / 6.1): the option-declaration builder and the label
+-- translator are NOT here. They live inline in main.lua - which runs at boot
+-- for every widget on the card, used or not - so boot costs exactly one file
+-- read per widget. This module's versions were deleted in Tanda 6 after
+-- verifying both builders byte-identical (dev/boot_cost.lua: inline=24,
+-- build=24, differences 0): ONE builder remains, so the two can never drift.
 
 -- ------------------------------------------------------------- conversion --
 
@@ -135,13 +108,6 @@ function M.parse(defs, raw)
     end
   end
   return cfg
-end
-
--- True when the option was actually delivered by this firmware (i.e. it is
--- within capacity). Consumers use it to keep 2.11 behaviour identical.
-function M.present(defs, raw, key)
-  if raw == nil then return false end
-  return raw[key] ~= nil
 end
 
 return M

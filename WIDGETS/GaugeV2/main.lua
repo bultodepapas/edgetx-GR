@@ -103,7 +103,12 @@ local DEFS = {
 }
 
 -- Firmware option array. Built inline (rather than in options.lua) so boot
--- costs exactly one file read per widget; options.lua owns everything else.
+-- costs exactly one file read per widget - main.lua runs at startup for
+-- every widget on the card, used or not. DELIBERATE duplication (Tanda 6
+-- F-14/6.1): options.lua's builder and translator were deleted after
+-- verifying both byte-identical (dev/boot_cost.lua), so this inline build
+-- is the ONLY builder - the two can never drift. options.lua owns the rest
+-- (capacity, parse) and loads once per radio on first use (P2-3 cache).
 local CORE, EXTENDED = 10, 50
 local capacity = CORE
 if type(getVersion) == "function" then

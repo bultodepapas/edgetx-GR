@@ -108,6 +108,11 @@ local function configure(widget)
   local highGood = cfg.highGood
   local precision = cfg.precision
 
+  -- F-12: autoCells is auto-branch state and must default FALSE - the old
+  -- code only wrote it inside the auto branch, so switching Auto -> Manual
+  -- (or -> Battery) left a stale latch lying around (Tanda 6 F-12).
+  widget.autoCells = false
+
   if cfg.battery ~= BATTERY_OFF then
     -- state of charge: the scale is always a percentage
     minimum, maximum, warning, critical, highGood = 0, 100, 30, 15, true
@@ -270,7 +275,7 @@ local function checkResetSwitch(widget)
   widget.resetArmed = active
 end
 
-function M.refresh(widget, event, touch)
+function M.refresh(widget, _event, _touch)
   if not widget.mods or not widget.ui.built then return end
   local m = widget.mods
   checkResetSwitch(widget)

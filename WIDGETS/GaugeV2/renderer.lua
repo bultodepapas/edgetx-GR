@@ -282,7 +282,7 @@ end
 M.label = label
 
 function M.build(widget)
-  local L, ui, cfg = widget.layout, widget.ui, widget.config
+  local L, ui = widget.layout, widget.ui
 
   buildTrack(widget)
   buildTicks(widget)
@@ -415,6 +415,9 @@ function M.colorKey(widget)
   return data.state or "normal"
 end
 
+-- The colour for a semantic key: accent in Static mode, the gradient ramp
+-- for gradN, the theme role otherwise. Shared with the bar (Tanda 6 F-15:
+-- bar.lua used to carry its own copy of this).
 local function resolveColor(widget, key)
   if key == "static" then return widget.accent or T.color.accent end
   if string.sub(key, 1, 4) == "grad" then
@@ -423,6 +426,7 @@ local function resolveColor(widget, key)
   end
   return T.stateColor(key, widget.accent)
 end
+M.resolveColor = resolveColor
 
 local function applyColors(widget, key)
   local ui = widget.ui
@@ -712,8 +716,10 @@ end
 
 -- Critical state pulses at ~1 Hz: attention without colour, so it survives
 -- greyscale and colour-blind viewing. Two property writes per second.
-local function updatePulse(widget, key)
-  local ui, frame = widget.ui, widget.frame
+-- Shared with the bar (Tanda 6 F-15): `obj` is the pulse target - the value
+-- arc for the dial, the fill for the bar.
+function M.updatePulse(widget, key, obj)
+  local frame = widget.frame
   if key ~= "critical" then
     if frame.pulse then
       frame.pulse = false
@@ -721,7 +727,7 @@ local function updatePulse(widget, key)
       -- the link while the pulse is in its trough must leave the gauge dim
       -- (muted 120), not stuck at 255 until the next colour change
       -- (AUDIT.md P1-1).
-      setProp(widget, ui.valueArc, "opacity",
+      setProp(widget, obj, "opacity",
               (key == "muted") and T.opacity.muted or T.opacity.full)
     end
     return
@@ -730,7 +736,7 @@ local function updatePulse(widget, key)
   if now - frame.pulseAt >= 50 then  -- 50 * 10 ms
     frame.pulseAt = now
     frame.pulse = not frame.pulse
-    setProp(widget, ui.valueArc, "opacity",
+    setProp(widget, obj, "opacity",
             frame.pulse and T.opacity.pulse or T.opacity.full)
   end
 end
@@ -773,7 +779,7 @@ function M.update(widget)
   updateText(widget)
   updateArc(widget)
   updateHistory(widget)
-  updatePulse(widget, key)
+  M.updatePulse(widget, key, ui.valueArc)
 
   M.flush(widget)
   frame.prevAvail = widget.data.availability

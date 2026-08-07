@@ -322,25 +322,28 @@ calls it (`widgets.cpp` reads exactly those keys).
 actually changed, guarded by a per-object cache, and writes through a single
 reused table so `refresh()` allocates nothing.
 
-Dial object tree (large mode, worst case ≈ 30 objects; the tests assert ≤ 40):
+Dial object tree (worst case at 200×200 — needle, Sections, scale labels,
+markers+text, chip shown): **35 visible objects**; the tests assert ≤ 40.
+The counts are reproducible: `lua5.3 dev/census.lua ./`.
 
-| Object | Count | Created when |
-|---|---|---|
-| Track arc (or 3 section arcs) | 1 (3) | always |
-| Rail arcs (warning, critical) | 2 | Colours = Rail |
-| Major tick lines | 3 / 5 / 7 | always |
-| Minor tick lines | 6 | large mode |
-| Peak-hold ghost arc | 1 | always (hidden until history exists; NOT gated on the Min/max option — Tanda 6 F-8) |
-| Value arc | 1 | always |
-| Needle + counterweight triangles | 2 | needle shown |
-| Pivot ring + dot circles | 2 | needle shown |
-| Min/max marker lines | 2 | markers on |
-| Value / unit / name labels | 3 | by mode |
-| State chip + label | 2 | ≥ compact |
-| Min/max text labels | 2 | large + "Markers + text" |
-| Scale end labels | 2 | large, sweep < 360 |
+| Object | Kind | Count | Created when |
+|---|---|---|---|
+| Track | arc | 1 | always (behind everything) |
+| Section bands | arc | 3 | Colours = Sections — ADDED to the track, not replacing it |
+| Peak-hold ghost | arc | 1 | always (hidden until history exists; NOT gated on the Min/max option — Tanda 6 F-8) |
+| Value arc | arc | 1 | always |
+| Pivot hub | circle | 1 | needle shown |
+| Value / unit / name | label | 3 | by mode |
+| State word | label | 1 | chip shown |
+| Min/max text | label | 2 | large + "Markers + text" |
+| Scale ends | label | 2 | large, sweep < 360 |
+| Needle (body, mid, tip) | line | 3 | needle shown — the P2-1 taper, no triangles, no counterweight |
+| Major ticks | line | 3 / 5 / 7 | micro / compact+normal / large |
+| Minor ticks | line | 6 | large mode |
+| Min/max markers | line | 2 | markers on |
+| State chip + edge | rectangle | 2 | chip shown |
 
-Per-frame writes: arc `endAngle`, needle body/tip `pts` (only when the angle
+Per-frame writes: arc `endAngle`, needle `pts` (only when the angle
 changed), `color`/`opacity` on a state change, label `text` when the string
 changed, and show/hide on data loss.
 
@@ -426,10 +429,14 @@ Verified against `radio/src/lua` in this fork:
 - `lvgl.circle` does not accept `bgColor`/`bgOpacity`; `filled = 1` fills with
   `color`.
 - `lvgl.label` accepts `text`, `color`, `font`, `align`, `x`, `y`, `w`, `h`.
-- Object properties may also be **functions**, which the firmware re-evaluates
-  every frame (`callRefs`). This widget deliberately does not use them: an
-  explicit `lvgl.set` on change is cheaper than a Lua call per property per
-  frame.
+- Object properties may also be **functions** (`pts`, colour, `text`), which
+  the firmware re-evaluates EVERY frame through `callRefs` — unconditionally,
+  in every `foreground()`. This widget deliberately does not use them (Tanda 6
+  §C.6): a guarded explicit `lvgl.set` costs nothing when the value is static
+  (the per-object cache drops the write), while a callback form would run a
+  Lua call per property per frame against the 20 000-instruction budget for a
+  widget whose values are mostly static between frames. Do not "modernise"
+  the needle or the labels into the callback form.
 - **String methods are unavailable** (no string metatable in the firmware
   build); always `string.lower(s)`, never `s:lower()`.
 - `getTime()` returns **10 ms ticks**; all time maths converts explicitly.
@@ -443,7 +450,10 @@ Verified against `radio/src/lua` in this fork:
 Every `main.lua` under `/WIDGETS/` is executed at radio startup for every
 model, whether the widget is placed or not. `main.lua` therefore contains
 option data and a guard, and nothing else; the twelve modules load on first
-use, inside `create()`.
+use, inside `create()`. The option-array builder and label translator live
+INLINE in `main.lua` for the same reason (one file read per widget at boot);
+options.lua's copies were deleted in Tanda 6 (F-14/6.1) after verifying both
+byte-identical — one builder remains, so they cannot drift.
 
 ### 6.2 Why a rail instead of coloured sections
 
@@ -452,11 +462,18 @@ relationship — the value arc stops being distinguishable from the scale. A
 thin outer rail marks the bands permanently while the thick inner arc keeps
 the foreground. Sections remains available.
 
-### 6.3 Why a triangle needle
+### 6.3 Why a tapered needle
 
 A one-pixel line reads as a construction guide. Both the widget this one
 succeeds (`GaugeRotary`, `lcd.drawFilledTriangle`) and the ecosystem
 benchmark (`yaapu`, a three-line triangle) draw a tapered needle.
+
+The taper is three LINE segments, not triangles: on the radio
+`LvglWidgetTriangle::refresh` frees its canvas and rebuilds it on every
+angle change (~46 rebuilds in 20 frames under damping, AUDIT P2-1), while
+`LvglWidgetLine::refresh` only rewrites the points. The three segments
+(body → mid → tip, `rounded = 1`) restore the taper with zero churn, over a
+solid hub circle (review P-A).
 
 ### 6.4 Why no bitmap dial face
 

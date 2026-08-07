@@ -68,22 +68,6 @@ end
 
 M.tickPoints = M.linePoints
 
--- Tapered needle: tip at radius r2, base of width 2*halfWidth at radius r1,
--- perpendicular to the needle axis. Three points, as the binding requires
--- ("There must be three points" - LvglWidgetTriangle).
-function M.trianglePoints(cx, cy, r1, r2, halfWidth, angle)
-  local tipX, tipY = M.pointOnCircle(cx, cy, r2, angle)
-  local baseX, baseY = M.pointOnCircle(cx, cy, r1, angle)
-  local a = angle * rad
-  -- unit vector perpendicular to the needle axis
-  local px, py = -sin(a), cos(a)
-  return {
-    { floor(tipX + 0.5), floor(tipY + 0.5) },
-    { floor(baseX + px * halfWidth + 0.5), floor(baseY + py * halfWidth + 0.5) },
-    { floor(baseX - px * halfWidth + 0.5), floor(baseY - py * halfWidth + 0.5) },
-  }
-end
-
 -- Horizontal bar fill width for the linear (Bar) style.
 function M.barFill(width, value, minimum, maximum)
   return floor(width * M.normalize(value, minimum, maximum) + 0.5)
