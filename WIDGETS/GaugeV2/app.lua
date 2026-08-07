@@ -67,7 +67,10 @@ function M.create(zone, options, path)
     path = path or "/WIDGETS/GaugeV2/",
     defs = DEFS,
     mods = loadModules(path or "/WIDGETS/GaugeV2/"),
-    source = { id = -1, resolved = false, name = "", unitName = "" },
+    -- `gen` counts REAL resolutions of the source (telemetry.resolveSource);
+    -- configure() stamps widget.sourceGen with it so refresh() can spot a
+    -- source that resolved after the last configure.
+    source = { id = -1, resolved = false, name = "", unitName = "", gen = 0 },
     data = { availability = "unset" },
     history = {},
     smooth = {},
@@ -91,6 +94,11 @@ M.painter = painter
 -- refresh() the one time a battery pack's cell count becomes known.
 local function configure(widget)
   local m, cfg, src = widget.mods, widget.config, widget.source
+
+  -- Everything below is DERIVED from `src`. Record which resolution of the
+  -- source it was derived from, so refresh() can tell when a late-resolving
+  -- sensor has left it stale (telemetry.resolveSource bumps src.gen).
+  widget.sourceGen = src.gen
 
   -- scale: Auto uses a known-sensor preset, Manual always uses the user
   -- values. On firmware without the Scale option (2.11, ten slots) Auto keeps
@@ -208,6 +216,24 @@ local function configure(widget)
 end
 M.configure = configure
 
+-- configure() PLUS the cheap delta path for text a rebuild did not repaint.
+-- Every caller needs both halves: a signature change rebuilds the tree and
+-- paints the current strings itself, but a config change that leaves the
+-- signature alone - a Name/Suffix edit, or a source whose unit is empty -
+-- only reaches the screen through updateSourceLabels (AUDIT.md P0-6).
+-- Splitting the two across call sites is what let the late-resolution path
+-- draw an unnamed, unitless gauge.
+local function apply(widget)
+  widget.layoutRebuilt = false
+  configure(widget)
+  -- setProp() no-ops when the string is unchanged, so this is free on the
+  -- common "nothing moved" call.
+  if not widget.layoutRebuilt then
+    painter(widget).updateSourceLabels(widget)
+  end
+end
+M.apply = apply
+
 function M.update(widget, options)
   if not widget.mods then return end
   widget.options = options
@@ -234,20 +260,9 @@ function M.update(widget, options)
     m.telemetry.resetHistory(widget)
     m.smoothing.reset(widget)
     m.alerts.reset(widget)
-    widget.sourceChanged = true
   end
 
-  widget.layoutRebuilt = false
-  configure(widget)
-  -- Unconditional (not just on a source change): a Name/Suffix option edit
-  -- must reach the screen too, and this is the cheap delta path for it
-  -- (AUDIT.md P0-6). A rebuild already painted the current text, so skip it
-  -- there. setProp() no-ops when the string is unchanged, so this call is
-  -- free on the common "nothing changed" update.
-  if not widget.layoutRebuilt then
-    painter(widget).updateSourceLabels(widget)
-  end
-  widget.sourceChanged = false
+  apply(widget)
 end
 
 -- A SWITCH option is a swsrc_t, read with getSwitchValue() (AUDIT.md P0-1),
@@ -281,12 +296,30 @@ function M.refresh(widget, _event, _touch)
   checkResetSwitch(widget)
   m.telemetry.refresh(widget)
 
-  -- a battery pack's cell count is only known after the first reading; when
-  -- it lands, the scale is rebuilt once
-  if widget.config.battery == BATTERY_OFF and widget.source.cells
-     and not widget.cellsApplied then
+  -- Two things can invalidate the derived config from inside a frame. At most
+  -- ONE of them is applied per refresh: apply() costs a full configure (~8k
+  -- VM instructions on a large dial) against a 20000-instruction per-callback
+  -- budget (lua_widget.cpp MAX_INSTRUCTIONS), and doing both in one frame
+  -- would put two rebuilds in a single callback. Whichever does not fire this
+  -- frame fires on the next one - both are one-shot latches.
+  if widget.source.gen ~= widget.sourceGen then
+    -- The source resolved LATE: it was absent when the widget was created (a
+    -- fresh model, after "delete all sensors", a new RX) and the throttled
+    -- retry in telemetry.refresh has just found it. resolveSource fills
+    -- widget.source, but everything DERIVED from it - unit text, name, the
+    -- Auto preset scale, precision, the layout - comes from configure(),
+    -- which otherwise only runs from update(). The firmware calls update()
+    -- "when the widget options have changed" (widget.h:109), not on a timer,
+    -- so without this an RPM sensor discovered a second after boot kept
+    -- drawing on the default 0..100 scale, nameless and unitless, until the
+    -- user happened to edit an option.
+    apply(widget)
+  elseif widget.config.battery == BATTERY_OFF and widget.source.cells
+         and not widget.cellsApplied then
+    -- a battery pack's cell count is only known after the first reading; when
+    -- it lands, the scale is rebuilt once
     widget.cellsApplied = true
-    configure(widget)
+    apply(widget)
   end
 
   m.alerts.update(widget)

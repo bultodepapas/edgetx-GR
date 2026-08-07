@@ -1418,34 +1418,77 @@ local ZONES = {
   { 60, 60, "micro" }, { 100, 100, "compact" }, { 160, 160, "normal" },
   { 200, 200, "large" }, { 320, 100, "wide" }, { 100, 200, "tall" },
   { 480, 272, "fullscreen" }, { 200, 60, "strip" },
+  -- short bars: the zones where the vertical budget is tightest, and where
+  -- both containment failures below actually lived
+  { 300, 70, "bar" }, { 300, 44, "bar short" }, { 160, 44, "bar tiny" },
+}
+
+-- Painted extent of an object in zone coordinates. Line thickness is applied
+-- on BOTH axes: that over-estimates the ends of an axis-aligned line (LVGL
+-- butt caps do not extend along the path), which is the safe direction for a
+-- containment check.
+local function paintedBox(obj)
+  local p = obj.props
+  if p.pts then
+    local x1, y1, x2, y2 = math.huge, math.huge, -math.huge, -math.huge
+    for _, pt in ipairs(p.pts) do
+      x1 = math.min(x1, pt[1]); x2 = math.max(x2, pt[1])
+      y1 = math.min(y1, pt[2]); y2 = math.max(y2, pt[2])
+    end
+    local t = (p.thickness or 1) / 2
+    return x1 - t, y1 - t, x2 + t, y2 + t
+  end
+  if p.radius then
+    local r = p.radius + ((obj.kind == "arc") and (p.thickness or 0) / 2 or 0)
+    return p.x - r, p.y - r, p.x + r, p.y + r
+  end
+  local x1, y1 = p.x or 0, p.y or 0
+  return x1, y1, x1 + (p.w or 0), y1 + (p.h or 0)
+end
+
+-- Cases that put DIFFERENT objects on screen. The state chip only exists
+-- while the state is warning/critical, and it is the object that broke
+-- containment, so a matrix that only ever ran at a normal value could not
+-- see it.
+local BOUND_CASES = {
+  { name = "normal", value = 70, opts = {} },
+  { name = "critical", value = 10, opts = {} },
+  { name = "critical + minmax text", value = 10, opts = { ShowMinMax = 3 } },
+  { name = "critical bar", value = 10, opts = { Style = "Bar" } },
+  { name = "critical bar, no chip", value = 10,
+    opts = { Style = "Bar", ShowChip = false } },
+  { name = "sections 360", value = 10, opts = { ColorMode = "Sections",
+                                                Sweep = "360 deg" } },
 }
 
 test("every layout keeps its objects inside the zone", function()
+  -- ZERO slack, deliberately. This matrix used to allow 2 px - which is
+  -- exactly what the state pill hung past the bottom of every bar zone,
+  -- because the row budget reserved floor(chipExtra / 2) and forgot the 1 px
+  -- chipEdge outline drawn around the pill (and reserved nothing at all on
+  -- the minimal-pill rung). The markers' overhang past the bar was never in
+  -- the budget either. Both were invisible here for two independent reasons:
+  -- the slack swallowed them, and the matrix only ever ran at value 70 - a
+  -- NORMAL state, where the chip is not on screen at all.
+  --
+  -- Containment is not cosmetic: LVGL clips children to the widget's zone,
+  -- so anything outside is silently shaved off on the radio, where nobody is
+  -- measuring. Hidden objects are checked too - a hidden object with a bad
+  -- box is a bug waiting for the state that shows it.
   for _, z in ipairs(ZONES) do
-    local zone = { x = 0, y = 0, w = z[1], h = z[2] }
-    local w = newWidget(zone, { Source = ID_RSSI })
-    refresh(w)
-    for _, obj in ipairs(mock.objects()) do
-      local p = obj.props
-      local x1, y1, x2, y2
-      if p.pts then
-        x1, y1, x2, y2 = math.huge, math.huge, -math.huge, -math.huge
-        for _, pt in ipairs(p.pts) do
-          x1 = math.min(x1, pt[1]); x2 = math.max(x2, pt[1])
-          y1 = math.min(y1, pt[2]); y2 = math.max(y2, pt[2])
-        end
-      elseif p.radius then
-        x1, y1 = p.x - p.radius, p.y - p.radius
-        x2, y2 = p.x + p.radius, p.y + p.radius
-      else
-        x1, y1 = p.x or 0, p.y or 0
-        x2, y2 = x1 + (p.w or 0), y1 + (p.h or 0)
+    for _, c in ipairs(BOUND_CASES) do
+      local zone = { x = 0, y = 0, w = z[1], h = z[2] }
+      local ov = { Source = ID_RSSI }
+      for k, v in pairs(c.opts) do ov[k] = v end
+      local w = newWidget(zone, ov)
+      mock.setValue(ID_RSSI, c.value)
+      refresh(w, 2)
+      for _, obj in ipairs(mock.objects()) do
+        local x1, y1, x2, y2 = paintedBox(obj)
+        assertTrue(x1 >= 0 and y1 >= 0 and x2 <= zone.w and y2 <= zone.h,
+          string.format("%s / %s: %s out of %dx%d: %.0f,%.0f..%.0f,%.0f",
+            z[3], c.name, obj.kind, zone.w, zone.h, x1, y1, x2, y2))
       end
-      local slack = 2
-      assertTrue(x1 >= -slack and y1 >= -slack and x2 <= zone.w + slack
-                 and y2 <= zone.h + slack,
-        string.format("%s %s out of %dx%d: %.0f,%.0f..%.0f,%.0f", z[3],
-                      obj.kind, zone.w, zone.h, x1, y1, x2, y2))
     end
   end
 end)
@@ -2074,6 +2117,87 @@ test("F-9: a source that appears after boot resolves without update()", function
   assertEq(w2.source.resolved, true, "resolved once the interval elapses")
 end)
 
+test("F-9b: a late source reconfigures everything DERIVED from it", function()
+  -- F-9 taught resolveSource to keep retrying until the sensor appears, and
+  -- asserted widget.source gets filled in. But nothing the SCREEN shows comes
+  -- from widget.source directly: the unit text, the name, the Auto preset
+  -- scale, the precision and the whole layout are derived in app.configure(),
+  -- and configure() only ran from update() - which the firmware calls "when
+  -- the widget options have changed" (widget.h:109), never on a timer. So the
+  -- second half of F-9 never happened: an RPM sensor discovered a second
+  -- after boot kept being drawn on the default 0..100 scale, nameless and
+  -- unitless, until the user happened to edit an option.
+  setupRadio()
+  local mod = dofile(widgetDir .. "main.lua")
+  local SRC = 3310                     -- a telemetry slot not yet discovered
+  local opts = mock.makeOptions(mod.defs, { Source = SRC })
+  local w = mod.create({ x = 0, y = 0, w = 200, h = 200 }, opts, widgetDir)
+  w.mod = mod
+  mod.update(w, opts)
+  assertEq(w.source.resolved, false, "absent at boot: unresolved, retrying")
+  assertEq(w.config.max, 100, "still on the declared default scale")
+  for _ = 1, 3 do mock.advance(1000); mod.refresh(w) end
+  assertEq(w.unitText, "", "nothing derived while the sensor is missing")
+
+  -- the model powers up and an RPM sensor is discovered. Its preset
+  -- (0..20000, low-is-good, 16000 / 18000) is deliberately nothing like the
+  -- 0..100 high-good defaults, so a stale config cannot pass by coincidence.
+  mock.addField(SRC, "RPM", 18)
+  mock.sim.sensors[12] = { name = "RPM", prec = 1, unit = 18 }
+  mock.setValue(SRC, 12000)
+  mock.advance(1000)
+  mod.refresh(w)                       -- no update() anywhere in this phase
+
+  assertEq(w.source.name, "RPM", "F-9: the source itself resolves")
+  assertEq(w.unitText, "rpm", "unit text derived from the resolved source")
+  assertEq(w.nameText, "RPM", "name text derived from the resolved source")
+  assertEq(w.config.max, 20000, "the Auto preset scale applied")
+  assertEq(w.config.warn, 16000, "preset warning applied")
+  assertEq(w.config.highGood, false, "preset direction applied")
+  assertEq(w.config.precision, 1, "precision follows the sensor")
+  -- ...and it reached the SCREEN, not just the config table. The unit label
+  -- is only CREATED when unitText is non-empty (renderer.build), so this also
+  -- proves the reconfigure rebuilt the tree rather than just moving numbers.
+  assertTrue(w.ui.unitLabel ~= nil, "the unit label exists at all")
+  assertEq(w.ui.unitLabel.props.text, "rpm", "unit label painted")
+  assertEq(w.ui.nameLabel.props.text, "RPM", "name label painted")
+  assertEq(w.frame.valueStr, "12000.0", "value at the sensor's precision")
+
+  -- one-shot: the latch must not re-fire every frame afterwards (each fire
+  -- is a full configure, ~8k VM instructions against a 20000 budget)
+  local sig, gen = w.layoutSig, w.sourceGen
+  for _ = 1, 10 do mock.advance(1000); mod.refresh(w) end
+  assertEq(w.sourceGen, gen, "no further resolutions")
+  assertEq(w.layoutSig, sig, "no further rebuilds")
+end)
+
+test("F-9b: the cell latch and the source latch never share a frame", function()
+  -- Both latches in app.refresh cost a full configure(); firing both in one
+  -- callback would put two tree rebuilds inside a single 20000-instruction
+  -- budget (lua_widget.cpp MAX_INSTRUCTIONS). They are deliberately an
+  -- if/elseif - the loser fires on the next frame.
+  setupRadio()
+  local mod = dofile(widgetDir .. "main.lua")
+  local SRC = 3320
+  local opts = mock.makeOptions(mod.defs, { Source = SRC })
+  local w = mod.create({ x = 0, y = 0, w = 200, h = 200 }, opts, widgetDir)
+  w.mod = mod
+  mod.update(w, opts)
+  -- a Cels sensor: resolving it turns on autoCells AND the first reading
+  -- carries the cell count, so both latches become eligible at once
+  mock.addField(SRC, "Cels", 1)
+  mock.sim.sensors[13] = { name = "Cels", prec = 2, unit = 1 }
+  mock.setValue(SRC, { 3.9, 3.9, 3.9, 3.9 })
+  mock.advance(1000)
+  mod.refresh(w)
+  assertEq(w.sourceGen, w.source.gen, "the source latch fired")
+  assertTrue(not w.cellsApplied, "the cell latch did NOT fire in the same frame")
+  mock.advance(1000)
+  mod.refresh(w)
+  assertEq(w.cellsApplied, true, "the cell latch fires on the next frame")
+  assertEq(w.source.cells, 4, "4S pack detected")
+end)
+
 test("F-11: the needle reuses its pts buffers across frames", function()
   -- Phase 5.1: three persistent buffers (one per segment), mutated in place
   -- by geometry.linePointsInto - the binding copies the values out on every
@@ -2186,6 +2310,93 @@ test("F-11: the needle reuses its lvgl.set wrapper tables", function()
   assertTrue(seen.tip[1] == seen.tip[2], "tip wrapper reused")
   assertEq(seen.body[1].pts, w.ui.needle.props.pts,
     "the wrapper points at the persistent buffer")
+end)
+
+test("F-16: the history marks reuse their pts buffers too", function()
+  -- Phase 5 gave the needle persistent buffers and stopped there, so the
+  -- min/max marks (dial) and the ghost/min mark (bar) stayed the last
+  -- per-frame geometry allocators: 870 B/frame for as long as the history
+  -- was advancing. The original note argued that only happens "for a few
+  -- seconds after power-up" - but the historical maximum advances for every
+  -- second of a climb, which is exactly when the gauge is being watched.
+  local w = newWidget(nil, { Source = ID_RSSI, ShowMinMax = "Markers + text" })
+  mock.setValue(ID_RSSI, 40); refresh(w, 2)
+  local minPts, maxPts = w.ui.minMark.props.pts, w.ui.maxMark.props.pts
+  local minSet, maxSet = w.ui.minMarkSet, w.ui.maxMarkSet
+  local x0 = maxPts[2][1]
+  mock.setValue(ID_RSSI, 95); refresh(w, 2)   -- a new maximum: the mark moves
+  assertTrue(w.ui.minMark.props.pts == minPts, "min buffer reused")
+  assertTrue(w.ui.maxMark.props.pts == maxPts, "max buffer reused")
+  assertTrue(w.ui.minMarkSet == minSet and w.ui.maxMarkSet == maxSet,
+    "the { pts = ... } wrappers are reused as well")
+  assertTrue(maxPts[2][1] ~= x0, "the reused buffer carries the new angle")
+
+  -- and the same for the bar's two moving marks
+  local b = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_RSSI, Style = "Bar", ShowMinMax = "Markers" })
+  mock.setValue(ID_RSSI, 40); refresh(b, 2)
+  local ghostPts, barMinPts = b.ui.ghostPts, b.ui.minMarkPts
+  local gx = ghostPts[1][1]
+  mock.setValue(ID_RSSI, 95); refresh(b, 2)
+  assertTrue(b.ui.ghost.props.pts == ghostPts, "bar ghost buffer reused")
+  assertTrue(b.ui.minMark.props.pts == barMinPts, "bar min buffer reused")
+  assertTrue(ghostPts[1][1] ~= gx, "the bar ghost actually moved")
+  -- both ends of a vertical mark must move together, or it goes diagonal
+  assertEq(ghostPts[1][1], ghostPts[2][1], "the bar mark stays vertical")
+end)
+
+test("F-16: a moving mark never goes through setProp", function()
+  -- setProp caches by VALUE and compares tables by IDENTITY, so a persistent
+  -- buffer routed through it would be written once and then frozen forever -
+  -- the mark would stop moving after its first update (5.1/5.2 TRAP 2).
+  -- Prove the trap is real rather than trusting the comment.
+  local w = newWidget(nil, { Source = ID_RSSI, ShowMinMax = "Markers" })
+  mock.setValue(ID_RSSI, 40); refresh(w, 2)
+  local R = w.mods.renderer
+  local pts = w.ui.maxMark.props.pts
+  R.setProp(w, w.ui.maxMark, "pts", pts)     -- first write: caches identity
+  pts[2][1] = pts[2][1] + 5                  -- mutate in place, as the fix does
+  local before = w.frame.dirty and w.frame.dirty[w.ui.maxMark]
+  R.setProp(w, w.ui.maxMark, "pts", pts)     -- same table: dropped as "unchanged"
+  local after = w.frame.dirty and w.frame.dirty[w.ui.maxMark]
+  assertTrue(before == after,
+    "setProp cannot see a mutation inside a table it already cached - which "
+    .. "is why the marks and the needle use lvgl.set directly")
+end)
+
+test("F-17: the state text is centred inside its pill, not inside its box",
+function()
+  -- The pill hugs its text (updateChip) but the LABEL was still placed
+  -- against stateBox. On the bar the state row is RIGHT aligned, so the
+  -- pill's right edge and stateBox's right edge coincide: the word ended up
+  -- flush against the pill's right side with all 2 * chipPad of padding
+  -- piled on the left. Symmetric padding is the whole point of a pill.
+  local function padding(w)
+    local chip, text = w.ui.chip.props, w.ui.stateLabel.props
+    local textW = w.mods.theme.textWidth(text.text, text.font)
+    -- the label is centred in its own box, so its ink sits in the middle
+    local inkLeft = text.x + (text.w - textW) / 2
+    return inkLeft - chip.x, (chip.x + chip.w) - (inkLeft + textW)
+  end
+
+  local b = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_RSSI, Style = "Bar" })
+  mock.setValue(ID_RSSI, 10)
+  refresh(b, 2)
+  assertEq(b.frame.stateStr, "CRIT", "the bar is critical")
+  local left, right = padding(b)
+  assertEq(left, right, "bar: the pill's padding must be symmetric")
+  assertEq(left, b.layout.chipPad, "bar: and it must be exactly chipPad")
+
+  -- the dial's CENTER row was always concentric; prove the fix did not
+  -- disturb it
+  local d = newWidget({ x = 0, y = 0, w = 200, h = 200 }, { Source = ID_RSSI })
+  mock.setValue(ID_RSSI, 10)
+  refresh(d, 2)
+  assertEq(d.frame.stateStr, "CRIT", "the dial is critical")
+  local dl, dr = padding(d)
+  assertEq(dl, dr, "dial: still symmetric")
+  assertEq(dl, d.layout.chipPad, "dial: still exactly chipPad")
 end)
 
 test("F-12: switching to Manual clears the auto-cell latch", function()

@@ -174,6 +174,31 @@ function Canvas:color(flags, fallback)
   return fallback or "#ff00ff"   -- magenta: an unmapped colour must be loud
 end
 
+-- Painted extent of an object, in zone coordinates. Line thickness counts on
+-- both axes: that over-states the ends of an axis-aligned line (butt caps do
+-- not extend along the path), which is the safe direction for a containment
+-- check.
+local function paintedBox(obj)
+  local p = obj.props
+  if p.pts then
+    local x1, y1, x2, y2 = math.huge, math.huge, -math.huge, -math.huge
+    for _, pt in ipairs(p.pts) do
+      if pt[1] < x1 then x1 = pt[1] end
+      if pt[1] > x2 then x2 = pt[1] end
+      if pt[2] < y1 then y1 = pt[2] end
+      if pt[2] > y2 then y2 = pt[2] end
+    end
+    local t = (p.thickness or 1) / 2
+    return x1 - t, y1 - t, x2 + t, y2 + t
+  end
+  if p.radius then
+    local r = p.radius + ((obj.kind == "arc") and (p.thickness or 0) / 2 or 0)
+    return p.x - r, p.y - r, p.x + r, p.y + r
+  end
+  if not p.x then return nil end
+  return p.x, p.y, p.x + (p.w or 0), p.y + (p.h or 0)
+end
+
 -- Draw one mock object. `label` only names the scene in warnings.
 function Canvas:object(obj, label)
   local p = obj.props
@@ -255,11 +280,21 @@ function Canvas:object(obj, label)
     if p.align == CENTER then anchor, x = "middle", p.x + bw / 2
     elseif p.align == RIGHT then anchor, x = "end", p.x + bw end
     for i = 1, #lines do
+      -- textLength pins the glyph run to the width the LAYOUT believed the
+      -- string was (M.textWidth, the same metric lcd.sizeText feeds the
+      -- widget). Without it the browser laid the text out in DejaVu Sans at
+      -- its own advances - about 10% wider than the metric - so every render
+      -- showed text spilling out of boxes that fit perfectly well on the
+      -- radio: "dB" came out clipped to "dE", and the gap between a value
+      -- and its unit vanished. Renders were inventing clipping bugs, which
+      -- is worse than missing them, because it teaches reviewers to ignore
+      -- the clip. Now a clip in the picture means a clip on the radio.
       self:emit(fmt('<text x="%.1f" y="%.1f" font-size="%d" fill="%s"'
         .. ' text-anchor="%s" font-family="DejaVu Sans, Verdana, sans-serif"'
+        .. ' textLength="%.1f" lengthAdjust="spacingAndGlyphs"'
         .. ' fill-opacity="%.2f">%s</text>',
         x, p.y + (i - 1) * size + size * 0.78, size, self:color(p.color),
-        anchor, opa, esc(lines[i])))
+        anchor, M.textWidth(lines[i], size), opa, esc(lines[i])))
     end
     self:emit("</g>")
     if wrapped then
@@ -283,6 +318,17 @@ function Canvas:scene(objects, zone, x, y, scale, label)
   for _, obj in ipairs(objects) do
     if obj.visible then
       self:object(obj, label)
+      -- Containment. The SVG viewBox IS the zone, so anything drawn outside
+      -- is simply clipped away here - exactly as LVGL clips children to the
+      -- widget zone on the radio. That is why a 1-2 px overflow could live
+      -- in the bar's state pill through every visual review: the picture
+      -- never showed it. Say it in words instead.
+      local x1, y1, x2, y2 = paintedBox(obj)
+      if x1 and (x1 < 0 or y1 < 0 or x2 > zone.w or y2 > zone.h) then
+        self:warn("%s: %s painted outside the %dx%d zone"
+          .. " (%.0f,%.0f..%.0f,%.0f) -> clipped by LVGL on the radio",
+          label, obj.kind, zone.w, zone.h, x1, y1, x2, y2)
+      end
       n = n + 1
     end
   end

@@ -17,8 +17,12 @@
 --     crossing the threshold every frame churns the chip and applyColors,
 --     a probe artifact of the same class as the ramp.
 --   * crossing (10/90): documents that artifact - the chip/state churn.
---   * ramp (RSSI+ rising): the DROPPED original-5.3 target's scenario -
---     history advancing for the few seconds after power-up.
+--   * ramp (RSSI+ rising): the history genuinely advancing. This was once
+--     dismissed as "a few seconds after power-up", which undersold it - the
+--     historical maximum advances for every second of a climb. The marks got
+--     the needle's persistent-buffer treatment as a result (F-16), so
+--     linePoints/f is 0 here too and what is left is the min/max READOUT
+--     re-formatting a number that really did change.
 --
 -- Usage: lua5.3 dev/measure_frames.lua <widget-dir>
 --
@@ -103,16 +107,22 @@ local function countLinePointsCalls(w, mod, frames)
   return calls / frames
 end
 
+-- VM instructions per frame. The hook fires once per HOOK_STEP instructions,
+-- so the count has to be multiplied back out: reporting the raw fire count
+-- under a column called "instr/f" understated the real figure by a factor of
+-- HOOK_STEP, which against EdgeTX's 20000-instruction budget is the
+-- difference between "0.04% of budget" and "7%".
+local HOOK_STEP = 200
 local function countInstructions(w, mod, frames)
   local fires = 0
   local function hook() fires = fires + 1 end
-  debug.sethook(hook, "", 200)
+  debug.sethook(hook, "", HOOK_STEP)
   for i = 1, frames do
     feedPlateau(i)
     mod.refresh(w)
   end
   debug.sethook()
-  return fires / frames               -- 1 fire = 200 VM instructions
+  return fires * HOOK_STEP / frames
 end
 
 local SCENES = {
@@ -137,19 +147,19 @@ print("GaugeV2 per-frame allocation probe  (gc stopped, harness tracking off,"
   .. " " .. FRAMES .. " frames)")
 print("")
 print(string.format("%-24s %12s %14s %12s",
-  "scene", "B/frame", "linePoints/f", "instr/f"))
+  "scene", "B/frame", "linePoints/f", "instr/f (of 20000)"))
 print(string.rep("-", 66))
 local totals = { needle = nil, arc = nil, bar = nil }
 for _, sc in ipairs(SCENES) do
   local w, mod = build(sc.zone, sc.ov)
   local bytes = measureWith(w, mod, FRAMES, feedPlateau)
   local calls = countLinePointsCalls(w, mod, FRAMES)
-  local fires = countInstructions(w, mod, FRAMES)
+  local instr = countInstructions(w, mod, FRAMES)
   if string.find(sc.name, "needle") then totals.needle = bytes
   elseif string.find(sc.name, "arc") then totals.arc = bytes
   else totals.bar = bytes end
-  print(string.format("%-24s %10.0f B %12.2f %10.1f",
-    sc.name, bytes, calls, fires))
+  print(string.format("%-24s %10.0f B %12.2f %8.0f (%.0f%%)",
+    sc.name, bytes, calls, instr, instr / 20000 * 100))
 end
 print(string.rep("-", 66))
 local needleShare = totals.needle - totals.arc
@@ -160,10 +170,10 @@ print(string.format("Tanda baseline: 814 B/frame needle scene, ~511 B/frame"
 print("")
 
 -- ---- threshold-crossing row (documented probe artifact) ----------------------
--- A feed that crosses the state threshold every frame churns the chip
--- (updateChip's fresh frame.chipBox table, ~186 B per show) and applyColors.
--- Real but bounded: it costs per TRANSITION, ~0 in steady flight. Recorded
--- as a follow-up finding, not part of the 5.1/5.2 needle measurement.
+-- A feed that crosses the state threshold every frame churns the state
+-- string and applyColors. frame.chipBox is no longer part of it: it used to
+-- be a fresh table per chip show (~186 B), and is now allocated once and
+-- mutated (F-16). What remains is per TRANSITION, ~0 in steady flight.
 local wc, modc = build(SCENES[1].zone, SCENES[1].ov)
 local crossBytes = measureWith(wc, modc, FRAMES, feedCrossing)
 print(string.format("-- threshold-crossing feed (10/90): %.0f B/frame - the"

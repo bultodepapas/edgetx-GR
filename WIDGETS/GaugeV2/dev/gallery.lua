@@ -583,7 +583,6 @@ local written, allWarnings = {}, {}
 for _, theme in ipairs(themes) do
   -- clear any warnings the previous theme collected on the same scenes
   for _, r in ipairs(results) do r.warnings = {} end
-  local cv = svgkit.newCanvas(theme)
   -- first pass populates per-scene warnings so the badges are right
   for _, r in ipairs(results) do
     local probe = svgkit.newCanvas(theme)
@@ -608,7 +607,6 @@ for _, theme in ipairs(themes) do
         .. " python+playwright); el SVG si se escribio\n")
     end
   end
-  cv = nil
 end
 
 -- ---- manifest --------------------------------------------------------------

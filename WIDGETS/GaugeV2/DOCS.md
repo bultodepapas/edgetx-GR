@@ -500,7 +500,7 @@ Headless suites run with stock Lua 5.3 (the version EdgeTX embeds):
 
 ```sh
 lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (38 tests)
-lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle      (96 tests)
+lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle     (120 tests)
 lua5.3 dev/preview.lua      <widget-dir>/   # writes dev/preview.html
 ```
 

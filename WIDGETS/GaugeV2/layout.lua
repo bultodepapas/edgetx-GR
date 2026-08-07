@@ -67,6 +67,23 @@ local function clipToChord(L, b)
   return b
 end
 
+-- Pixels the state pill hangs BELOW the state text box, outline included.
+--
+-- The pill is `extra` px taller than its text and vertically centred on it
+-- (chipOff = floor(extra / 2) above), so what hangs below is the half that
+-- floor() did NOT take - and on top of that the 1 px chipEdge outline the
+-- renderers draw around the pill (renderer.build / bar.build).
+--
+-- Both renderers derive their pill from `extra` through exactly these two
+-- lines, so a row budget computed here can no longer disagree with what
+-- actually gets painted. Guessing it as floor(extra / 2) forgot the outline
+-- and put the pill 1 px past the bottom of every bar zone (2 px on a short
+-- one, where the fallback reserved nothing at all).
+local function chipOverhang(shown, extra)
+  if not shown then return 0 end
+  return extra - floor(extra / 2) + T.px(1)
+end
+
 -- mode: micro (<64), compact (<105), normal (<180), large (>=180)
 -- orientation: horizontal (>1.4), vertical (<0.8), balanced
 function M.classify(w, h)
@@ -299,6 +316,12 @@ local function dialLayout(widget, cfg, L, w, h)
     + L.railGap
   L.tickInner = L.railRadius + T.px(T.space.xs)
   L.tickOuter = L.tickInner + tickLength
+  -- Radial span of the min/max history marks. LAYOUT data, like the bar's
+  -- markOverhang: renderer.build and renderer.updateHistory both need it and
+  -- used to compute the same two expressions independently - the exact shape
+  -- of drift that put the state pill outside its zone.
+  L.markInner = L.radius - floor(L.trackThickness / 2) - T.px(1)
+  L.markOuter = L.railRadius + T.px(1)
 
   -- In a balanced zone the value text hangs inside the dial circle, and the
   -- circle's clear interior at that height is a CHORD of the ring - narrower
@@ -495,7 +518,14 @@ end
 -- ------------------------------------------------------------------- bar --
 
 local function barLayout(widget, cfg, L, w, h)
-  local pad = T.px(T.space.sm)
+  -- The layout stacks value / bar / state row with `pad` between and around
+  -- them: three gaps, 12 px at the normal step. In a 44 px zone that is more
+  -- than a quarter of the height, competing directly with the value font
+  -- floor (P1-4) and the state row (P1-2) - and it was exactly the 2 px the
+  -- old budget had to under-reserve to keep both, which is what pushed the
+  -- pill out of the zone. Short bars (the same breakpoint that drops the
+  -- name) buy the room back from the padding instead, honestly.
+  local pad = (h < T.px(46)) and T.px(T.space.xs) or T.px(T.space.sm)
   L.showUnit = true
   L.showName = h >= T.px(46)
   L.showState = w >= T.px(120) and cfg.showChip ~= false
@@ -514,53 +544,74 @@ local function barLayout(widget, cfg, L, w, h)
   -- under this, or the auto-fit would overflow the box (AUDIT.md P1-4)
   local minText = T.fontHeight(T.FONTS.XXS)
 
+  -- The min/max marker and the peak-hold ghost stick out this far above AND
+  -- below the bar, so they read as ticks against it rather than as part of
+  -- the fill. It is LAYOUT data because it is part of the bar's real
+  -- footprint and the budget below has to reserve it: bar.lua reads it back
+  -- instead of restating px(2)/px(4), which is what kept the two in sync
+  -- once the pill taught the same lesson.
+  L.markOverhang = T.px(2)
+
   -- The row below the bar carries the state text (right) and, when there is
   -- height for it, the name (left). Its height is the STATE font's, never
   -- the name's: sizing it from nameH meant the short-bar paths zeroed nameH
   -- and collapsed STALE/NO LINK/WARN/CRIT out of exactly the zones where
-  -- they matter most (AUDIT.md P1-2). The budget reserves the state row
-  -- before the value area, trims the bar to its minimum before giving up,
-  -- and drops the state row only when the zone is too short for even the
-  -- smallest value font.
+  -- they matter most (AUDIT.md P1-2). Both fonts are XS here, so the two
+  -- readings coincide today - naming the state font keeps it that way if
+  -- either font is ever re-tuned.
   --
-  -- The state PILL is taller than the text and centred on it (review P-B):
-  -- the row budget reserves the pill's overhang below the text, so the
-  -- taller pill never leaves the zone. A zone too short to reserve it falls
-  -- back to the minimal pill (stateH + 2), whose 1 px overhang sits inside
-  -- the zone's tolerance - keeping the state row alive where it matters
-  -- most (P1-2).
-  local chipExtra = L.showState and T.px(6) or 0
-  -- The pill's OVERHANG reserve below the state text. NOT the same quantity
-  -- as L.chipOff (the render-time vertical centring of the pill): this is a
-  -- row-BUDGET reserve for the taller pill's footprint, applied at build
-  -- time only. The two were once confused under one name (Tanda 6 §B.1).
-  local chipReserve = floor(chipExtra / 2)
-  local rowH = (L.showState or L.showName) and (stateH + chipReserve) or 0
-  local barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
-  local textH = h - barH - rowH - pad * 3
-  if textH < minText then
-    barH = max(h - minText - rowH - pad * 3, T.px(8))
-    textH = h - barH - rowH - pad * 3
-    if textH < minText and L.showState then
-      chipExtra = T.px(2)
-      chipReserve = 0
-      rowH = (L.showState or L.showName) and (stateH + chipReserve) or 0
-      barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
-      textH = h - barH - rowH - pad * 3
-      if textH < minText then
-        barH = max(h - minText - rowH - pad * 3, T.px(8))
-        textH = h - barH - rowH - pad * 3
-        if textH < minText then
-          L.showState = false
-          chipExtra = 0
-          rowH = (L.showName) and nameH or 0
-          barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
-          textH = h - barH - rowH - pad * 3
-          if textH < minText then textH = minText end
-        end
-      end
-    end
+  -- VERTICAL BUDGET. The zone has to hold, top to bottom: the value area,
+  -- the bar, and the state/name row - and the state PILL is taller than its
+  -- text and centred on it (review P-B), so the row must also reserve what
+  -- the pill hangs below that text (chipOverhang, outline included).
+  --
+  -- When it does not all fit, relax in this order, giving up the least
+  -- important thing left each time:
+  --
+  --   1. full pill, preferred bar height     (the intended look)
+  --   2. full pill, bar trimmed to its floor
+  --   3. minimal pill (stateH + 2)
+  --   4. bare pill (stateH + 0): no vertical padding, outline only
+  --   5. no state row at all
+  --
+  -- Rungs 1-4 all keep WARN / CRIT / NO LINK on screen, which is what P1-2
+  -- guarantees; rung 4 exists precisely so that a 44 px bar reaches it
+  -- instead of falling to rung 5. Every rung sizes the row from the pill it
+  -- actually paints, which is what keeps the pill inside the zone: the old
+  -- nested version reserved floor(chipExtra / 2) - forgetting the 1 px
+  -- outline - and reserved nothing at all on the minimal-pill rung, so the
+  -- pill left the bottom of EVERY bar zone by 1 px, and a short one by 2.
+  local chipExtra, rowH, barH, textH
+
+  -- One rung: the tallest bar this pill size allows, else the bar trimmed to
+  -- its floor. Returns true when the value area still fits.
+  local function fits(extra)
+    chipExtra = extra
+    rowH = (L.showState or L.showName)
+      and (stateH + chipOverhang(L.showState, extra)) or 0
+    -- What has to fit UNDER the bar. With no row down there, the bottom pad
+    -- is all that separates the bar from the zone edge, and the markers
+    -- already stick markOverhang px past it - so the marker, not the row,
+    -- sets the floor. A real row is always taller than the overhang, so this
+    -- only ever bites on the row-less short bar it was written for.
+    local below = max(rowH, L.markOverhang)
+    barH = clamp(floor(h * 0.34), T.px(8), T.px(26))
+    textH = h - barH - below - pad * 3
+    if textH >= minText then return true end
+    barH = max(h - minText - below - pad * 3, T.px(8))
+    textH = h - barH - below - pad * 3
+    return textH >= minText
   end
+
+  if not L.showState then
+    fits(0)
+  elseif not (fits(T.px(6)) or fits(T.px(2)) or fits(0)) then
+    L.showState = false                 -- rung 5: last resort
+    fits(0)
+  end
+  -- a zone too short for even the smallest value font keeps the font's
+  -- height anyway; the value box is what the auto-fit needs (AUDIT.md P1-4)
+  if textH < minText then textH = minText end
 
   local valueRegion = box(pad, pad, w - pad * 2, textH)
   placeValue(L, valueRegion, F.widestSample(widget),

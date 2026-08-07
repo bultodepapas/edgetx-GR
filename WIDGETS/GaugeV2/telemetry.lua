@@ -167,6 +167,18 @@ function M.resolveSource(widget)
       s.resolved = true
       s.retries = nil
       s.retryAt = nil
+      -- Generation counter. app.configure() derives the unit text, the name,
+      -- the Auto preset scale, the precision and the whole layout from the
+      -- fields above, and it only runs from update() - which the firmware
+      -- calls when the OPTIONS change, not periodically (widget.h:109). A
+      -- source that resolves LATE, from the retry in M.refresh below, would
+      -- therefore leave every derived value stale. app.refresh watches this
+      -- counter and reconfigures once when it moves.
+      --
+      -- Bumped ONLY on a real resolution: a failed retry repopulates
+      -- nothing, and the retries-exhausted latch in the else branch resolves
+      -- the source to "absent", which changes nothing either.
+      s.gen = (s.gen or 0) + 1
     else
       -- Not resolved yet: retry on later refreshes, but bounded so a
       -- genuinely absent source does not rescan forever (Tanda 6 F-9).

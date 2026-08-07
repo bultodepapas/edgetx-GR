@@ -3,7 +3,7 @@
 --   lua5.3 dev/shots.lua <widget-dir> [out-dir] [opciones]
 --     --only PATRON   filtra por nombre de escena o clave de seccion
 --     --theme T       dark | light            (por defecto dark)
---     --list          imprime el catalogo y sale
+--     --list          imprime el catalogo (con sus alias) y sale
 --
 -- Usa esto cuando quieras UNA imagen para mirarla de cerca (o rasterizarla).
 -- Para la hoja completa con pies, metadatos y cobertura de opciones, usa
@@ -61,12 +61,26 @@ local function shotScale(w)
 end
 
 local function write(path, text)
-  local f = assert(io.open(path, "w"))
+  local f, err = io.open(path, "w")
+  if not f then
+    -- A bare assert here produced a stack traceback for the ordinary mistake
+    -- of naming an output directory that does not exist yet - Lua cannot
+    -- create one portably, so say so plainly instead.
+    io.stderr:write("shots: cannot write " .. path .. "\n  " .. tostring(err)
+      .. "\n  (create the directory first - this tool does not)\n")
+    os.exit(2)
+  end
   f:write(text)
   f:close()
 end
 
 local written, warned, failed = 0, {}, {}
+-- Every file this run produced. dev/shots/ is gitignored and accumulates
+-- renders from older versions of the catalogue, which are indistinguishable
+-- from current ones once they are sitting side by side in a directory - and
+-- the design-review notes cite some of those names. The index makes "was
+-- this picture produced by the code as it stands?" answerable.
+local index = {}
 for _, case in ipairs(cases) do
   local ok, ctx = pcall(scenes.build, mock, widgetDir, case)
   if not ok then
@@ -80,17 +94,29 @@ for _, case in ipairs(cases) do
     local _, warns = cv:scene(objs, ctx.zone, 0, 0, 1, case.name)
     local svg = cv:document(ctx.zone, shotScale(case.zone[1]))
     write(outDir .. case.name .. ".svg", svg)
+    index[#index + 1] = case.name .. ".svg"
     written = written + 1
     -- Nombre historico: dev/design-review-tanda5.md cita estos ficheros.
     if case.alias then
       write(outDir .. case.alias .. ".svg", svg)
+      index[#index + 1] = case.alias .. ".svg  (alias de " .. case.name .. ")"
       written = written + 1
     end
     for _, w in ipairs(warns) do warned[#warned + 1] = w end
   end
 end
 
+if not only then
+  table.sort(index)
+  write(outDir .. "_index.txt",
+    "-- Ficheros escritos por dev/shots.lua (tema " .. theme .. ").\n"
+    .. "-- Cualquier .svg de este directorio que NO este aqui sobra: es de\n"
+    .. "-- una version anterior del catalogo (dev/shots/ esta gitignored).\n"
+    .. table.concat(index, "\n") .. "\n")
+end
+
 print(string.format("escritos %d SVG (tema %s) en %s", written, theme, outDir))
+if not only then print("  indice: " .. outDir .. "_index.txt") end
 local seen = {}
 for _, w in ipairs(warned) do
   if not seen[w] then seen[w] = true; print("AVISO: " .. w) end

@@ -38,6 +38,29 @@ local function vline(x, y, h, thickness, color)
   }
 end
 
+-- A vertical mark that MOVES: its pts buffer and its { pts = ... } wrapper
+-- are created once and reused forever, the needle's Phase 5.1/5.2 contract
+-- applied to the two marks Phase 5 left behind. luaLvglSet parses the params
+-- table at call time and keeps no reference to it, and LvglWidgetLine::getPts
+-- copies the coordinates out, so mutating both in place is legal.
+-- NEVER route these through R.setProp: its cache compares tables by identity
+-- and would drop every write after the first (5.1/5.2 TRAP 2).
+-- The static threshold marks keep plain vline() above - they never move.
+local function movingMark(ui, key, x, y1, y2, thickness, color)
+  local pts = { { x, y1 }, { x, y2 } }
+  ui[key .. "Pts"] = pts
+  ui[key .. "Set"] = { pts = pts }
+  ui[key] = lvgl.line{ pts = pts, thickness = thickness, color = color }
+  lvgl.hide(ui[key])
+end
+
+local function moveMark(ui, key, x)
+  local pts = ui[key .. "Pts"]
+  pts[1][1], pts[2][1] = x, x
+  lvgl.set(ui[key], ui[key .. "Set"])
+  lvgl.show(ui[key])
+end
+
 function M.build(widget)
   local L, ui, cfg = widget.layout, widget.ui, widget.config
   local b = L.bar
@@ -82,15 +105,20 @@ function M.build(widget)
     end
   end
 
+  -- markOverhang comes from the layout, which RESERVED it in the vertical
+  -- budget: restating it here as px(2)/px(4) is what let the markers hang
+  -- past the bottom of a row-less short bar. It also fixes an asymmetry -
+  -- px(4) is not 2 * px(2) at LCD_SCALE 0.8, so the old line stuck out 2 px
+  -- above and only 1 px below on a 320 px screen.
+  local over = L.markOverhang
+  local markTop, markBottom = b.y - over, b.y + b.h + over
   if L.showGhost then
-    ui.ghost = vline(b.x, b.y - T.px(2), b.h + T.px(4), L.markThickness,
-                     T.color.history)
-    lvgl.hide(ui.ghost)
+    movingMark(ui, "ghost", b.x, markTop, markBottom, L.markThickness,
+               T.color.history)
   end
   if L.showMarkers then
-    ui.minMark = vline(b.x, b.y - T.px(2), b.h + T.px(4), L.markThickness,
-                       T.color.history)
-    lvgl.hide(ui.minMark)
+    movingMark(ui, "minMark", b.x, markTop, markBottom, L.markThickness,
+               T.color.history)
   end
 
   ui.valueLabel = R.label(L.valueBox, L.valueFont, T.color.accent,
@@ -158,7 +186,7 @@ local function updateFill(widget)
 end
 
 local function updateHistory(widget)
-  local ui, L, frame = widget.ui, widget.layout, widget.frame
+  local ui, frame = widget.ui, widget.frame
   local h = widget.history
   if ui.ghost and h.min and h.max then
     -- peak-hold marker: the extreme of the SWEEP, which is h.min on a
@@ -170,18 +198,14 @@ local function updateHistory(widget)
     local x = markX(widget, peak)
     if x ~= frame.ghostX then
       frame.ghostX = x
-      lvgl.set(ui.ghost, { pts = { { x, L.bar.y - T.px(2) },
-                                   { x, L.bar.y + L.bar.h + T.px(2) } } })
-      lvgl.show(ui.ghost)
+      moveMark(ui, "ghost", x)
     end
   end
   if ui.minMark and h.min then
     local x = markX(widget, h.min)
     if x ~= frame.minX then
       frame.minX = x
-      lvgl.set(ui.minMark, { pts = { { x, L.bar.y - T.px(2) },
-                                     { x, L.bar.y + L.bar.h + T.px(2) } } })
-      lvgl.show(ui.minMark)
+      moveMark(ui, "minMark", x)
     end
   end
 end

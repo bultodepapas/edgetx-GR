@@ -310,14 +310,27 @@ function M.build(widget)
   if L.showNeedle then buildNeedle(widget) end
 
   if L.showMarkers then
-    local inner = L.radius - floor(L.trackThickness / 2) - T.px(1)
-    local outer = L.railRadius + T.px(1)
+    -- Persistent pts buffers and persistent { pts = ... } wrappers, exactly
+    -- like the needle (Phase 5.1 + 5.2): the binding copies the coordinates
+    -- out on every set and retains no reference to either table, so both can
+    -- be mutated in place forever. The marks were left out of Phase 5 and
+    -- stayed the last per-frame allocator on the dial - 870 B/frame for the
+    -- whole time the history is advancing, which is every second of a climb,
+    -- not the "few seconds after power-up" the original note assumed.
+    -- NEVER route these through setProp: its cache compares tables by
+    -- identity and would drop every write after the first (5.1/5.2 TRAP 2).
+    ui.minMarkPts = { { 0, 0 }, { 0, 0 } }
+    ui.maxMarkPts = { { 0, 0 }, { 0, 0 } }
+    ui.minMarkSet = { pts = ui.minMarkPts }
+    ui.maxMarkSet = { pts = ui.maxMarkPts }
     ui.minMark = lvgl.line{
-      pts = G.linePoints(L.cx, L.cy, inner, outer, L.startAngle),
+      pts = G.linePointsInto(ui.minMarkPts, L.cx, L.cy, L.markInner,
+                             L.markOuter, L.startAngle),
       thickness = max(1, L.tickThickness), color = T.color.history,
     }
     ui.maxMark = lvgl.line{
-      pts = G.linePoints(L.cx, L.cy, inner, outer, L.startAngle),
+      pts = G.linePointsInto(ui.maxMarkPts, L.cx, L.cy, L.markInner,
+                             L.markOuter, L.startAngle),
       thickness = max(1, L.tickThickness), color = T.color.history,
     }
     lvgl.hide(ui.minMark)
@@ -512,15 +525,37 @@ function M.updateChip(widget, s)
       setProp(widget, ui.chipEdge, "x", x - T.px(1))
       setProp(widget, ui.chipEdge, "w", w + T.px(2))
     end
+    -- Centre the text INSIDE the pill it now hugs. The label was placed
+    -- against stateBox, and for a RIGHT-aligned state row - the bar's - the
+    -- pill's right edge coincides with stateBox's, so the word came out
+    -- flush against the pill's right side with the whole 2 * chipPad sitting
+    -- on the left. Re-anchoring the label to the PILL makes the padding
+    -- symmetric for every alignment; for the dial's CENTER row both are
+    -- already concentric, so this changes nothing there.
+    if ui.stateLabel then
+      setProp(widget, ui.stateLabel, "x", x)
+      setProp(widget, ui.stateLabel, "w", w)
+      setProp(widget, ui.stateLabel, "align", CENTER)
+    end
     lvgl.show(ui.chipEdge)
     lvgl.show(ui.chip)
     -- The pill's actual footprint (edge rectangle, not the narrower
     -- stateBox the text sits in) - kept so updateArc can stop the needle
     -- short of it instead of drawing straight through (Tanda 5 review 3.12).
-    frame.chipBox = {
-      x = x - T.px(1), y = L.stateBox.y - L.chipOff - T.px(1),
-      w = w + T.px(2), h = L.chipHeight + T.px(2),
-    }
+    -- Allocated once and mutated after that: this used to mint a fresh table
+    -- on every chip show, which a value oscillating across a threshold turns
+    -- into a per-frame allocation. Read only through needleReach(), which
+    -- gates on frame.chipShown, so a box left over from the last show is
+    -- never consulted while the chip is hidden.
+    local cb = frame.chipBox
+    if not cb then
+      cb = {}
+      frame.chipBox = cb
+    end
+    cb.x = x - T.px(1)
+    cb.y = L.stateBox.y - L.chipOff - T.px(1)
+    cb.w = w + T.px(2)
+    cb.h = L.chipHeight + T.px(2)
   else
     lvgl.hide(ui.chipEdge)
     lvgl.hide(ui.chip)
@@ -700,17 +735,18 @@ local function updateHistory(widget)
   end
   if not shown then return end
 
-  local inner = L.radius - floor(L.trackThickness / 2) - T.px(1)
-  local outer = L.railRadius + T.px(1)
+  -- in-place into the build-time buffers, direct lvgl.set, never setProp
   local a = angleOf(widget, h.min)
   if a ~= frame.minAngle then
     frame.minAngle = a
-    lvgl.set(ui.minMark, { pts = G.linePoints(L.cx, L.cy, inner, outer, a) })
+    G.linePointsInto(ui.minMarkPts, L.cx, L.cy, L.markInner, L.markOuter, a)
+    lvgl.set(ui.minMark, ui.minMarkSet)
   end
   a = angleOf(widget, h.max)
   if a ~= frame.maxAngle then
     frame.maxAngle = a
-    lvgl.set(ui.maxMark, { pts = G.linePoints(L.cx, L.cy, inner, outer, a) })
+    G.linePointsInto(ui.maxMarkPts, L.cx, L.cy, L.markInner, L.markOuter, a)
+    lvgl.set(ui.maxMark, ui.maxMarkSet)
   end
 end
 
