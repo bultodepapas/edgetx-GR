@@ -1222,10 +1222,14 @@ test("P0-2: the cell latch rebuilds sections, rails and scale labels", function(
 
   -- rail mode: same story
   local wr = newWidget(zone, { Source = ID_RXBT, ColorMode = "Rail" })
-  local railBefore = wr.ui.rails[1].props.startAngle .. "-" .. wr.ui.rails[1].props.endAngle
+  local function railSpan()
+    local p = wr.ui.rails[1].props
+    return p.startAngle .. "-" .. p.endAngle
+  end
+  local railBefore = railSpan()
   mock.setValue(ID_RXBT, 16.4)
   refresh(wr, 2)
-  local railAfter = wr.ui.rails[1].props.startAngle .. "-" .. wr.ui.rails[1].props.endAngle
+  local railAfter = railSpan()
   assertTrue(railBefore ~= railAfter, "rail angles must follow the new scale")
 
   -- bar mode: threshold marks must follow too
@@ -1282,7 +1286,8 @@ test("history falls back to tracking for local sources", function()
   assertEq(w.history.max, 900)
 end)
 
-test("P1-9: the fallback tracker still runs while siblings resolve but read nil", function()
+test("P1-9: the fallback tracker runs while siblings resolve but read nil",
+function()
   -- RSSI-/RSSI+ are registered fields (minId/maxId resolve) but never given a
   -- value: a sensor that just appeared has no samples yet. Treating a nil
   -- reading as "the radio has it covered" would disable the fallback tracker
@@ -1295,7 +1300,8 @@ test("P1-9: the fallback tracker still runs while siblings resolve but read nil"
   assertEq(w.history.max, 80)
 end)
 
-test("P0-7: battery percent history is tracked in percent, not raw sibling volts", function()
+test("P0-7: battery percent history is tracked in percent, not sibling volts",
+function()
   local w = newWidget(nil, { Source = ID_RXBT, Battery = "Li-Po",
                              ShowMinMax = "Markers + text" })
   mock.setValue(ID_RXBT_MIN, 14.8)
@@ -1307,7 +1313,8 @@ test("P0-7: battery percent history is tracked in percent, not raw sibling volts
   assertTrue(w.history.min >= 0 and w.history.min <= 100)
 end)
 
-test("P0-7: Cells=Total history is tracked in pack volts, not per-cell siblings", function()
+test("P0-7: Cells=Total history is tracked in pack volts, not per-cell",
+function()
   local w = newWidget(nil, { Source = ID_CELLS, Cells = "Total",
                              Scale = "Manual", Min = 0, Max = 20 })
   -- Cels-/Cels+ (a real firmware pair) report a single CELL's extreme, which
@@ -1336,7 +1343,8 @@ test("P1-8: the reset switch resets a real telemetry sensor at the radio", funct
   refresh(w)
   assertEq(#mock.sim.sensorResets, 1, "model.resetSensor must be called once")
   assertEq(mock.sim.sensorResets[1], 0, "RSSI is sensor index 0 in this radio")
-  assertEq(w.history.min, nil, "history cleared by the reset, not re-fed stale siblings")
+  assertEq(w.history.min, nil,
+    "history cleared by the reset, not re-fed from stale siblings")
   assertEq(w.history.max, nil)
 end)
 
@@ -1731,7 +1739,8 @@ test("P0-1: a switch mis-read as a value does not silence alerts", function()
   mock.setSwitch(SWITCH, true)   -- right API's store: armed
   mock.setValue(ID_RSSI, 10)
   refresh(w, 2)
-  assertTrue(#mock.sim.tones > 0, "alert must fire: the switch is armed via getSwitchValue")
+  assertTrue(#mock.sim.tones > 0,
+    "alert must fire: the switch is armed via getSwitchValue")
 end)
 
 -- ---- scenarios -----------------------------------------------------------

@@ -24,18 +24,18 @@ local function check(name, ok, detail)
     .. (detail and (" (" .. tostring(detail) .. ")") or "")
 end
 
-local function create(zone, options)
+local function create(zone, _options)
   if not lvgl then
     error("lvgl missing - requires EdgeTX 2.11+")
   end
   return { zone = zone, ui = {}, step = 0 }
 end
 
-local function update(spike, options)
+local function update(spike, _options)
   spike.step = (spike.step + 1) % 4
 end
 
-local function refresh(spike, event, touch)
+local function refresh(spike, _event, _touch)
   local zone = spike.zone
   local cx, cy = math.floor(zone.w / 2), math.floor(zone.h / 2)
   local r = math.min(zone.w, zone.h) / 2 - 10
@@ -75,7 +75,8 @@ local function refresh(spike, event, touch)
     local rad = a * math.pi / 180
     lvgl.set(spike.ui.needle,
       { pts = { { x = cx, y = cy },
-                { x = cx + (r - 6) * math.cos(rad), y = cy + (r - 6) * math.sin(rad) } } })
+                { x = cx + (r - 6) * math.cos(rad),
+                  y = cy + (r - 6) * math.sin(rad) } } })
     lvgl.set(spike.ui.lbl, { text = "a=" .. a })
   elseif spike.step == 2 then
     -- 3) hide/show round trip
@@ -84,7 +85,8 @@ local function refresh(spike, event, touch)
     lvgl.show(spike.ui.needle)
     -- 4) constants and helpers used by the widget
     local w, h = lcd.sizeText("88.8", 0x500)
-    check("sizeText", type(w) == "number" and type(h) == "number" and h > 0, tostring(w) .. "x" .. tostring(h))
+    check("sizeText", type(w) == "number" and type(h) == "number" and h > 0,
+      tostring(w) .. "x" .. tostring(h))
     check("LCD_SCALE", type(lvgl.LCD_SCALE) == "number", tostring(lvgl.LCD_SCALE))
     check("theme colors", type(COLOR_THEME_WARNING) == "number")
     local text = ""

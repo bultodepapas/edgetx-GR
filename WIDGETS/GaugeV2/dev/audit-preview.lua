@@ -88,7 +88,8 @@ local function arcPath(cx, cy, r, a1, a2)
   if sweep >= 359.5 then
     local x1, y1 = polar(cx, cy, r, s)
     local x2, y2 = polar(cx, cy, r, s + 180)
-    return string.format("M %.2f %.2f A %.2f %.2f 0 1 1 %.2f %.2f A %.2f %.2f 0 1 1 %.2f %.2f",
+    return string.format("M %.2f %.2f A %.2f %.2f 0 1 1 %.2f %.2f"
+      .. " A %.2f %.2f 0 1 1 %.2f %.2f",
       x1, y1, r, r, x2, y2, r, r, x1, y1)
   end
   local x1, y1 = polar(cx, cy, r, s)
@@ -131,11 +132,13 @@ local function emit(out, obj, pal, label)
       local d = arcPath(p.x, p.y, p.radius, p.bgStartAngle, p.bgEndAngle)
       if d then
         out[#out+1] = string.format(
-          '<path d="%s" fill="none" stroke="%s" stroke-width="%d" stroke-opacity="%.2f" stroke-linecap="%s"/>',
+          '<path d="%s" fill="none" stroke="%s" stroke-width="%d"'
+            .. ' stroke-opacity="%.2f" stroke-linecap="%s"/>',
           d, colorOf(pal, p.bgColor or p.color), p.thickness or 2, bgOpa,
           (p.rounded == 1) and "round" or "butt")
       else
-        warn("%s: arc background start==end after LVGL normalisation (%d..%d) -> NOT DRAWN",
+        warn("%s: arc background start==end after LVGL normalisation"
+          .. " (%d..%d) -> NOT DRAWN",
              label, p.bgStartAngle, p.bgEndAngle)
       end
     end
@@ -143,29 +146,37 @@ local function emit(out, obj, pal, label)
       local d = arcPath(p.x, p.y, p.radius, p.startAngle, p.endAngle)
       if d then
         out[#out+1] = string.format(
-          '<path d="%s" fill="none" stroke="%s" stroke-width="%d" stroke-opacity="%.2f" stroke-linecap="%s"/>',
+          '<path d="%s" fill="none" stroke="%s" stroke-width="%d"'
+            .. ' stroke-opacity="%.2f" stroke-linecap="%s"/>',
           d, colorOf(pal, p.color), p.thickness or 2, opa,
           (p.rounded == 1) and "round" or "butt")
       end
     end
   elseif obj.kind == "line" then
     local pts = {}
-    for _, pt in ipairs(p.pts or {}) do pts[#pts+1] = string.format("%.1f,%.1f", pt[1], pt[2]) end
+    for _, pt in ipairs(p.pts or {}) do
+      pts[#pts+1] = string.format("%.1f,%.1f", pt[1], pt[2])
+    end
     out[#out+1] = string.format(
-      '<polyline points="%s" fill="none" stroke="%s" stroke-width="%d" stroke-opacity="%.2f" stroke-linecap="%s"/>',
+      '<polyline points="%s" fill="none" stroke="%s" stroke-width="%d"'
+        .. ' stroke-opacity="%.2f" stroke-linecap="%s"/>',
       table.concat(pts, " "), colorOf(pal, p.color), p.thickness or 1, opa,
       (p.rounded == 1) and "round" or "butt")
   elseif obj.kind == "triangle" then
     local pts = {}
-    for _, pt in ipairs(p.pts or {}) do pts[#pts+1] = string.format("%.1f,%.1f", pt[1], pt[2]) end
+    for _, pt in ipairs(p.pts or {}) do
+      pts[#pts+1] = string.format("%.1f,%.1f", pt[1], pt[2])
+    end
     out[#out+1] = string.format('<polygon points="%s" fill="%s" fill-opacity="%.2f"/>',
       table.concat(pts, " "), colorOf(pal, p.color), opa)
   elseif obj.kind == "circle" then
-    out[#out+1] = string.format('<circle cx="%d" cy="%d" r="%d" fill="%s" fill-opacity="%.2f"/>',
+    out[#out+1] = string.format(
+      '<circle cx="%d" cy="%d" r="%d" fill="%s" fill-opacity="%.2f"/>',
       p.x, p.y, p.radius, colorOf(pal, p.color), opa)
   elseif obj.kind == "rectangle" then
     out[#out+1] = string.format(
-      '<rect x="%d" y="%d" width="%d" height="%d" rx="%d" fill="%s" fill-opacity="%.2f"/>',
+      '<rect x="%d" y="%d" width="%d" height="%d" rx="%d"'
+        .. ' fill="%s" fill-opacity="%.2f"/>',
       p.x, p.y, p.w or 0, p.h or 0, p.rounded or 0, colorOf(pal, p.color), opa)
   elseif obj.kind == "label" then
     local text = tostring(p.text or "")
@@ -181,7 +192,9 @@ local function emit(out, obj, pal, label)
     end
     nextClip = nextClip + 1
     local cid = "c" .. nextClip
-    out[#out+1] = string.format('<clipPath id="%s"><rect x="%d" y="%d" width="%d" height="%d"/></clipPath>',
+    out[#out+1] = string.format(
+      '<clipPath id="%s"><rect x="%d" y="%d" width="%d" height="%d"/>'
+        .. '</clipPath>',
       cid, p.x, p.y, bw, bh)
     out[#out+1] = string.format('<g clip-path="url(#%s)">', cid)
     local anchor, x = "start", p.x
@@ -189,13 +202,18 @@ local function emit(out, obj, pal, label)
     elseif p.align == RIGHT then anchor, x = "end", p.x + bw end
     for i = 1, #lines do
       out[#out+1] = string.format(
-        '<text x="%.1f" y="%.1f" font-size="%d" fill="%s" text-anchor="%s" font-family="DejaVu Sans, Verdana, sans-serif" fill-opacity="%.2f">%s</text>',
-        x, p.y + (i-1)*lineH + size*0.78, size, colorOf(pal, p.color), anchor, opa, esc(lines[i]))
+        '<text x="%.1f" y="%.1f" font-size="%d" fill="%s"'
+        .. ' text-anchor="%s"'
+        .. ' font-family="DejaVu Sans, Verdana, sans-serif"'
+        .. ' fill-opacity="%.2f">%s</text>',
+        x, p.y + (i-1)*lineH + size*0.78, size, colorOf(pal, p.color),
+        anchor, opa, esc(lines[i]))
     end
     out[#out+1] = "</g>"
     if wrapped then
       out[#out+1] = string.format(
-        '<rect x="%d" y="%d" width="%d" height="%d" fill="none" stroke="#ff3b30" stroke-width="1" stroke-dasharray="3 2"/>',
+        '<rect x="%d" y="%d" width="%d" height="%d" fill="none"'
+          .. ' stroke="#ff3b30" stroke-width="1" stroke-dasharray="3 2"/>',
         p.x, p.y, bw, bh)
     end
   end
@@ -204,9 +222,12 @@ end
 local function renderSvg(zone, theme, scale, label)
   local pal = PALETTES[theme]
   local out = {}
-  out[#out+1] = string.format('<svg viewBox="0 0 %d %d" width="%d" height="%d" xmlns="http://www.w3.org/2000/svg">',
+  out[#out+1] = string.format(
+    '<svg viewBox="0 0 %d %d" width="%d" height="%d"'
+      .. ' xmlns="http://www.w3.org/2000/svg">',
     zone.w, zone.h, math.floor(zone.w*scale), math.floor(zone.h*scale))
-  out[#out+1] = string.format('<rect width="%d" height="%d" fill="%s"/>', zone.w, zone.h, pal.bg)
+  out[#out+1] = string.format('<rect width="%d" height="%d" fill="%s"/>',
+    zone.w, zone.h, pal.bg)
   for _, obj in ipairs(mock.objects()) do
     if obj.visible then emit(out, obj, pal, label) end
   end
@@ -272,7 +293,8 @@ local html = {
   "svg{border-radius:5px;display:block}",
   ".note{color:#8b949e;font-size:12px;margin:4px 0 10px}",
   "</style>",
-  "<h1>GaugeV2 &mdash; audit preview (LVGL angle normalisation + label clipping modelled)</h1>",
+  "<h1>GaugeV2 &mdash; audit preview"
+  .. " (LVGL angle normalisation + label clipping modelled)</h1>",
 }
 
 local function section(title, note)
@@ -293,13 +315,15 @@ local function card(title, zone, overrides, value, history, frames, post, both)
     light = renderSvg(z, "light", scale, title)
   end
   html[#html+1] = string.format(
-    "<div class='card'><h3>%s <span style='color:#6f7b87'>%dx%d</span></h3><div class='pair'>%s%s</div></div>",
+    "<div class='card'><h3>%s <span style='color:#6f7b87'>%dx%d</span>"
+    .. "</h3><div class='pair'>%s%s</div></div>",
     esc(title), zone[1], zone[2], dark, light)
 end
 
 -- 1. value sweep --------------------------------------------------------
 section("1 &middot; Value sweep, default dial (RSSI 0..100, crit 35, warn 55, Rail)",
-  "Same widget, nine values. Watch the arc length, needle angle, colour band and state chip.")
+  "Same widget, nine values. Watch the arc length, needle angle, colour"
+  .. " band and state chip.")
 for _, v in ipairs({ 0, 5, 20, 34, 36, 54, 56, 78, 100 }) do
   card("value = " .. v, { 200, 160 }, {}, v, nil, 40, nil, false)
 end
@@ -327,30 +351,36 @@ end
 endsection()
 
 -- 4. zone matrix --------------------------------------------------------
-section("4 &middot; Zone matrix", "Widget zones seen in real EdgeTX layouts, plus awkward aspect ratios.")
+section("4 &middot; Zone matrix",
+  "Widget zones seen in real EdgeTX layouts, plus awkward aspect ratios.")
 local ZONES = {
   { 60, 60 }, { 80, 60 }, { 100, 100 }, { 128, 96 }, { 160, 160 },
   { 200, 160 }, { 200, 200 }, { 260, 220 }, { 300, 150 }, { 120, 220 },
   { 100, 260 }, { 300, 60 }, { 200, 50 }, { 480, 130 }, { 480, 272 },
 }
 for _, z in ipairs(ZONES) do
-  card(z[1] .. "x" .. z[2], z, { ShowMinMax = "Markers + text" }, 78, { 31, 92 }, 40, nil, false)
+  card(z[1] .. "x" .. z[2], z, { ShowMinMax = "Markers + text" }, 78,
+    { 31, 92 }, 40, nil, false)
 end
 endsection()
 
 -- 5. availability -------------------------------------------------------
-section("5 &middot; Availability states", "valid / stale / link down / no source, and the critical pulse trough.")
+section("5 &middot; Availability states",
+  "valid / stale / link down / no source, and the critical pulse trough.")
 card("valid", { 220, 170 }, {}, 78, { 31, 92 })
-card("stale", { 220, 170 }, {}, 78, { 31, 92 }, 30, function(w, mod, opts, src)
+card("stale", { 220, 170 }, {}, 78, { 31, 92 }, 30,
+  function(w, mod, _opts, src)
   mock.sim.current[src] = false
   mock.advance(50); mod.refresh(w)
 end)
-card("link down", { 220, 170 }, {}, 78, { 31, 92 }, 30, function(w, mod, opts, src)
+card("link down", { 220, 170 }, {}, 78, { 31, 92 }, 30,
+  function(w, mod, _opts, src)
   mock.setValue(src, nil); mock.sim.rssi = 0
   mock.advance(50); mod.refresh(w)
 end)
-card("critical -> link down (pulse bug)", { 220, 170 }, { ColorMode = "Threshold" }, 5, nil, 40,
-  function(w, mod, opts, src)
+card("critical -> link down (pulse bug)", { 220, 170 },
+  { ColorMode = "Threshold" }, 5, nil, 40,
+  function(w, mod, _opts, src)
     while not w.frame.pulse do mock.advance(50); mod.refresh(w) end
     mock.setValue(src, nil); mock.sim.rssi = 0
     mock.advance(50); mod.refresh(w)
@@ -359,15 +389,19 @@ card("no source", { 220, 170 }, { __src = 0 }, nil)
 endsection()
 
 -- 6. defect scenarios ---------------------------------------------------
-section("6 &middot; Defect scenarios from the audit", "Each of these is a finding in AUDIT.md, rendered.")
+section("6 &middot; Defect scenarios from the audit",
+  "Each of these is a finding in AUDIT.md, rendered.")
 
 card("P0-3 inverted scale (Min 100, Max 0)", { 200, 200 },
-  { __src = ID_STICK, Scale = "Manual", Min = 100, Max = 0, ColorMode = "Sections" }, 25)
+  { __src = ID_STICK, Scale = "Manual", Min = 100, Max = 0,
+    ColorMode = "Sections" }, 25)
 card("P0-3 reference: same, ascending", { 200, 200 },
-  { __src = ID_STICK, Scale = "Manual", Min = 0, Max = 100, ColorMode = "Sections" }, 25)
+  { __src = ID_STICK, Scale = "Manual", Min = 0, Max = 100,
+    ColorMode = "Sections" }, 25)
 
 card("P0-2 stale sections after 4S latch", { 200, 200 },
-  { __src = ID_RXBT, ColorMode = "Sections", __hmin = ID_RXBT_MIN, __hmax = ID_RXBT_MAX }, 16.4)
+  { __src = ID_RXBT, ColorMode = "Sections", __hmin = ID_RXBT_MIN,
+    __hmax = ID_RXBT_MAX }, 16.4)
 card("P0-2 reference: same scale, fresh build", { 200, 200 },
   { __src = ID_STICK, Scale = "Manual", Min = 13, Max = 17, Warn = 15, Crit = 14,
     ColorMode = "Sections", Precision = "1" }, 16.4)
@@ -405,11 +439,16 @@ card("P1-11 reference: dial rails, same sensor", { 200, 200 },
 endsection()
 
 -- 7. text-heavy scales --------------------------------------------------
-section("7 &middot; Wide value strings", "How the auto-fit font copes as the widest sample grows.")
-card("0..100", { 200, 160 }, { __src = ID_STICK, Scale = "Manual", Min = 0, Max = 100 }, 78)
-card("0..1024", { 200, 160 }, { __src = ID_STICK, Scale = "Manual", Min = 0, Max = 1024 }, 780)
-card("0..20000", { 200, 160 }, { __src = ID_STICK, Scale = "Manual", Min = 0, Max = 20000 }, 15400)
-card("-120..0 dBm", { 200, 160 }, { __src = ID_STICK, Scale = "Manual", Min = -120, Max = 0 }, -76)
+section("7 &middot; Wide value strings",
+  "How the auto-fit font copes as the widest sample grows.")
+card("0..100", { 200, 160 },
+  { __src = ID_STICK, Scale = "Manual", Min = 0, Max = 100 }, 78)
+card("0..1024", { 200, 160 },
+  { __src = ID_STICK, Scale = "Manual", Min = 0, Max = 1024 }, 780)
+card("0..20000", { 200, 160 },
+  { __src = ID_STICK, Scale = "Manual", Min = 0, Max = 20000 }, 15400)
+card("-120..0 dBm", { 200, 160 },
+  { __src = ID_STICK, Scale = "Manual", Min = -120, Max = 0 }, -76)
 card("2 decimals 0..100", { 200, 160 },
   { __src = ID_STICK, Scale = "Manual", Min = 0, Max = 100, Precision = "2" }, 78)
 card("2 decimals, micro", { 60, 60 },
