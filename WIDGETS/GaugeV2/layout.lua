@@ -71,17 +71,20 @@ end
 --
 -- The pill is `extra` px taller than its text and vertically centred on it
 -- (chipOff = floor(extra / 2) above), so what hangs below is the half that
--- floor() did NOT take - and on top of that the 1 px chipEdge outline the
--- renderers draw around the pill (renderer.build / bar.build).
+-- floor() did NOT take - plus the chipEdge outline the renderers draw around
+-- the pill (renderer.build / bar.build).
 --
--- Both renderers derive their pill from `extra` through exactly these two
--- lines, so a row budget computed here can no longer disagree with what
--- actually gets painted. Guessing it as floor(extra / 2) forgot the outline
--- and put the pill 1 px past the bottom of every bar zone (2 px on a short
--- one, where the fallback reserved nothing at all).
-local function chipOverhang(shown, extra)
+-- `outline` is passed in, not restated, because that is the whole lesson of
+-- this function. The budget used to guess the overhang as floor(extra / 2),
+-- forgetting the outline entirely, and the pill left the bottom of every bar
+-- zone. The first repair hard-coded T.px(1) here - and px() is not linear:
+-- at LCD_SCALE 1.375 the renderers' `+ T.px(2)` on the outline box is 3, not
+-- 2 * T.px(1) = 2, so the pill went right back outside on 800 px radios.
+-- One value, defined once in the layout (L.chipOutline), used by the budget
+-- AND by both renderers.
+local function chipOverhang(shown, extra, outline)
   if not shown then return 0 end
-  return extra - floor(extra / 2) + T.px(1)
+  return extra - floor(extra / 2) + outline
 end
 
 -- mode: micro (<64), compact (<105), normal (<180), large (>=180)
@@ -513,6 +516,9 @@ local function dialLayout(widget, cfg, L, w, h)
   L.chipPad = T.px(7)
   L.chipHeight = stateH + T.px(6)
   L.chipOff = floor((L.chipHeight - stateH) / 2)
+  -- see barLayout: the outline is ONE value both renderers inset by and grow
+  -- by twice, because T.px(2) is not 2 * T.px(1) at every LCD_SCALE
+  L.chipOutline = T.px(1)
 end
 
 -- ------------------------------------------------------------------- bar --
@@ -552,6 +558,11 @@ local function barLayout(widget, cfg, L, w, h)
   -- once the pill taught the same lesson.
   L.markOverhang = T.px(2)
 
+  -- Width of the chipEdge outline drawn around the state pill, on EACH side.
+  -- Both renderers must inset by this and grow by twice it - never by
+  -- T.px(2), which is not 2 * T.px(1) at every LCD_SCALE (see chipOverhang).
+  L.chipOutline = T.px(1)
+
   -- The row below the bar carries the state text (right) and, when there is
   -- height for it, the name (left). Its height is the STATE font's, never
   -- the name's: sizing it from nameH meant the short-bar paths zeroed nameH
@@ -588,7 +599,7 @@ local function barLayout(widget, cfg, L, w, h)
   local function fits(extra)
     chipExtra = extra
     rowH = (L.showState or L.showName)
-      and (stateH + chipOverhang(L.showState, extra)) or 0
+      and (stateH + chipOverhang(L.showState, extra, L.chipOutline)) or 0
     -- What has to fit UNDER the bar. With no row down there, the bottom pad
     -- is all that separates the bar from the zone edge, and the markers
     -- already stick markOverhang px past it - so the marker, not the row,

@@ -446,8 +446,12 @@ M.sections = {
         opts = { Style = "Bar" }, value = 22 },
       { name = "br-narrow", title = "300 x 44", zone = { 300, 44 },
         opts = { Style = "Bar" }, value = 22 },
-      { name = "br-short", title = "160 x 44 (sin chip)", zone = { 160, 44 },
-        opts = { Style = "Bar" }, value = 22 },
+      -- El chip SI sale aqui: showState solo depende del ANCHO (>= px(120)),
+      -- y el presupuesto vertical tiene un peldano de pill desnudo para que
+      -- una barra de 44 px no pierda WARN/CRIT (P1-2). El titulo decia "sin
+      -- chip" y llevaba tiempo contradiciendo a su propio render.
+      { name = "br-short", title = "160 x 44 (pill al minimo)",
+        zone = { 160, 44 }, opts = { Style = "Bar" }, value = 22 },
       { name = "br-lowgood", title = "low-is-good (T1)", zone = { 300, 70 },
         source = "T1", opts = { Style = "Bar" }, value = 95 },
       { name = "br-nochip", title = "chip desactivado", zone = { 300, 70 },

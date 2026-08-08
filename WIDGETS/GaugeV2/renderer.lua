@@ -357,11 +357,12 @@ function M.build(widget)
     -- 1 px outline in the lighter label role, behind the dark pill, so the
     -- chip reads as a label with a defined edge instead of "a piece of the
     -- rail behind the text" (review P-B).
+    local edge = L.chipOutline
     ui.chipEdge = lvgl.rectangle{
-      x = L.stateBox.x - T.px(1), y = L.stateBox.y - L.chipOff - T.px(1),
-      w = L.stateBox.w + T.px(2), h = L.chipHeight + T.px(2),
+      x = L.stateBox.x - edge, y = L.stateBox.y - L.chipOff - edge,
+      w = L.stateBox.w + edge * 2, h = L.chipHeight + edge * 2,
       color = T.color.label, filled = 1,
-      rounded = floor((L.chipHeight + T.px(2)) / 2),
+      rounded = floor((L.chipHeight + edge * 2) / 2),
     }
     ui.chip = lvgl.rectangle{
       x = L.stateBox.x, y = L.stateBox.y - L.chipOff,
@@ -522,8 +523,8 @@ function M.updateChip(widget, s)
     setProp(widget, ui.chip, "x", x)
     setProp(widget, ui.chip, "w", w)
     if ui.chipEdge then
-      setProp(widget, ui.chipEdge, "x", x - T.px(1))
-      setProp(widget, ui.chipEdge, "w", w + T.px(2))
+      setProp(widget, ui.chipEdge, "x", x - L.chipOutline)
+      setProp(widget, ui.chipEdge, "w", w + L.chipOutline * 2)
     end
     -- Centre the text INSIDE the pill it now hugs. The label was placed
     -- against stateBox, and for a RIGHT-aligned state row - the bar's - the
@@ -552,10 +553,10 @@ function M.updateChip(widget, s)
       cb = {}
       frame.chipBox = cb
     end
-    cb.x = x - T.px(1)
-    cb.y = L.stateBox.y - L.chipOff - T.px(1)
-    cb.w = w + T.px(2)
-    cb.h = L.chipHeight + T.px(2)
+    cb.x = x - L.chipOutline
+    cb.y = L.stateBox.y - L.chipOff - L.chipOutline
+    cb.w = w + L.chipOutline * 2
+    cb.h = L.chipHeight + L.chipOutline * 2
   else
     lvgl.hide(ui.chipEdge)
     lvgl.hide(ui.chip)

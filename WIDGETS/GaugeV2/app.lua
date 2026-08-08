@@ -90,8 +90,9 @@ local function painter(widget)
 end
 M.painter = painter
 
--- Ranges, derived text and layout. Called from update(), and again from
--- refresh() the one time a battery pack's cell count becomes known.
+-- Ranges, derived text and layout. Called from update(), and from refresh()
+-- through the two one-shot latches there: the frame a battery pack's cell
+-- count becomes known, and the frame a late-arriving sensor finally resolves.
 local function configure(widget)
   local m, cfg, src = widget.mods, widget.config, widget.source
 

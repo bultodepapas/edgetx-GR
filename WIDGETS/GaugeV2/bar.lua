@@ -136,11 +136,12 @@ function M.build(widget)
     -- identically in bar zones (AUDIT.md P1-10). Text vertically centred and
     -- a 1 px outline in the lighter label role (review P-B). The centring
     -- offset is LAYOUT data (L.chipOff) - see renderer.build (Tanda 6 F-1).
+    local edge = L.chipOutline
     ui.chipEdge = lvgl.rectangle{
-      x = L.stateBox.x - T.px(1), y = L.stateBox.y - L.chipOff - T.px(1),
-      w = L.stateBox.w + T.px(2), h = L.chipHeight + T.px(2),
+      x = L.stateBox.x - edge, y = L.stateBox.y - L.chipOff - edge,
+      w = L.stateBox.w + edge * 2, h = L.chipHeight + edge * 2,
       color = T.color.label, filled = 1,
-      rounded = floor((L.chipHeight + T.px(2)) / 2),
+      rounded = floor((L.chipHeight + edge * 2) / 2),
     }
     ui.chip = lvgl.rectangle{
       x = L.stateBox.x, y = L.stateBox.y - L.chipOff,

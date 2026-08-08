@@ -61,8 +61,12 @@ end
 
 local ZONE = { x = 0, y = 0, w = 200, h = 160 }
 
-local function newWidget(zone, overrides, capacity, keepRadio)
+-- `scale` overrides lvgl.LCD_SCALE for this widget (0.8 / 1.0 / 1.375 are the
+-- three EdgeTX ships). theme.px() reads it live, so a test can walk all three
+-- as long as it restores 1.0 afterwards.
+local function newWidget(zone, overrides, capacity, keepRadio, scale)
   if not keepRadio then setupRadio() end
+  lvgl.LCD_SCALE = scale or 1.0
   if capacity == 10 then mock.sim.version = { "2.11.0", "sim", 2, 11, 0 } end
   local mod = dofile(widgetDir .. "main.lua")
   local opts = mock.makeOptions(mod.defs, overrides)
@@ -1461,6 +1465,14 @@ local BOUND_CASES = {
                                                 Sweep = "360 deg" } },
 }
 
+-- EdgeTX ships three screen scales (etx_lv_theme.h): 0.8 on 320 px radios,
+-- 1.0 on 480 px, 1.375 on 800 px. theme.px() rounds through each of them and
+-- px() is NOT linear - px(2) is 2, 2 and 3, while 2 * px(1) is 2, 2 and 2.
+-- The mock defaults to 1.0, so the entire suite used to exercise exactly one
+-- of the three, and two separate versions of the pill-overflow bug survived
+-- because their arithmetic only broke on a scale nobody ran.
+local LCD_SCALES = { 0.8, 1.0, 1.375 }
+
 test("every layout keeps its objects inside the zone", function()
   -- ZERO slack, deliberately. This matrix used to allow 2 px - which is
   -- exactly what the state pill hung past the bottom of every bar zone,
@@ -1475,22 +1487,67 @@ test("every layout keeps its objects inside the zone", function()
   -- so anything outside is silently shaved off on the radio, where nobody is
   -- measuring. Hidden objects are checked too - a hidden object with a bad
   -- box is a bug waiting for the state that shows it.
-  for _, z in ipairs(ZONES) do
-    for _, c in ipairs(BOUND_CASES) do
-      local zone = { x = 0, y = 0, w = z[1], h = z[2] }
-      local ov = { Source = ID_RSSI }
-      for k, v in pairs(c.opts) do ov[k] = v end
-      local w = newWidget(zone, ov)
-      mock.setValue(ID_RSSI, c.value)
-      refresh(w, 2)
-      for _, obj in ipairs(mock.objects()) do
-        local x1, y1, x2, y2 = paintedBox(obj)
-        assertTrue(x1 >= 0 and y1 >= 0 and x2 <= zone.w and y2 <= zone.h,
-          string.format("%s / %s: %s out of %dx%d: %.0f,%.0f..%.0f,%.0f",
-            z[3], c.name, obj.kind, zone.w, zone.h, x1, y1, x2, y2))
+  for _, scale in ipairs(LCD_SCALES) do
+    for _, z in ipairs(ZONES) do
+      for _, c in ipairs(BOUND_CASES) do
+        local zone = { x = 0, y = 0, w = z[1], h = z[2] }
+        local ov = { Source = ID_RSSI }
+        for k, v in pairs(c.opts) do ov[k] = v end
+        local w = newWidget(zone, ov, nil, nil, scale)
+        mock.setValue(ID_RSSI, c.value)
+        refresh(w, 2)
+        for _, obj in ipairs(mock.objects()) do
+          local x1, y1, x2, y2 = paintedBox(obj)
+          assertTrue(x1 >= 0 and y1 >= 0 and x2 <= zone.w and y2 <= zone.h,
+            string.format("scale %.3f / %s / %s: %s out of %dx%d:"
+              .. " %.0f,%.0f..%.0f,%.0f", scale, z[3], c.name, obj.kind,
+              zone.w, zone.h, x1, y1, x2, y2))
+        end
       end
     end
   end
+  lvgl.LCD_SCALE = 1.0
+end)
+
+test("P1-2: the bar's degradation ladder is monotonic at every scale", function()
+  -- P1-2 guarantees the state row survives a 44 px bar - but that number is
+  -- a LCD_SCALE 1.0 fact, not a universal one. At 1.375 every reserve rounds
+  -- up (px(8) is 11, px(2) is 3) while the fonts do not, so a 44 px zone
+  -- genuinely cannot hold value + bar + state row and rung 5 correctly gives
+  -- the row up. Asserting "h >= 44 always keeps it" would be asserting that
+  -- the ladder ignores physics.
+  --
+  -- What must hold at EVERY scale is that the ladder degrades in one
+  -- direction: giving the layout MORE height must never take a feature away.
+  -- That catches a rounding slip in any rung without blessing a magic
+  -- threshold, and it is the invariant the nested-if version could not state.
+  for _, scale in ipairs(LCD_SCALES) do
+    local lostAt, regainedAt
+    for h = 30, 90 do
+      local w = newWidget({ x = 0, y = 0, w = 300, h = h },
+        { Source = ID_RSSI, Style = "Bar" }, nil, nil, scale)
+      if w.layout.showState then
+        if lostAt and not regainedAt then regainedAt = h end
+      else
+        if regainedAt then
+          error(string.format("scale %.3f: the state row came back at h=%d"
+            .. " and was lost again at h=%d - the ladder is not monotonic",
+            scale, regainedAt, h))
+        end
+        lostAt = h
+      end
+      -- and whenever it IS shown it must be real, not a zero-height stub
+      if w.layout.showState then
+        assertTrue(w.ui.stateLabel ~= nil and w.layout.stateBox.h > 0,
+          string.format("scale %.3f h=%d: a shown state row needs a real box",
+            scale, h))
+      end
+    end
+    assertTrue(regainedAt ~= nil,
+      string.format("scale %.3f: the state row must appear somewhere in"
+        .. " 30..90 px", scale))
+  end
+  lvgl.LCD_SCALE = 1.0
 end)
 
 test("layout modes and orientations classify as documented", function()
