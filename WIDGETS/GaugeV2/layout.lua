@@ -175,6 +175,15 @@ local function placeValue(L, region, sample, unitText, cap)
   local x0 = region.x + floor((region.w - groupW - optical) / 2)
   local y0 = region.y + floor((region.h - vh) / 2)
   if y0 < region.y then y0 = region.y end
+  -- The type ramp has a FLOOR (theme.RAMP's smallest font), so a region
+  -- shorter than that font still gets a box taller than itself - and in a
+  -- micro dial the region is already the zone's last few pixels, so the box
+  -- hung off the bottom edge of the widget (measured at 24x20, LCD_SCALE
+  -- 1.375: the value label ended 1 px outside). The region is the
+  -- preference; the zone is the hard limit. Only ever bites where the font
+  -- could not shrink far enough, so every zone with room is untouched.
+  if y0 + vh > L.h then y0 = max(L.h - vh, 0) end
+  if x0 < 0 then x0 = 0 end
   L.valueBox = box(x0, y0, vw, vh)
   -- P1-1 (Tanda 5 review 3.4): the box is reserved at the widest sample's
   -- width so digits never shift the group, but RIGHT-aligning the actual
@@ -315,6 +324,37 @@ local function dialLayout(widget, cfg, L, w, h)
   -- them read as one bevelled blob (review P-E). The 1 px band gap keeps the
   -- red->amber transition a clean range boundary.
   L.railGap = T.px(1)
+
+  -- CONTAINMENT. `radius` above has a px(8) FLOOR, so in a zone smaller than
+  -- the ring's own outer furniture the subtraction goes negative, the floor
+  -- wins, and everything derived from the radius is then pushed OUTSIDE the
+  -- zone - the ticks first, since they are the outermost thing on the dial.
+  --
+  -- That is not a cosmetic overflow. Ticks and history marks are LINES, and
+  -- LvglWidgetLine::getPt reads their coordinates with luaL_checkunsigned
+  -- (lua_lvgl_widget.cpp:1001,1004): a negative one RAISES on the radio, so
+  -- the widget dies on its first build and disables itself for the session -
+  -- the failure mode tests/mock_env.lua:checkPts exists to catch. Measured
+  -- before this clamp: every zone below ~32x32 at LCD_SCALE 1.0 (46x46 at
+  -- 1.375) built negative tick coordinates.
+  --
+  -- So give up the outer FURNITURE rather than the widget, in ascending order
+  -- of importance: the ticks first (a 30 px dial cannot resolve them anyway),
+  -- then the ring shrinks onto whatever is left. `edgeReach` is the clearance
+  -- from the dial centre to the nearest zone edge - the real budget, which
+  -- the dial BOX alone does not capture once the box has been centred.
+  local edgeReach = min(L.cx, L.cy, w - L.cx, h - L.cy) - 1
+  local railOut = floor(L.trackThickness / 2) + L.railThickness + L.railGap
+  if L.radius + railOut + T.px(T.space.xs) + tickLength > edgeReach then
+    local r = edgeReach - railOut - T.px(T.space.xs) - tickLength
+    if r >= T.px(8) then
+      L.radius = r                       -- ticks still fit: just shrink
+    else
+      L.tickCount, L.minorTicks, tickLength = 0, 0, 0
+      L.radius = max(edgeReach - railOut - T.px(1), T.px(3))
+    end
+  end
+
   L.railRadius = L.radius + floor(L.trackThickness / 2) + L.railThickness
     + L.railGap
   L.tickInner = L.railRadius + T.px(T.space.xs)
@@ -323,8 +363,12 @@ local function dialLayout(widget, cfg, L, w, h)
   -- markOverhang: renderer.build and renderer.updateHistory both need it and
   -- used to compute the same two expressions independently - the exact shape
   -- of drift that put the state pill outside its zone.
-  L.markInner = L.radius - floor(L.trackThickness / 2) - T.px(1)
-  L.markOuter = L.railRadius + T.px(1)
+  -- Both ends are clamped for the same luaL_checkunsigned reason as above:
+  -- `edgeReach` caps the outer end in the degenerate zones the branch above
+  -- lands in, and 0 caps the inner one, which goes negative once the ring is
+  -- thicker than the radius it was squeezed onto.
+  L.markInner = max(L.radius - floor(L.trackThickness / 2) - T.px(1), 0)
+  L.markOuter = min(L.railRadius + T.px(1), max(edgeReach, 0))
 
   -- In a balanced zone the value text hangs inside the dial circle, and the
   -- circle's clear interior at that height is a CHORD of the ring - narrower
@@ -620,9 +664,21 @@ local function barLayout(widget, cfg, L, w, h)
     L.showState = false                 -- rung 5: last resort
     fits(0)
   end
-  -- a zone too short for even the smallest value font keeps the font's
-  -- height anyway; the value box is what the auto-fit needs (AUDIT.md P1-4)
-  if textH < minText then textH = minText end
+  -- A zone too short for even the smallest value font keeps the font's
+  -- height anyway; the value box is what the auto-fit needs (AUDIT.md P1-4).
+  --
+  -- But raising textH back up does not create pixels. The bar was sized from
+  -- the budget that did NOT fit, so unless it gives the room back the track
+  -- is drawn past the bottom edge of the zone - measured at 200x20: the bar
+  -- ended 3 px outside, taking the min/max marks (markOverhang) with it.
+  -- LVGL clips it to the parent, so this is a silently truncated instrument
+  -- rather than a crash, which is precisely why it survived this long.
+  -- The bar is the element that degrades most gracefully here: a 2 px bar
+  -- still reads as a bar, a bar outside the widget reads as nothing.
+  if textH < minText then
+    textH = minText
+    barH = max(h - textH - max(rowH, L.markOverhang) - pad * 3, T.px(2))
+  end
 
   local valueRegion = box(pad, pad, w - pad * 2, textH)
   placeValue(L, valueRegion, F.widestSample(widget),
@@ -630,6 +686,19 @@ local function barLayout(widget, cfg, L, w, h)
              (h < T.px(60)) and T.FONTS.M or nil)
 
   L.bar = box(pad, pad + textH + pad, w - pad * 2, barH)
+  -- Below roughly 24 px of zone height nothing fits honestly any more: textH
+  -- has already been floored at the smallest font in the ramp (P1-4) and barH
+  -- at px(2), and the two plus the padding still exceed the zone. Slide the
+  -- bar up rather than let it - and the min/max marks that overhang it by
+  -- markOverhang - be drawn past the bottom edge. The value then overlaps the
+  -- bar, which is the honest picture at that size; painting outside the
+  -- widget is not, and LVGL would clip it away unseen.
+  local barLimit = h - L.markOverhang
+  if L.bar.y + L.bar.h > barLimit then
+    L.bar.y = max(barLimit - L.bar.h, L.markOverhang)
+    if L.bar.y + L.bar.h > h then L.bar.h = max(h - L.bar.y, 1) end
+    barH = L.bar.h
+  end
   L.barRadius = floor(barH / 2)
   L.nameBox = box(pad, L.bar.y + barH + pad, floor((w - pad * 2) / 2), nameH)
   L.stateBox = box(pad + floor((w - pad * 2) / 2), L.bar.y + barH + pad,

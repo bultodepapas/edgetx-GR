@@ -341,6 +341,22 @@ function M.refresh(widget)
     return
   end
 
+  -- A non-finite reading is not a value, and an instrument must not pretend
+  -- to know: NaN / +-inf are "no data", the same as no reading at all.
+  --
+  -- This is a containment guard, not a formality. The three are contagious:
+  -- geometry.normalize maps NaN to NaN (neither comparison in clamp() is
+  -- true), smoothing.step turns +-inf into NaN on its SECOND frame
+  -- (inf - inf), and the NaN then arrives at lvgl.set as an arc endAngle,
+  -- where the binding's luaL_checkinteger raises "number has no integer
+  -- representation" - the widget disables itself for the session. format.lua
+  -- already refuses to print a NaN (M.NO_VALUE); this is the same refusal
+  -- applied to the geometry, at the one gate every reading passes through.
+  if value ~= value or value == math.huge or value == -math.huge then
+    setNoData(data, "unavailable")
+    return
+  end
+
   if src.isTelemetry and not current then
     setNoData(data, "stale")
     return

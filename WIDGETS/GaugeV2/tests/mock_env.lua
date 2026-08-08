@@ -86,9 +86,15 @@ local function checkPts(kind, pts)
     -- coordinate raises a Lua error ON THE RADIO - the widget disables
     -- itself (Tanda 6 F-1, third door; 5.1 TRAP 1). The mock enforces it
     -- so the harness can never hide that class of bug.
+    -- %s, not %d: a coordinate off the top-left is typically a FRACTION
+    -- (pointOnCircle output, e.g. -0.37), and "%d" on a non-integer float
+    -- raises "number has no integer representation" from inside the
+    -- reporter - turning a precise diagnosis into a confusing harness
+    -- crash, which is exactly the masking this check exists to prevent.
     if pt[1] < 0 or pt[2] < 0 then
-      error(string.format("mock: pts[%d] negative coordinate (%d,%d)"
-        .. " - luaL_checkunsigned raises on the radio", i, pt[1], pt[2]), 4)
+      error(string.format("mock: pts[%d] negative coordinate (%s,%s)"
+        .. " - luaL_checkunsigned raises on the radio", i,
+        tostring(pt[1]), tostring(pt[2])), 4)
     end
   end
 end

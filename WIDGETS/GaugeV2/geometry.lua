@@ -33,6 +33,13 @@ end
 function M.normalize(value, minimum, maximum)
   if maximum == minimum then return 0 end
   local t = (value - minimum) / (maximum - minimum)
+  -- NaN survives clamp() untouched - neither `t < 0` nor `t > 1` is true of
+  -- it - and every angle and bar width on the widget is derived from this
+  -- one function, so a single NaN here reaches lvgl.set as a non-integer
+  -- and raises on the radio. telemetry.refresh rejects non-finite READINGS
+  -- at the gate; this catches a NaN arriving from anywhere else (a degenerate
+  -- min/max pair, a caller passing a computed bound).
+  if t ~= t then return 0 end
   return M.clamp(t, 0, 1)
 end
 

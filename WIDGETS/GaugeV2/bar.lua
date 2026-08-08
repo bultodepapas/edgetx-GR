@@ -189,24 +189,40 @@ end
 local function updateHistory(widget)
   local ui, frame = widget.ui, widget.frame
   local h = widget.history
-  if ui.ghost and h.min and h.max then
-    -- peak-hold marker: the extreme of the SWEEP, which is h.min on a
-    -- descending scale (Min > Max) - h.max maps back onto the start there
-    -- and the ghost marked the tract never visited (Tanda 6 F-3). Both
-    -- bounds are required: readHistorySiblings can populate one alone, and
-    -- the descending peak picks either one (Tanda 6 F-8 hardens the guard).
-    local peak = (widget.config.max >= widget.config.min) and h.max or h.min
-    local x = markX(widget, peak)
-    if x ~= frame.ghostX then
-      frame.ghostX = x
-      moveMark(ui, "ghost", x)
+  -- Both marks LEAVE when the history is cleared (the reset switch, a source
+  -- change, a range edit). They used to stay behind pointing at a peak that
+  -- no longer existed, and only corrected themselves on the next valid
+  -- reading - indefinitely, if the reset happened during a dropout. markX()
+  -- always returns at least L.bar.x (>= pad >= 1), so -1 is no real position
+  -- and doubles as the build-time "never placed" sentinel.
+  if ui.ghost then
+    if h.min and h.max then
+      -- peak-hold marker: the extreme of the SWEEP, which is h.min on a
+      -- descending scale (Min > Max) - h.max maps back onto the start there
+      -- and the ghost marked the tract never visited (Tanda 6 F-3). Both
+      -- bounds are required: readHistorySiblings can populate one alone, and
+      -- the descending peak picks either one (Tanda 6 F-8 hardens the guard).
+      local peak = (widget.config.max >= widget.config.min) and h.max or h.min
+      local x = markX(widget, peak)
+      if x ~= frame.ghostX then
+        frame.ghostX = x
+        moveMark(ui, "ghost", x)
+      end
+    elseif frame.ghostX ~= -1 then
+      frame.ghostX = -1
+      lvgl.hide(ui.ghost)
     end
   end
-  if ui.minMark and h.min then
-    local x = markX(widget, h.min)
-    if x ~= frame.minX then
-      frame.minX = x
-      moveMark(ui, "minMark", x)
+  if ui.minMark then
+    if h.min then
+      local x = markX(widget, h.min)
+      if x ~= frame.minX then
+        frame.minX = x
+        moveMark(ui, "minMark", x)
+      end
+    elseif frame.minX ~= -1 then
+      frame.minX = -1
+      lvgl.hide(ui.minMark)
     end
   end
 end

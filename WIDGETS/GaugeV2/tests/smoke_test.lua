@@ -2500,5 +2500,177 @@ test("F-15: the bar delegates to the shared renderer helpers", function()
   assertEq(w.ui.fill.props.color, R.resolveColor(w, "critical"),
     "the bar fill colour came from the shared resolver")
 end)
+-- ---- Tanda 7 final review: containment and non-finite readings -----------
+--
+-- Four defects found by sweeping the whole zone space (24..320 x 24..288, all
+-- three LCD_SCALEs, both styles - 7752 combinations) instead of the dozen
+-- named sizes the catalogue covers, plus feeding the widget values the
+-- firmware's own maths cannot produce but a misbehaving sensor can.
+
+test("R-1: a zone too small for the ring never draws off-screen", function()
+  -- L.radius has a px(8) FLOOR, so in a zone smaller than the ring's outer
+  -- furniture everything derived from it was pushed outside the zone - the
+  -- ticks first. Ticks are LINES, and LvglWidgetLine::getPt reads their
+  -- coordinates with luaL_checkunsigned: a negative one RAISES on the radio
+  -- and the widget disables itself for the session. mock_env's checkPts
+  -- enforces exactly that, so a build here is the proof.
+  -- Measured before the fix: EVERY zone below 32x32 at LCD_SCALE 1.0 (46x46
+  -- at 1.375) died on its first build.
+  for _, scale in ipairs({ 0.8, 1.0, 1.375 }) do
+    for _, side in ipairs({ 16, 20, 24, 28, 32, 40, 46, 60 }) do
+      local zone = { x = 0, y = 0, w = side, h = side }
+      local ok, err = pcall(function()
+        local w = newWidget(zone, { Source = ID_RSSI }, nil, false, scale)
+        mock.setValue(ID_RSSI, 10)   -- critical: the chip is on screen too
+        refresh(w, 2)
+      end)
+      lvgl.LCD_SCALE = 1.0
+      assertTrue(ok, string.format("%dx%d @%.3f: %s", side, side, scale,
+        tostring(err)))
+    end
+  end
+end)
+
+test("R-1b: the catalogue zones are untouched by the containment clamp",
+  function()
+    -- The clamp must be a NO-OP wherever the dial already fitted, or it is a
+    -- silent redesign of every gauge in the field. The pre-fix radius for a
+    -- zone with room to spare is `half - outerReserve`; assert the shipped
+    -- sizes still land there and still carry their ticks.
+    for _, z in ipairs({ { 200, 160 }, { 200, 200 }, { 260, 220 },
+                         { 160, 160 }, { 480, 272 }, { 100, 100 } }) do
+      local w = newWidget({ x = 0, y = 0, w = z[1], h = z[2] },
+                          { Source = ID_RSSI })
+      local L = w.layout
+      assertTrue(L.tickCount >= 3,
+        string.format("%dx%d kept its ticks (%d)", z[1], z[2], L.tickCount))
+      assertTrue(L.tickOuter <= math.min(L.cx, L.cy),
+        string.format("%dx%d ring inside the zone", z[1], z[2]))
+    end
+  end)
+
+test("R-2: a non-finite reading is refused, never rendered", function()
+  -- NaN and +-inf are contagious: geometry.normalize maps NaN to NaN (neither
+  -- comparison in clamp() is true), smoothing.step turns +-inf into NaN on
+  -- its SECOND frame (inf - inf), and the NaN arrives at lvgl.set as an arc
+  -- endAngle - where luaL_checkinteger raises and the widget disables itself.
+  -- format.lua already refused to PRINT a NaN; the geometry did not.
+  for _, bad in ipairs({ 0 / 0, math.huge, -math.huge }) do
+    local w = newWidget(nil, { Source = ID_RSSI })
+    mock.setValue(ID_RSSI, 70)
+    refresh(w, 2)
+    assertEq(w.data.availability, "valid", "good reading first")
+    mock.setValue(ID_RSSI, bad)
+    refresh(w, 3)
+    assertTrue(w.data.availability ~= "valid",
+      tostring(bad) .. " must not be a valid reading")
+    assertTrue(not w.ui.needle.visible, "and the needle is hidden")
+    -- nothing non-finite may have reached the binding
+    for _, o in ipairs(mock.objects()) do
+      for k, v in pairs(o.props) do
+        if type(v) == "number" then
+          assertTrue(v == v, "NaN reached " .. o.kind .. "." .. k)
+          assertTrue(v ~= math.huge and v ~= -math.huge,
+            "inf reached " .. o.kind .. "." .. k)
+        end
+      end
+    end
+  end
+end)
+
+test("R-2b: the widget recovers from a non-finite reading", function()
+  -- Refusing the value must not latch: the smoothing filter is reset by the
+  -- availability drop, so the next good reading snaps in cleanly.
+  local w = newWidget(nil, { Source = ID_RSSI })
+  mock.setValue(ID_RSSI, 70); refresh(w, 4)
+  mock.setValue(ID_RSSI, 0 / 0); refresh(w, 3)
+  mock.setValue(ID_RSSI, 80); refresh(w, 6)
+  assertEq(w.data.availability, "valid", "recovered")
+  local a = w.frame.angle
+  assertTrue(a == a, "angle is a real number again")
+  assertTrue(a >= w.layout.startAngle
+             and a <= w.layout.startAngle + w.layout.sweep,
+    "and it is inside the sweep: " .. tostring(a))
+end)
+
+test("R-3: clearing the history takes the peak-hold ghost with it", function()
+  -- The markers already left on a reset; the ghost stayed behind, still
+  -- marking a peak that no longer existed, and only corrected itself on the
+  -- NEXT valid reading. Reset during a dropout - or straight after one - and
+  -- that is indefinite: the gauge shows a peak the pilot just cleared.
+  local w = newWidget(nil, { Source = ID_RSSI, ShowMinMax = "Markers" })
+  mock.setValue(ID_RSSI, 90); refresh(w, 3)
+  mock.setValue(ID_RSSI, 40); refresh(w, 3)
+  assertTrue(w.ui.ghost.visible, "ghost marks the peak")
+  assertTrue(w.ui.minMark.visible, "markers are up")
+
+  w.mods.telemetry.resetHistory(w)
+  mock.setValue(ID_RSSI, nil)          -- the reset lands during a dropout
+  refresh(w, 2)
+  assertTrue(not w.ui.ghost.visible, "the ghost leaves with the history")
+  assertTrue(not w.ui.minMark.visible, "and so do the markers")
+
+  -- and it comes back on the next real reading
+  mock.setValue(ID_RSSI, 60); refresh(w, 3)
+  assertTrue(w.ui.ghost.visible, "the ghost re-arms after the reset")
+end)
+
+test("R-3b: the bar's ghost and marker leave on a reset too", function()
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_RSSI, Style = "Bar", ShowMinMax = "Markers" })
+  mock.setValue(ID_RSSI, 90); refresh(w, 3)
+  mock.setValue(ID_RSSI, 40); refresh(w, 3)
+  assertTrue(w.ui.ghost.visible, "bar ghost up")
+  assertTrue(w.ui.minMark.visible, "bar marker up")
+  w.mods.telemetry.resetHistory(w)
+  mock.setValue(ID_RSSI, nil)
+  refresh(w, 2)
+  assertTrue(not w.ui.ghost.visible, "bar ghost cleared")
+  assertTrue(not w.ui.minMark.visible, "bar marker cleared")
+  mock.setValue(ID_RSSI, 60); refresh(w, 3)
+  assertTrue(w.ui.ghost.visible, "bar ghost re-arms")
+end)
+
+test("R-4: nothing is ever painted outside the widget's own zone", function()
+  -- The zone is the widget's whole world: LVGL clips anything past it, so an
+  -- overflow is a silently truncated instrument rather than a crash - which
+  -- is why three of them survived every named-size review. Sweep the shape
+  -- space instead of the sizes: the pill's outline overflowed at 80x56
+  -- (LCD_SCALE 0.8) because the pill HUGS its text and can exceed the column
+  -- it was aligned in; the unit label overflowed at 24x24 because a region
+  -- too small for the value+unit group reserves less width than the ink
+  -- actually needs; and the bar's track hung 3 px below a 200x20 zone,
+  -- taking its min/max marks with it.
+  local offenders = {}
+  for _, zw in ipairs({ 24, 40, 56, 80, 120, 160, 200, 300 }) do
+    for _, zh in ipairs({ 20, 24, 44, 56, 70, 100, 160, 220 }) do
+      for _, scale in ipairs({ 0.8, 1.0, 1.375 }) do
+        for _, style in ipairs({ "Auto", "Bar" }) do
+          local w = newWidget({ x = 0, y = 0, w = zw, h = zh },
+            { Source = ID_RSSI, Style = style,
+              ShowMinMax = "Markers + text" }, nil, false, scale)
+          mock.setValue(ID_RSSI, 10)     -- critical: chip and marks on screen
+          refresh(w, 3)
+          for _, o in ipairs(mock.objects()) do
+            local p = o.props
+            if o.visible and p.x and p.y and p.w and p.h and not p.pts
+               and o.kind ~= "arc" and o.kind ~= "circle" then
+              if p.x < 0 or p.y < 0 or p.x + p.w > zw or p.y + p.h > zh then
+                offenders[#offenders + 1] = string.format(
+                  "%dx%d @%.3f %s: %s at %d,%d %dx%d", zw, zh, scale, style,
+                  o.kind, p.x, p.y, p.w, p.h)
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  lvgl.LCD_SCALE = 1.0
+  assertTrue(#offenders == 0,
+    #offenders .. " painted outside the zone:\n    "
+    .. table.concat(offenders, "\n    ", 1, math.min(#offenders, 8)))
+end)
+
 print(string.format("-- %d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)

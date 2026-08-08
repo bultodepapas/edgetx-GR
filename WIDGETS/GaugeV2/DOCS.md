@@ -202,6 +202,21 @@ Orientation: **horizontal** (w/h > 1.4) puts the dial left and the text right;
 **vertical** (w/h < 0.8) puts the dial on top; **balanced** centres the dial
 with the value inside it. Beyond w/h > 2.6 the bar style takes over.
 
+**Containment guarantee.** Nothing the widget paints leaves its zone, at any
+size and any `LCD_SCALE`. This is not only cosmetic: tick marks and history
+marks are LVGL *lines*, and the binding reads their coordinates with
+`luaL_checkunsigned` (`lua_lvgl_widget.cpp`), so a single negative coordinate
+raises on the radio and the widget disables itself for the session. Below the
+size where the ring's outer furniture fits, the layout gives up the furniture
+rather than the widget — the ticks first, then the ring shrinks onto whatever
+clearance is left; likewise the bar slides up rather than hang past the bottom
+edge, and the state pill and unit label are clamped to the zone. The
+guarantee is enforced by `R-1`/`R-4` in `tests/smoke_test.lua`, which sweep
+the zone space rather than a list of named sizes.
+
+The *designed* range is still 60×60 and up (the shot catalogue's floor);
+smaller zones stay legal and inert rather than fatal.
+
 ### 4.7 History
 
 For telemetry sensors the minimum and maximum come from the radio's own
@@ -248,6 +263,16 @@ two-tone alert and (optionally) a haptic pulse; warning plays a single tone.
 | `stale` | sensor reported but is no longer current | STALE | last known |
 | `disconnected` | telemetry link down (`getRSSI() == 0`) | NO LINK | last known |
 | `unavailable` | no value at all (link alive) | NO DATA | last known |
+
+A **non-finite** reading — `NaN`, `+inf`, `-inf` — is treated as
+`unavailable`: an instrument must not pretend to know. That is a containment
+rule as much as an honesty one. The three are contagious:
+`geometry.normalize` maps `NaN` to `NaN` (neither comparison in `clamp()` is
+true of it), `smoothing.step` turns `±inf` into `NaN` on its *second* frame
+(`inf - inf`), and the `NaN` then reaches `lvgl.set` as an arc `endAngle`,
+where `luaL_checkinteger` raises and the widget disables itself. `format.lua`
+already refused to *print* a `NaN`; `telemetry.refresh` now applies the same
+refusal to the geometry, at the one gate every reading passes through.
 
 The last known value is cleared when the source or the ranges change, so a new
 source never shows old data. After reconnection the needle snaps to the
@@ -500,7 +525,7 @@ Headless suites run with stock Lua 5.3 (the version EdgeTX embeds):
 
 ```sh
 lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (38 tests)
-lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle     (120 tests)
+lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle     (128 tests)
 lua5.3 dev/preview.lua      <widget-dir>/   # writes dev/preview.html
 ```
 

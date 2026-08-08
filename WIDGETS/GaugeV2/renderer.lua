@@ -520,6 +520,17 @@ function M.updateChip(widget, s)
     elseif L.stateAlign == RIGHT then
       x = L.stateBox.x + L.stateBox.w - w
     end
+    -- The pill HUGS its text, so it can come out wider than the box it was
+    -- aligned in - a narrow text column in a horizontal zone is exactly that
+    -- case - and the outline then adds chipOutline beyond it on each side.
+    -- Measured at 80x56 (LCD_SCALE 0.8): the CRIT outline ended 1 px past the
+    -- right edge of the zone. Clamp the pill, outline included, into the zone
+    -- so the widget never paints outside itself.
+    local edge = L.chipOutline
+    local maxW = max(L.w - edge * 2, 1)
+    if w > maxW then w = maxW end
+    if x + w + edge > L.w then x = L.w - w - edge end
+    if x < edge then x = edge end
     setProp(widget, ui.chip, "x", x)
     setProp(widget, ui.chip, "w", w)
     if ui.chipEdge then
@@ -580,7 +591,18 @@ function M.anchorUnit(widget, str)
   if not ui.unitLabel then return end
   local actualW = T.measureWidth(str, L.valueFont)
   local inkRight = L.valueBox.x + floor((L.valueBox.w + actualW) / 2)
-  setProp(widget, ui.unitLabel, "x", inkRight + T.px(T.space.md))
+  local x = inkRight + T.px(T.space.md)
+  -- Never anchor the unit outside the zone. In a region too small for the
+  -- value+unit group, pickValueFont's last-resort branch clamps the RESERVED
+  -- value width below the ink's real width, so ink centred in that box
+  -- overhangs to the right and drags the unit with it (measured at 24x24:
+  -- the unit label ended 2 px outside the widget). The clamp only ever bites
+  -- in that degenerate case - at any size where the group actually fits,
+  -- actualW <= valueBox.w and this x is already inside.
+  local limit = L.w - L.unitBox.w
+  if x > limit then x = limit end
+  if x < 0 then x = 0 end
+  setProp(widget, ui.unitLabel, "x", x)
 end
 
 local function updateText(widget)
@@ -710,14 +732,26 @@ local function updateHistory(widget)
   -- but could never show, while the bar's ghost worked (Tanda 6 F-8).
   -- Both h.min and h.max are required: readHistorySiblings can populate
   -- them independently, and the descending-scale peak picks either one.
-  if ui.ghost and h.min and h.max then
-    local peak = (widget.config.max >= widget.config.min) and h.max or h.min
-    local ga = angleOf(widget, peak)
-    if ga ~= frame.ghostAngle then
-      frame.ghostAngle = ga
-      setProp(widget, ui.ghost, "endAngle", ga)
-      setProp(widget, ui.ghost, "bgEndAngle", ga)
-      lvgl.show(ui.ghost)
+  if ui.ghost then
+    if h.min and h.max then
+      local peak = (widget.config.max >= widget.config.min) and h.max or h.min
+      local ga = angleOf(widget, peak)
+      if ga ~= frame.ghostAngle then
+        frame.ghostAngle = ga
+        setProp(widget, ui.ghost, "endAngle", ga)
+        setProp(widget, ui.ghost, "bgEndAngle", ga)
+        lvgl.show(ui.ghost)
+      end
+    elseif frame.ghostAngle ~= -1 then
+      -- The history was CLEARED - the reset switch, a source change, a range
+      -- edit. The markers below already leave on the same event; the ghost
+      -- used to stay behind, still marking a peak that no longer exists, and
+      -- only corrected itself on the next valid reading. In a dropout, or
+      -- straight after a reset on a disconnected model, that is indefinite.
+      -- -1 is the build-time sentinel and no real angle (angleOf never
+      -- returns below startAngle), so restoring it also re-arms the show.
+      frame.ghostAngle = -1
+      lvgl.hide(ui.ghost)
     end
   end
 
