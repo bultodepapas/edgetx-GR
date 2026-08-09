@@ -45,26 +45,79 @@ local function box(x, y, w, h)
   return { x = floor(x), y = floor(y), w = floor(w), h = floor(h or 0) }
 end
 
--- Clip a box to the dial circle's clear CHORD at the box's BOTTOM edge,
--- centred on the dial centre. The ring is closest to the text at the bottom
--- of its box, so this guarantees every corner of the text stays inside the
--- ring (the audit's LABEL/RING collisions: G-6 for the value, G-7 for the
--- min/max row). One px of safety, because a box exactly as wide as the
--- floored chord puts its corners on the ring and rounding can push them a
--- hair outside. Returns the box (or nil) for convenience.
+-- Width of the ring's clear interior over the vertical span [yTop, yBottom].
+--
+-- The chord narrows with distance from the dial centre, so the binding edge is
+-- whichever of the two is FARTHER from it. The old code always used the
+-- bottom, on the reasoning that "the ring is closest to the text at the bottom
+-- of its box" - true only while the box lies entirely below the centre. A
+-- micro dial centres its value ON the centre, so its box straddles it and the
+-- TOP edge is the far one: at 60x60 the value's top-right corner sat 13.4 px
+-- out on a 13 px clear radius while the bottom corners were comfortably
+-- inside. Taking the max of the two is the honest rule and costs one
+-- comparison.
+local function chordAt(L, yTop, yBottom)
+  local clearR = L.radius - floor(L.trackThickness / 2)
+  local dy = max(math.abs(yTop - L.cy), math.abs(yBottom - L.cy))
+  if clearR <= 0 or dy >= clearR then return 0 end
+  return 2 * math.sqrt(clearR * clearR - dy * dy)
+end
+
+-- Clip a box to that chord, centred on the dial centre, so every corner of
+-- the text stays inside the ring (the audit's LABEL/RING collisions: G-6 for
+-- the value, G-7 for the min/max row). One px of safety, because a box
+-- exactly as wide as the floored chord puts its corners on the ring and
+-- rounding can push them a hair outside.
 local function clipToChord(L, b)
   if not b then return b end
-  local dy = (b.y + b.h) - L.cy
-  local clearR = L.radius - floor(L.trackThickness / 2)
-  local chord = 0
-  if clearR > 0 and math.abs(dy) < clearR then
-    chord = 2 * math.sqrt(clearR * clearR - dy * dy)
-  end
+  local chord = chordAt(L, b.y, b.y + b.h)
   if chord > 0 and chord < b.w then
     b.w = floor(chord) - T.px(1)
     b.x = L.cx - floor(b.w / 2)
   end
   return b
+end
+
+-- Stack text rows in the band [top, bottom], sharing whatever slack exists
+-- instead of pinning every gap at `xs` and leaving the remainder unused.
+--
+-- The dial's text block used to be built by chaining `+ T.px(T.space.xs)`
+-- between rows, which pins the gap at 2 px whatever the zone. Measured before
+-- this: a 260x220 dial had three 2 px gaps AND 15 px of dead space below the
+-- name; a 480x272 horizontal zone had 17 px between the value and the min/max
+-- row and 85 px between that and the name, because the name was anchored to
+-- the bottom of the text column regardless of where the content ended.
+--
+-- The gap is the slack divided between the rows, clamped to [xs, md] so a
+-- tight zone still collapses to the old spacing and a roomy one never drifts
+-- into looking disconnected. The block is then CENTRED in its band, so what
+-- is left over is split above and below rather than all falling to the bottom.
+--
+-- Returns nothing; the boxes are mutated in place.
+local function stackTextRows(top, bottom, rows, zoneH)
+  local n = #rows
+  if n == 0 then return end
+  local contentH = 0
+  for i = 1, n do contentH = contentH + rows[i].h end
+  local slack = (bottom - top) - contentH
+  local gap = clamp(floor(slack / max(n, 1)),
+                    T.px(T.space.xs), T.px(T.space.md))
+  local used = contentH + gap * (n - 1)
+  local y = top + max(floor(((bottom - top) - used) / 2), 0)
+  for i = 1, n do
+    local ry = floor(y)
+    -- The zone is the hard limit, as everywhere else. This matters because
+    -- the stack OVERWRITES positions that were already clamped once - the
+    -- value box in a horizontal zone is placed and clamped by placeValue and
+    -- then restacked here, so without this a 28x16 zone put the value label
+    -- 1 px below its own bottom edge. Rows may end up touching in a zone
+    -- this small; painting outside it is the worse outcome.
+    if zoneH and ry + rows[i].h > zoneH then
+      ry = max(zoneH - rows[i].h, 0)
+    end
+    rows[i].y = ry
+    y = y + rows[i].h + gap
+  end
 end
 
 -- Pixels the state pill hangs BELOW the state text box, outline included.
@@ -114,7 +167,23 @@ function M.pickStyle(cfg, w, h)
 end
 
 -- Largest font whose text fits both the width and the height available.
-local function pickValueFont(sample, unitText, maxW, maxH, cap)
+-- `chordCtx` (balanced dials only) = { L = layout, region = valueRegion }.
+--
+-- Without it the caller pre-clips the region to the chord at the REGION's
+-- bottom edge and every font is judged against that one width. That is
+-- pessimistic by exactly the difference between the region height and the
+-- font height - the region is `dial.h * 0.26` tall, so a 24 px font was being
+-- measured against the chord ~11 px lower than the box it would actually
+-- occupy, where the ring has closed in. Measured at 200x160: the true chord
+-- for MIDSIZE is 74 px and the pair needs 72, but the region-depth chord said
+-- 61, so the value fell two ramp steps to STDSIZE - the same 16 px as its own
+-- `min 31` caption. That is the mechanism behind Tanda 5 P1-5.
+--
+-- With it, each candidate is judged against the chord at ITS OWN box bottom.
+-- The G-6 guarantee is unchanged - still the chord at the bottom of the box
+-- that actually gets drawn, still minus px(1) - it is simply no longer
+-- computed for a box nobody uses.
+local function pickValueFont(sample, unitText, maxW, maxH, cap, chordCtx)
   local ramp = T.RAMP
   local gap = T.px(T.space.md)
   local started = (cap == nil)
@@ -122,7 +191,16 @@ local function pickValueFont(sample, unitText, maxW, maxH, cap)
     local font = ramp[i]
     if not started and font == cap then started = true end
     if started then
-      if T.fontHeight(font) <= maxH then
+      local fh = T.fontHeight(font)
+      if fh <= maxH then
+        local avail = maxW
+        if chordCtx then
+          local r = chordCtx.region
+          local y0 = chordCtx.topAlign and r.y
+            or (r.y + max(floor((r.h - fh) / 2), 0))
+          local c = floor(chordAt(chordCtx.L, y0, y0 + fh)) - T.px(1)
+          if c < avail then avail = c end
+        end
         -- The unit is one ramp step below the value (review P-D): two steps
         -- shrank the `B` of `dB` to where it blurred into an `E` at small
         -- sizes; one step keeps it secondary and legible where the width
@@ -133,8 +211,8 @@ local function pickValueFont(sample, unitText, maxW, maxH, cap)
         if unitText and unitText ~= "" then
           uw = T.textWidth(unitText, unitFont) + gap
         end
-        if w + uw <= maxW then
-          return font, unitFont, w, uw
+        if avail > 0 and w + uw <= avail then
+          return font, unitFont, w, uw, avail
         end
       end
     end
@@ -150,14 +228,27 @@ local function pickValueFont(sample, unitText, maxW, maxH, cap)
   if unitText and unitText ~= "" then
     uw = T.textWidth(unitText, unitFont) + gap
   end
-  local w = min(T.textWidth(sample, font), max(maxW - uw, 0))
-  return font, unitFont, w, uw
+  -- The last-resort width must respect the chord too, or the fallback box -
+  -- the one case where the reserve CAN exceed what fits - lands on the ring.
+  local limit = maxW
+  if chordCtx then
+    local r = chordCtx.region
+    local fh = T.fontHeight(font)
+    local y0 = chordCtx.topAlign and r.y
+      or (r.y + max(floor((r.h - fh) / 2), 0))
+    limit = min(limit, max(floor(chordAt(chordCtx.L, y0, y0 + fh)) - T.px(1), 0))
+  end
+  local w = min(T.textWidth(sample, font), max(limit - uw, 0))
+  return font, unitFont, w, uw, limit
 end
 
 -- Place the value + unit pair centred as a group inside `region`.
-local function placeValue(L, region, sample, unitText, cap)
-  local valueFont, unitFont, vw, uw =
-    pickValueFont(sample, unitText, region.w, region.h, cap)
+-- `chordCtx` is forwarded to pickValueFont; when present the group is centred
+-- on the DIAL centre rather than on the region, because the width it was
+-- fitted against is the ring's chord (symmetric about L.cx), not the region.
+local function placeValue(L, region, sample, unitText, cap, chordCtx)
+  local valueFont, unitFont, vw, uw, avail =
+    pickValueFont(sample, unitText, region.w, region.h, cap, chordCtx)
   L.valueFont = valueFont
   L.unitFont = unitFont
   local vh = T.fontHeight(valueFont)
@@ -168,12 +259,25 @@ local function placeValue(L, region, sample, unitText, cap)
   -- it ~1 px left of the geometric centre when a unit is shown (review
   -- P1-8). Only when there is room: never let the box leave the region, so
   -- the G-6 chord guarantee holds.
+  -- The width the group was actually fitted against: the chord at the chosen
+  -- font's own box bottom when chordCtx is in play, the region otherwise.
+  local fitW = avail or region.w
   local optical = 0
-  if unitText ~= "" and groupW + T.px(1) <= region.w then
+  if unitText ~= "" and groupW + T.px(1) <= fitW then
     optical = T.px(1)
   end
-  local x0 = region.x + floor((region.w - groupW - optical) / 2)
-  local y0 = region.y + floor((region.h - vh) / 2)
+  local x0
+  if chordCtx then
+    -- the chord is symmetric about the dial centre, so centre the group there
+    x0 = L.cx - floor((groupW + optical) / 2)
+  else
+    x0 = region.x + floor((region.w - groupW - optical) / 2)
+  end
+  -- topAlign: the region's TOP is the P0-2 hub guarantee, and it is also
+  -- where the chord is widest, so the value sits there rather than floating
+  -- in the middle of a region sized for the largest candidate.
+  local y0 = (chordCtx and chordCtx.topAlign) and region.y
+    or (region.y + floor((region.h - vh) / 2))
   if y0 < region.y then y0 = region.y end
   -- The type ramp has a FLOOR (theme.RAMP's smallest font), so a region
   -- shorter than that font still gets a box taller than itself - and in a
@@ -264,6 +368,17 @@ local function dialLayout(widget, cfg, L, w, h)
                dialSide - pad * 2, dialSide - pad * 2)
     local ty = dial.y + dial.h + T.px(T.space.sm)
     textRegion = box(pad, ty, w - pad * 2, h - ty - pad)
+    -- C6 (Tanda 7): `mode` is classified on min(w, h), so a very TALL zone is
+    -- judged by its NARROW axis - a 100x260 widget came out "compact" and
+    -- dropped its source name on 260 px of height. Mode still governs
+    -- everything else (tick count, fonts, scale labels, markers); the name
+    -- only needs somewhere to sit, and in a vertical zone that is measurable
+    -- directly. Promoting the whole mode instead would drag six other
+    -- decisions along with it for the sake of one label.
+    if not L.showName then
+      local smallest = T.fontHeight(T.RAMP[#T.RAMP])
+      L.showName = (textRegion.h - nameH - T.px(T.space.sm)) >= smallest
+    end
     local rows = (L.showName and nameH or 0) + (L.showMinMaxText and minMaxH or 0)
     valueRegion = box(textRegion.x, textRegion.y,
                       textRegion.w, max(textRegion.h - rows, T.px(12)))
@@ -280,7 +395,21 @@ local function dialLayout(widget, cfg, L, w, h)
     -- (measured: the cell used to start 6 px inside the pivot's vertical
     -- span at 200x160). The min/max row below is chord-clipped further down,
     -- and the region's own chord clip keeps the fit honest.
-    local valueDrop = T.px(7)
+    -- Tanda 7 B (closing Tanda 5 P1-5, which stayed 🟡 pending this decision).
+    -- valueDrop was px(7). It buys clearance from the pivot and the blade,
+    -- and it costs CHORD - and the chord is what picks the value font, so the
+    -- gauge's headline number was paying for it: 16 px on a 200x160 dial, the
+    -- same size as its own `min 31` caption, which flattens the hierarchy the
+    -- type ramp exists to express.
+    --
+    -- Tanda 7 A settled what the clearance is actually worth: the labels are
+    -- created AFTER the needle (renderer.build) and paint over it, so the
+    -- needle passing behind the digits was never a correctness problem - and
+    -- the owner accepted that look explicitly (Tanda 5 review 3.13 / P2-5).
+    -- What must stay clear is the PIVOT, a solid disc the digits would sit on
+    -- top of; px(3) still clears it, and the value cell's own chord clip keeps
+    -- the fit honest either way.
+    local valueDrop = T.px(3)
     if mode == "micro" then
       -- centred exactly on the dial centre: the clear chord is widest there,
       -- and a micro dial's value is only a few px wide (no unit, no state)
@@ -376,9 +505,13 @@ local function dialLayout(widget, cfg, L, w, h)
   -- width pushes the unit (and wide values) onto the ring, exactly the
   -- LABEL/RING collisions the audit measured (AUDIT.md G-6). Horizontal/
   -- vertical zones place the value outside the dial and do not need it.
-  if orientation == "balanced" then
-    clipToChord(L, valueRegion)
-  end
+  --
+  -- The region itself is NO LONGER pre-clipped: placeValue now measures the
+  -- chord per candidate font, at the bottom of the box that font would really
+  -- occupy (see pickValueFont). Pre-clipping here would re-impose the
+  -- region-depth chord as a ceiling and undo exactly that (Tanda 7 B).
+  local chordCtx = (orientation == "balanced")
+    and { L = L, region = valueRegion } or nil
 
   -- needle
   L.showNeedle = (cfg.style == M.STYLE_NEEDLE)
@@ -417,44 +550,126 @@ local function dialLayout(widget, cfg, L, w, h)
   -- a unit that will not be drawn (micro zones) must not reserve width in the
   -- value group: the chord a micro dial leaves for text is only a few px
   -- (AUDIT.md G-6)
-  placeValue(L, valueRegion, F.widestSample(widget),
-             L.showUnit and widget.unitText or "", cap)
+  -- P0-2, re-expressed against the thing it actually protects. Runs HERE,
+  -- after the needle block, because L.pivotRadius does not exist before it.
+  --
+  -- `valueDrop` was a fixed px(7) nudge chosen to push the value cell clear of
+  -- the pivot hub and the blade. A fixed nudge cannot hold that guarantee once
+  -- the type can grow: the box is centred in its region, so a taller font
+  -- raises its own top edge and walks straight back onto the hub (measured at
+  -- 200x160 with the value at MIDSIZE: cell top 74, hub spanning 69..77).
+  --
+  -- The hub is a real, measurable disc, so clear THAT explicitly and let the
+  -- chord hand back whatever room is left. Top-aligning the value in the
+  -- region rather than centring it then puts the cell as high as the
+  -- guarantee allows, which is also where the chord is widest - the value
+  -- gets the largest font that genuinely fits without ever touching the hub.
+  -- Change A settled the other half of the old clearance: the labels are
+  -- created after the needle and paint over it, so the BLADE passing behind
+  -- the digits is by design (owner, Tanda 5 review 3.13 / P2-5).
+  if chordCtx and L.pivotRadius and mode ~= "micro" then
+    local hubBottom = L.cy + L.pivotRadius + T.px(2)
+    if valueRegion.y < hubBottom then
+      -- Move the region DOWN without shrinking it. Trimming the height to
+      -- keep the bottom edge fixed looks tidy and is wrong: `region.h` is the
+      -- height budget the font ramp is checked against, so a region trimmed
+      -- by 20 px rejected every candidate taller than what was left - a
+      -- 300x272 dial dropped two whole ramp steps (48 px to 32 px) with the
+      -- room still sitting unused below it. The box is top-aligned here, so
+      -- the height is a budget, not an extent: the CHORD is what actually
+      -- limits the font, and stackTextRows takes whatever is left below.
+      valueRegion.y = hubBottom
+    end
+    chordCtx.topAlign = true
+  end
 
+  placeValue(L, valueRegion, F.widestSample(widget),
+             L.showUnit and widget.unitText or "", cap, chordCtx)
+
+  -- Rows BELOW the value, in paint order top to bottom. They are placed with
+  -- provisional geometry here and then stacked by stackTextRows, which owns
+  -- the vertical rhythm (Tanda 7 B); only the x/w/h of each box matter above.
   local align = (orientation == "horizontal") and LEFT or CENTER
+  local stackTop, stackBottom, stackRows
   if orientation == "horizontal" then
-    local y = L.valueBox.y + L.valueBox.h + T.px(T.space.xs)
-    L.stateBox = box(textRegion.x, y, textRegion.w, stateH)
-    y = y + (L.showState and stateH + T.px(T.space.xs) or 0)
-    L.minMaxBox = box(textRegion.x, y, textRegion.w, minMaxH)
-    L.nameBox = box(textRegion.x, textRegion.y + textRegion.h - nameH,
-                    textRegion.w, nameH)
+    L.stateBox = box(textRegion.x, 0, textRegion.w, stateH)
+    L.minMaxBox = box(textRegion.x, 0, textRegion.w, minMaxH)
+    L.nameBox = box(textRegion.x, 0, textRegion.w, nameH)
+    -- The value joins the stack here, unlike the dial-centred orientations:
+    -- in a horizontal zone the text column is the whole right-hand side, and
+    -- the value is simply its first row. Distributing all four rows over the
+    -- column centres the group as one block - the alternative, anchoring the
+    -- name to the column's bottom edge, is what left 85 px of nothing between
+    -- the min/max row and the name at 480x272.
+    stackRows = { L.valueBox }
+    if L.showState then stackRows[#stackRows + 1] = L.stateBox end
+    if L.showMinMaxText then stackRows[#stackRows + 1] = L.minMaxBox end
+    if L.showName then stackRows[#stackRows + 1] = L.nameBox end
+    stackTop = textRegion.y
+    stackBottom = textRegion.y + textRegion.h
   elseif orientation == "vertical" then
-    local y = L.valueBox.y + L.valueBox.h + T.px(T.space.xs)
-    L.minMaxBox = box(textRegion.x, y, textRegion.w, minMaxH)
-    L.nameBox = box(textRegion.x, textRegion.y + textRegion.h - nameH,
-                    textRegion.w, nameH)
+    L.minMaxBox = box(textRegion.x, 0, textRegion.w, minMaxH)
+    L.nameBox = box(textRegion.x, 0, textRegion.w, nameH)
+    -- the state chip rides on the dial, not in the text column
     L.stateBox = box(dial.x, dial.y + floor(dial.h * 0.24), dial.w, stateH)
+    stackRows = {}
+    if L.showMinMaxText then stackRows[#stackRows + 1] = L.minMaxBox end
+    if L.showName then stackRows[#stackRows + 1] = L.nameBox end
+    stackTop = L.valueBox.y + L.valueBox.h
+    stackBottom = textRegion.y + textRegion.h
   else
     L.stateBox = box(dial.x, dial.y + floor(dial.h * 0.26), dial.w, stateH)
-    L.minMaxBox = box(dial.x, L.valueBox.y + L.valueBox.h + T.px(T.space.xs),
-                      dial.w, minMaxH)
+    stackTop = L.valueBox.y + L.valueBox.h
+    -- The min/max row stays TIGHT under the value, and is deliberately NOT
+    -- part of the distributed stack. It lives INSIDE the ring, where the
+    -- clear chord narrows with every pixel of descent (clipToChord below), so
+    -- "breathing room" here is bought with width: distributing it pushed the
+    -- row into a 26 px chord where "min 31" needs 36 and wrapped it to two
+    -- lines, of which one is visible. Above it the chord is widest, so tight
+    -- is also correct here - the slack belongs to the name instead.
+    L.minMaxBox = box(dial.x, stackTop + T.px(T.space.xs), dial.w, minMaxH)
     if L.sweep >= 360 then
-      -- a closed ring has no gap at the bottom to hang the name in: keep it
-      -- inside, under the value
-      L.nameBox = box(dial.x, L.valueBox.y + L.valueBox.h + T.px(T.space.xs),
-                      dial.w, nameH)
+      -- A CLOSED ring has no gap at the bottom to hang the name in, so it
+      -- goes inside, tight under the value - and there is no slack here to
+      -- distribute. Placed explicitly and kept OUT of the stack: letting the
+      -- band run to the ring's bottom edge pushes the name onto the ring
+      -- itself (G-10, "the name stays inside the ring at 360 degrees").
+      L.nameBox = box(dial.x, stackTop + T.px(T.space.xs), dial.w, nameH)
       L.showMinMaxText = false
     else
-      -- The name used to hang from the dial's bottom edge regardless of how
-      -- tall the value/min-max block actually rendered, leaving dead air
-      -- between them whenever the value was short (Tanda 5 review 3.15).
-      -- Pull it up toward the real content bottom; the old bottom-anchored
-      -- spot - below the ring's open wedge, always clear of the arc - stays
-      -- as the floor, so this never pushes the name lower than before.
-      local closeY = L.minMaxBox.y + L.minMaxBox.h + T.px(T.space.xs)
+      -- The name hangs in the ring's OPEN WEDGE, below the arc's ends, so
+      -- unlike the min/max row above it, moving it down costs no width. The
+      -- old code took `closeY` - tight under the content - and left the
+      -- remainder as dead air (15 px at 260x220, Tanda 5 review 3.15 part
+      -- two). Split the difference instead: the name breathes, and `farY`
+      -- still caps it at the spot that was always known to clear the arc.
+      local afterMinMax = L.showMinMaxText
+        and (L.minMaxBox.y + L.minMaxBox.h) or stackTop
+      local closeY = afterMinMax + T.px(T.space.xs)
       local farY = dial.y + dial.h - nameH
-      L.nameBox = box(0, min(closeY, farY), w, nameH)
+      local y = closeY + floor(max(farY - closeY, 0) / 2)
+      L.nameBox = box(0, min(y, farY), w, nameH)
     end
+    -- the balanced dial places its rows itself: inside the ring the chord,
+    -- not the slack, decides where a row may sit
+    stackRows = {}
+    stackTop, stackBottom = 0, 0
+  end
+
+  -- The unit was placed against the value's baseline inside placeValue, so if
+  -- the stack MOVED the value (it does in a horizontal zone, where the value
+  -- is one of the distributed rows) the unit has to travel with it or it is
+  -- left behind on the old baseline.
+  local valueY0 = L.valueBox.y
+  stackTextRows(stackTop, stackBottom, stackRows, h)
+  local valueDY = L.valueBox.y - valueY0
+  if valueDY ~= 0 then L.unitBox.y = L.unitBox.y + valueDY end
+  -- A row that is not drawn keeps a sane position rather than the y = 0 the
+  -- provisional boxes above carry: minMaxBox still feeds clipToChord and the
+  -- min/max split below, and a box at the top of the zone would clip against
+  -- the wrong chord.
+  if not L.showMinMaxText then
+    L.minMaxBox.y = L.valueBox.y + L.valueBox.h
   end
   L.textAlign = align
   L.nameAlign = align
@@ -563,6 +778,47 @@ local function dialLayout(widget, cfg, L, w, h)
   -- see barLayout: the outline is ONE value both renderers inset by and grow
   -- by twice, because T.px(2) is not 2 * T.px(1) at every LCD_SCALE
   L.chipOutline = T.px(1)
+
+  -- C1 (Tanda 7): centre the whole composition in a VERTICAL zone.
+  --
+  -- The dial is pinned to the top with `pad`, and its side is capped at
+  -- min(w, h * 0.62) - so in a tall, narrow zone the dial is width-limited and
+  -- cannot grow, the text is centred in whatever is left, and the result is
+  -- air at both ends. Measured at 100x260: the dial ended at y=94, the value
+  -- sat at 164..188, leaving 70 px above it and 72 px below - 142 of 260 px,
+  -- 55 % of the zone, unused.
+  --
+  -- Shifting dial and text down together as one group closes that. The shift
+  -- is capped by the CONTAINMENT budget rather than applied blindly: moving
+  -- the ring down reduces its clearance to the bottom edge, and the ring's
+  -- outermost line geometry must stay inside the zone or the widget dies on
+  -- luaL_checkunsigned (see the edgeReach clamp above, and R-1/R-4).
+  if orientation == "vertical" then
+    local top = min(L.cy - L.tickOuter, L.valueBox.y)
+    local bottom = max(L.cy + L.tickOuter, L.valueBox.y + L.valueBox.h)
+    if L.showMinMaxText then bottom = max(bottom, L.minMaxBox.y + L.minMaxBox.h) end
+    if L.showName then bottom = max(bottom, L.nameBox.y + L.nameBox.h) end
+    local shift = floor(((h - (bottom - top)) / 2) - top)
+    -- never move UP (that would undo the top padding), and never eat into the
+    -- clearance the ring needs below itself
+    local room = (h - L.cy) - max(L.tickOuter, L.markOuter) - 1
+    shift = min(shift, max(room, 0))
+    -- And never push the composition PAST the bottom edge. When the content
+    -- is taller than the zone - a 16x22 micro dial, where neither the ring
+    -- nor the smallest font can shrink any further - the group already
+    -- overflows at the top, and centring it just moves the overflow to the
+    -- bottom, where it takes the value label out of the zone with it.
+    shift = min(shift, max(h - bottom, 0))
+    if shift > 0 then
+      L.cy = L.cy + shift
+      local boxes = { L.valueBox, L.unitBox, L.minMaxBox, L.nameBox,
+                      L.stateBox, L.minTextBox, L.maxTextBox,
+                      L.scaleMinBox, L.scaleMaxBox }
+      for i = 1, #boxes do
+        if boxes[i] then boxes[i].y = boxes[i].y + shift end
+      end
+    end
+  end
 end
 
 -- ------------------------------------------------------------------- bar --

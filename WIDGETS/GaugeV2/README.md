@@ -73,7 +73,7 @@ Stock Lua 5.3, no radio needed:
 
 ```sh
 lua5.3 tests/run_tests.lua  ./     # pure modules        (38 tests)
-lua5.3 tests/smoke_test.lua ./     # lifecycle          (128 tests)
+lua5.3 tests/smoke_test.lua ./     # lifecycle          (129 tests)
 lua5.3 dev/collide.lua      ./     # geometric collision audit
 lua5.3 dev/gallery.lua      ./     # visual contract sheet + manifest
 ```

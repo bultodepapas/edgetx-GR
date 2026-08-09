@@ -27,7 +27,7 @@
 
 local M = {}
 
-local floor, min, max = math.floor, math.min, math.max
+local floor, max = math.floor, math.max
 
 local T, G, F  -- theme, geometry, format
 
@@ -389,7 +389,6 @@ function M.build(widget)
     dirty = {},
     angle = -1, ghostAngle = -1, minAngle = -1, maxAngle = -1,
     needleShown = true, markersShown = false, chipShown = false,
-    needleClampChip = false,
     colorKey = "", accentKey = nil, valueStr = "", stateStr = "",
     minStr = "", maxStr = "",
     prevAvail = "unset", pulse = false, pulseAt = 0,
@@ -551,23 +550,10 @@ function M.updateChip(widget, s)
     end
     lvgl.show(ui.chipEdge)
     lvgl.show(ui.chip)
-    -- The pill's actual footprint (edge rectangle, not the narrower
-    -- stateBox the text sits in) - kept so updateArc can stop the needle
-    -- short of it instead of drawing straight through (Tanda 5 review 3.12).
-    -- Allocated once and mutated after that: this used to mint a fresh table
-    -- on every chip show, which a value oscillating across a threshold turns
-    -- into a per-frame allocation. Read only through needleReach(), which
-    -- gates on frame.chipShown, so a box left over from the last show is
-    -- never consulted while the chip is hidden.
-    local cb = frame.chipBox
-    if not cb then
-      cb = {}
-      frame.chipBox = cb
-    end
-    cb.x = x - L.chipOutline
-    cb.y = L.stateBox.y - L.chipOff - L.chipOutline
-    cb.w = w + L.chipOutline * 2
-    cb.h = L.chipHeight + L.chipOutline * 2
+    -- frame.chipBox used to be maintained here: the pill's footprint, read by
+    -- needleReach() to stop the needle short of it. Both are gone with Tanda 7
+    -- A - the pill is opaque and painted after the needle, so it occludes the
+    -- blade without anyone having to measure it (see updateArc).
   else
     lvgl.hide(ui.chipEdge)
     lvgl.hide(ui.chip)
@@ -645,34 +631,30 @@ local function updateText(widget)
   end
 end
 
--- The needle's static reach (L.needleInner/needleBodyOuter/needleTipInner/
--- needleOuter) crosses the state chip pill for some angle in every Sweep
--- preset, because the chip sits on the vertical band the needle also sweeps
--- through (Tanda 5 review 3.12). When the chip is on screen and the current
--- angle's ray would enter it, shorten the needle to stop just short instead
--- of drawing through a solid pill - the value/unit text stay under the
--- existing "text paints over geometry" contract (3.1), only the chip (a
--- big, opaque shape a needle visibly bisects) gets this extra clearance.
-local function needleReach(widget, a)
-  local L, frame = widget.layout, widget.frame
-  local outer, midOuter, bodyOuter =
-    L.needleOuter, L.needleMidOuter, L.needleBodyOuter
-  local midInner, tipInner = L.needleMidInner, L.needleTipInner
-  if frame.chipShown and frame.chipBox then
-    local entry = G.rayBoxEntry(L.cx, L.cy, a, frame.chipBox)
-    if entry and entry < outer then
-      local safe = max(L.needleInner, entry - T.px(2))
-      if safe < outer then
-        outer = safe
-        midOuter = min(midOuter, safe)
-        bodyOuter = min(bodyOuter, midOuter)
-        midInner = min(midInner, midOuter)
-        tipInner = min(tipInner, midOuter)
-      end
-    end
-  end
-  return outer, midOuter, bodyOuter, midInner, tipInner
-end
+-- NEEDLE LENGTH IS CONSTANT (Tanda 7 A, replacing Tanda 5 review 3.12/P0-4).
+--
+-- P0-4 used to shorten the blade whenever the current angle's ray entered the
+-- state chip, so it would not be "drawn through a solid pill". The paint
+-- order already guarantees that: renderer.build creates the needle (objects
+-- 11-13 on a 200x160 dial) BEFORE the chip (20-21), the chip is `filled = 1`
+-- with no opacity - fully opaque - and LVGL paints children in creation
+-- order. The blade behind the pill was never visible in the first place.
+--
+-- What the truncation did cost was the needle itself. Measured at 200x160,
+-- Sweep 270, chip shown: 41 % of the blade left at value 30, 28 % at 34,
+-- 18 % at 40, and 13 % - 5 of 38 px - at value 50. It bit on 25 % of the
+-- scale at 270 deg, 35 % at 180 and 16 % at 360, and ONLY while a chip was
+-- up: that is WARN / CRIT / STALE / NO LINK / NO DATA, the states the pilot
+-- actually looks at. A needle that changes length as it sweeps reads as a
+-- rendering fault, because no real instrument does it.
+--
+-- So the needle now runs its full reach at every angle and passes BEHIND the
+-- badge, the way a pointer passes behind a label on a real gauge. This is the
+-- same creation-order contract the value and name labels already rely on to
+-- paint over the arcs (Tanda 5 review 3.1) - not a new assumption. It is
+-- pinned by "A: the chip occludes the needle by paint order" in the suite, so
+-- if the order or the chip's opacity ever changes, that test fails first and
+-- says why.
 
 local function updateArc(widget)
   local ui, L, frame = widget.ui, widget.layout, widget.frame
@@ -694,23 +676,28 @@ local function updateArc(widget)
   end
   local sv = widget.mods.smoothing.step(widget, data.displayValue)
   local a = angleOf(widget, sv)
-  if a ~= frame.angle or frame.chipShown ~= frame.needleClampChip then
+  -- The old `or frame.chipShown ~= frame.needleClampChip` term went with
+  -- needleReach: it existed only to re-cut the blade when the chip appeared
+  -- or vanished, and a blade of constant length has nothing to re-cut. One
+  -- fewer comparison per frame, and one fewer needle rewrite per state change.
+  if a ~= frame.angle then
     frame.angle = a
-    frame.needleClampChip = frame.chipShown
     setProp(widget, ui.valueArc, "endAngle", a)
     if ui.needle then
-      local outer, midOuter, bodyOuter, midInner, tipInner = needleReach(widget, a)
       -- three line segments, all rewritten with the same guarded pts path
       -- as before: base + mid + tip sweep together (P2-1). The pts tables
       -- are the PERSISTENT buffers from buildNeedle, mutated in place by
       -- linePointsInto, and the wrappers are the PERSISTENT { pts = ... }
       -- tables too - zero allocation per frame (Phase 5.1 + 5.2). Direct
       -- lvgl.set, NEVER setProp (identity cache would freeze both, TRAP 2).
-      G.linePointsInto(ui.needlePts, L.cx, L.cy, L.needleInner, bodyOuter, a)
+      G.linePointsInto(ui.needlePts, L.cx, L.cy, L.needleInner,
+                       L.needleBodyOuter, a)
       lvgl.set(ui.needle, ui.needleSet)
-      G.linePointsInto(ui.needleMidPts, L.cx, L.cy, midInner, midOuter, a)
+      G.linePointsInto(ui.needleMidPts, L.cx, L.cy, L.needleMidInner,
+                       L.needleMidOuter, a)
       lvgl.set(ui.needleMid, ui.needleMidSet)
-      G.linePointsInto(ui.needleTipPts, L.cx, L.cy, tipInner, outer, a)
+      G.linePointsInto(ui.needleTipPts, L.cx, L.cy, L.needleTipInner,
+                       L.needleOuter, a)
       lvgl.set(ui.needleTip, ui.needleTipSet)
     end
   end

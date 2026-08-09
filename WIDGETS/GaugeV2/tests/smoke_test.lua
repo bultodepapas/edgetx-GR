@@ -828,31 +828,59 @@ test("P0-2: the value cell clears the hub and the needle at critical angles", fu
     "needle tip keeps >= 2 px from the value cell at the critical angle")
 end)
 
-test("P0-4: the needle stops short of the state chip instead of crossing it", function()
+-- REPLACES "P0-4: the needle stops short of the state chip instead of
+-- crossing it" (Tanda 5 review 3.12). That test asserted the OPPOSITE of the
+-- two below, and it is retired on purpose, not by accident.
+--
+-- P0-4 shortened the blade so it would not be drawn through the opaque pill.
+-- The paint order already guarantees that (see the second test), so the
+-- truncation only cost a needle that changed length as it swept: measured at
+-- 200x160 / Sweep 270 with the chip up, 41 % of the blade left at value 30,
+-- 28 % at 34, 18 % at 40 and 13 % - 5 of 38 px - at value 50; 25 % of the
+-- scale affected at 270 deg, 35 % at 180, 16 % at 360. And only ever while a
+-- chip was shown, i.e. in WARN / CRIT / STALE / NO LINK / NO DATA - the
+-- states the gauge exists to signal.
+test("A: the needle keeps its full length at every angle", function()
   local w = newWidget(ZONE, { Source = ID_RSSI, ColorMode = "Rail" })
-  mock.setValue(ID_RSSI, 50)   -- default Rail sweep: needle points straight up, WARN
-  refresh(w, 40)
-  assertTrue(w.frame.chipShown, "WARN chip is shown at this value")
-  local box = w.frame.chipBox
-  assertTrue(box ~= nil, "the chip's footprint is recorded for the clamp")
-  local function insideBox(x, y)
-    return x >= box.x and x <= box.x + box.w and y >= box.y and y <= box.y + box.h
+  local L = w.layout
+  local full = L.needleOuter - L.needleInner
+  local function bladeLength()
+    local a, b = w.ui.needlePts[1], w.ui.needleTipPts[2]
+    local dx, dy = b[1] - a[1], b[2] - a[2]
+    return math.sqrt(dx * dx + dy * dy)
   end
-  local function crossesChip(pts)
-    for i = 0, 40 do
-      local t = i / 40
-      local x = pts[1][1] + (pts[2][1] - pts[1][1]) * t
-      local y = pts[1][2] + (pts[2][2] - pts[1][2]) * t
-      if insideBox(x, y) then return true end
-    end
-    return false
+  local sawChip = false
+  for _, v in ipairs({ 0, 20, 30, 34, 40, 50, 60, 80, 100 }) do
+    mock.setValue(ID_RSSI, v)
+    refresh(w, 8)
+    if w.frame.chipShown then sawChip = true end
+    assertTrue(math.abs(bladeLength() - full) <= 1, string.format(
+      "value %d (chip %s): blade %.1f px, expected %d",
+      v, tostring(w.frame.chipShown), bladeLength(), full))
   end
-  assertTrue(not crossesChip(w.ui.needle.props.pts),
-    "needle body stays clear of the chip (Tanda 5 review 3.12)")
-  assertTrue(not crossesChip(w.ui.needleMid.props.pts),
-    "needle mid stays clear of the chip (Tanda 5 review 3.12)")
-  assertTrue(not crossesChip(w.ui.needleTip.props.pts),
-    "needle tip stays clear of the chip (Tanda 5 review 3.12)")
+  assertTrue(sawChip, "the sweep must cross a state that raises the chip")
+end)
+
+test("A: the chip occludes the needle by paint order", function()
+  -- The guarantee the test above rests on. LVGL paints children in creation
+  -- order, so an object created later is drawn on top; renderer.build creates
+  -- the needle before the chip, and the chip is filled and fully opaque. This
+  -- is the same contract the value/name labels already use to paint over the
+  -- arcs (Tanda 5 review 3.1) - not a new assumption.
+  -- If the firmware ever changes that order, or the pill stops being opaque,
+  -- THIS test fails first and names the reason, instead of the needle
+  -- silently drawing through the badge.
+  local w = newWidget(nil, { Source = ID_RSSI })
+  mock.setValue(ID_RSSI, 10)
+  refresh(w, 2)
+  assertTrue(w.frame.chipShown, "CRIT chip is up")
+  assertTrue(objIndex(w.ui.chip) > objIndex(w.ui.needleTip),
+    "the chip must be created after the needle (later = painted on top)")
+  assertTrue(objIndex(w.ui.chipEdge) > objIndex(w.ui.needleTip),
+    "and so must its outline")
+  assertEq(w.ui.chip.props.filled, 1, "the pill must be filled")
+  assertTrue(w.ui.chip.props.opacity == nil or w.ui.chip.props.opacity == 255,
+    "and fully opaque, or it does not occlude")
 end)
 
 test("P-B: the state chip gains padding, vertical centring and an edge", function()

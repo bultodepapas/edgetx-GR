@@ -158,6 +158,14 @@ The **needle never changes colour**: it stays a fixed, theme-neutral tone
 legible pointing across a green, amber or red band alike — only the arc,
 value text and (where applicable) rail bands carry the state colour.
 
+It also **never changes length**. Where the state chip lies on the needle's
+path, the needle passes *behind* it: the chip is opaque and is created after
+the needle, so LVGL — which paints children in creation order — occludes the
+blade without anything having to be measured. This is the same creation-order
+contract the value and name labels use to paint over the arcs. Earlier
+versions shortened the blade instead, which left it at 13 % of its length at
+mid-scale and made it visibly grow and shrink as it swept.
+
 State changes are **hysteretic**: a worse state is adopted immediately, a
 better one only once the value has cleared the threshold by 2 % of the range.
 A value resting on a threshold therefore cannot flicker — and cannot
@@ -201,6 +209,24 @@ same physical size on every radio):
 Orientation: **horizontal** (w/h > 1.4) puts the dial left and the text right;
 **vertical** (w/h < 0.8) puts the dial on top; **balanced** centres the dial
 with the value inside it. Beyond w/h > 2.6 the bar style takes over.
+
+Two rules keep the composition from drifting apart in the extremes:
+
+- In a **vertical** zone the dial and its text are centred **as one group**,
+  not pinned to the top. A tall, narrow zone caps the dial at the zone's
+  width, so it cannot grow to fill the height; without this, 100×260 left
+  70 px of air above the value and 72 px below — 55 % of the zone.
+- The **source name** appears in a vertical zone whenever the text column has
+  room for it, even when `mode` says otherwise. `mode` is classified on
+  `min(w, h)`, so a 100×260 widget is judged by its narrow axis and came out
+  *compact*, dropping its label on 260 px of height. Only the name is
+  decided this way; everything else still follows `mode`.
+
+Text rows below the value share whatever slack the zone has, rather than
+sitting at a fixed 2 px apart with the remainder left unused at the bottom.
+Inside the ring the min/max row is the exception — it stays tight under the
+value, because the clear chord narrows with every pixel of descent and
+"breathing room" there is bought with width the text needs.
 
 **Containment guarantee.** Nothing the widget paints leaves its zone, at any
 size and any `LCD_SCALE`. This is not only cosmetic: tick marks and history
@@ -525,7 +551,7 @@ Headless suites run with stock Lua 5.3 (the version EdgeTX embeds):
 
 ```sh
 lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (38 tests)
-lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle     (128 tests)
+lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle     (129 tests)
 lua5.3 dev/preview.lua      <widget-dir>/   # writes dev/preview.html
 ```
 

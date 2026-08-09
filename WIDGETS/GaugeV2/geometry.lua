@@ -18,7 +18,6 @@ local floor = math.floor
 local cos = math.cos
 local sin = math.sin
 local rad = math.pi / 180
-local huge, mmax = math.huge, math.max
 
 function M.clamp(value, lo, hi)
   if value < lo then return lo end
@@ -84,33 +83,10 @@ function M.round(n)
   return floor(n + 0.5)
 end
 
--- Distance along the ray from (cx, cy) at `angle` (deg, LVGL convention) to
--- where it first enters the axis-aligned `box` ({x, y, w, h}). nil if the
--- ray never enters the box ahead of the origin (slab method). Used to keep
--- the needle from being drawn through solid UI (the state chip pill) at
--- angles where its straight-line reach would cross it (Tanda 5 review 3.12).
-function M.rayBoxEntry(cx, cy, angle, box)
-  local a = angle * rad
-  local dx, dy = cos(a), sin(a)
-  local tMin, tMax = -huge, huge
-  if dx == 0 then
-    if cx < box.x or cx > box.x + box.w then return nil end
-  else
-    local t1, t2 = (box.x - cx) / dx, (box.x + box.w - cx) / dx
-    if t1 > t2 then t1, t2 = t2, t1 end
-    if t1 > tMin then tMin = t1 end
-    if t2 < tMax then tMax = t2 end
-  end
-  if dy == 0 then
-    if cy < box.y or cy > box.y + box.h then return nil end
-  else
-    local t1, t2 = (box.y - cy) / dy, (box.y + box.h - cy) / dy
-    if t1 > t2 then t1, t2 = t2, t1 end
-    if t1 > tMin then tMin = t1 end
-    if t2 < tMax then tMax = t2 end
-  end
-  if tMin > tMax or tMax < 0 then return nil end
-  return mmax(tMin, 0)
-end
+-- M.rayBoxEntry (slab-method ray/box intersection) lived here until Tanda 7.
+-- Its only caller was renderer.needleReach, which shortened the needle so it
+-- would not be drawn through the state chip - work the paint order already
+-- does, since the chip is opaque and created after the needle. Both went
+-- together; see the comment above updateArc in renderer.lua.
 
 return M

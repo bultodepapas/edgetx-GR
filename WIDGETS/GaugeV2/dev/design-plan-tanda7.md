@@ -4,8 +4,9 @@
 **Baseline:** `feat/gauge-v2`, working tree after the Tanda 7 robustness fixes
 (38 unit + 128 lifecycle + 18 collision zones + 77 gallery scenes green,
 luacheck 0/33).
-**Status:** **PROPOSED — awaiting owner decision.** Nothing in this document is
-implemented. §8 lists exactly what needs a yes/no.
+**Status:** ✅ **IMPLEMENTED** (owner approved all three, 8 Aug 2026).
+See §9 for what actually shipped, what the measurements say, and the three
+places where implementation contradicted the plan.
 **Date:** 8 August 2026.
 
 ---
@@ -556,3 +557,88 @@ C (tall zones)  ────────┴─→  regenerate galleries, review 
 
 *Nothing here is implemented. On a "go" I will work through §5 in order, one
 commit per concern, and report the measured before/after for each.*
+
+---
+
+## 9. Implementation record (8 Aug 2026)
+
+All three shipped. Suites after: **38** unit, **129** lifecycle, **18/18**
+collision zones, **77** gallery scenes with **0** render warnings, luacheck
+**0/33**, plus a 14 076-combination containment sweep (16–320 × 16–288 px ×
+3 LCD scales × 2 styles) at **0 throws, 0 objects outside the zone**.
+
+### 9.1 What the measurements say
+
+**A — needle.** Blade length at 200×160, Sweep 270, chip shown:
+
+| value | before | after |
+|---|---|---|
+| 30 | 41 % | **100 %** |
+| 34 | 28 % | **100 %** |
+| 40 | 18 % | **100 %** |
+| 50 | **13 %** | **100 %** |
+
+Truncated samples across the scale went 13/51 → **0/51** at 270°, 18/51 → **0**
+at 180°, 8/51 → **0** at 360°.
+
+**B — typography.** Across 130 zone sizes the value font stepped **up in 11
+zones and down in none** (100×100 … 180×140: 11→13 px and 13→16 px — the
+compact/normal dials where the number was smallest relative to the dial).
+Row spacing now distributes: 260×220 went from three 2 px gaps plus 15 px of
+unused space below the name, to 14 px / 6 px with the name in the wedge.
+
+**C — tall zones.** Air above vs below the value, vertical zones:
+
+| zone | before | after | name |
+|---|---|---|---|
+| 100×260 | 70 / 72 | **64 / 63** | ✗ → **✓** |
+| 110×260 | 59 / 73 | **59 / 59** | ✓ |
+| 140×280 | 50 / 64 | **50 / 52** | ✓ |
+
+**Perf.** 1438 → **1436** instructions/frame on the heaviest scene — slightly
+*cheaper* than the pre-Tanda-7 baseline, because deleting `needleReach` also
+deleted a per-frame gate. Allocation unchanged at 310 B/frame, `linePoints/f`
+still 0.
+
+### 9.2 Where implementation contradicted the plan
+
+Three of the plan's assumptions did not survive contact. Recorded because the
+plan was wrong, not the code:
+
+1. **B5 alone does nothing.** The plan expected `valueDrop: px(7) → px(3)` to
+   buy a font step. It bought 8 px of chord and **zero** font steps: the fit
+   was pessimistic for a different reason — `pickValueFont` judged every
+   candidate against the chord at the *region's* bottom edge, ~11 px below the
+   box a 24 px font actually occupies, where the ring has closed in. The real
+   fix is the **per-font chord** in `pickValueFont`; `valueDrop` was then
+   replaced entirely by a clearance derived from the hub it protects, because
+   a fixed nudge cannot hold P0-2 once the type is allowed to grow.
+
+2. **B1 must not distribute the min/max row.** Distributing every row equally
+   pushed the min/max row down inside the ring, where the chord is narrower —
+   `"min 31"` needed 36 px in a 26 px box and wrapped to two lines. Eight
+   gallery warnings said so immediately. Inside the ring, descent costs width:
+   the min/max row stays tight under the value and only the **name**, which
+   hangs in the ring's open wedge, takes the slack.
+
+3. **C1's cap was not enough.** The plan capped the re-centring shift by the
+   ring's bottom clearance. That is necessary but not sufficient: when the
+   composition is *taller than the zone* (a 16×22 micro dial, where neither
+   ring nor font can shrink further) the group already overflows at the top and
+   centring merely moves the overflow to the bottom. A second cap —
+   `shift ≤ h - bottom` — was required. The plan's own §6 flagged this family
+   of risk and `R-1`/`R-4` caught it.
+
+A fourth item was found while implementing, not planned: `chordAt` measured
+the chord at the box's **bottom** edge always, which is only the binding edge
+while the box sits entirely below the dial centre. A micro dial centres its
+value *on* the centre, so its top edge is the far one — at 60×60 the value's
+top-right corner sat 13.4 px out on a 13 px clear radius. It now takes the
+worse of the two edges.
+
+### 9.3 Tests changed on purpose
+
+| test | change |
+|---|---|
+| *P0-4: the needle stops short of the state chip* | **replaced** by *A: the needle keeps its full length at every angle* + *A: the chip occludes the needle by paint order*. The new pair asserts the opposite of the old one, deliberately; the reason is in the test body. |
+| *P0-2: the value cell clears the hub…* | unchanged and still green — the hub guarantee is now enforced by construction (`hubBottom`) rather than by a fixed nudge that happened to clear it. |
