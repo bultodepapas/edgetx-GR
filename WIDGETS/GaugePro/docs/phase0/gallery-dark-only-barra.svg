@@ -1,0 +1,315 @@
+<svg viewBox="0 0 1292 1078" width="1292" height="1078" xmlns="http://www.w3.org/2000/svg">
+<rect width="1292" height="1078" fill="#1a1a1a"/>
+<rect x="26" y="26" width="1240" height="78" rx="10" fill="#303030" stroke="#4a4a4a"/>
+<text x="46.0" y="56.0" font-size="21.0" fill="#ffffff" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">GaugePro - hoja de contraste visual</text>
+<text x="46.0" y="77.0" font-size="11.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">8 escenas  -  tema dark  -  feat/gauge-v2@d46102e26  -  2026-08-09 22:37 UTC  -  Lua 5.3</text>
+<text x="46.0" y="94.0" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Las cajas de texto que desbordan se marcan con un recuadro rojo discontinuo; las escenas con avisos llevan un punto rojo arriba a la derecha.</text>
+<line x1="26" y1="128.0" x2="1266" y2="128.0" stroke="#4a4a4a"/>
+<text x="26.0" y="148.0" font-size="15.0" fill="#ffffff" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">9 - Estilo barra</text>
+<text x="26.0" y="164.0" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">La barra debe senalar el estado igual que el dial: mismo chip, mismo pulso, mismas marcas de umbral.</text>
+<rect x="25.0" y="175.0" width="306.0" height="72.9" rx="4" fill="#1a1a1a" stroke="#4a4a4a"/>
+<g transform="translate(26.00,176.00) scale(1.0133)">
+<rect width="300" height="70" fill="#1a1a1a"/>
+<rect x="4" y="22" width="292" height="23" rx="11" fill="#9fb4c8" fill-opacity="0.35"/>
+<rect x="4" y="22" width="228" height="23" rx="11" fill="#21925a" fill-opacity="1.00"/>
+<polyline points="106.0,22.0 106.0,45.0" fill="none" stroke="#ff0000" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="165.0,22.0 165.0,45.0" fill="none" stroke="#ce6100" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="232.0,20.0 232.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="232.0,20.0 232.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip1"><rect x="127" y="5" width="26" height="12"/></clipPath>
+<g clip-path="url(#clip1)">
+<text x="140.0" y="14.4" font-size="12" fill="#ffffff" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">78</text>
+</g>
+<clipPath id="clip2"><rect x="152" y="4" width="13" height="12"/></clipPath>
+<g clip-path="url(#clip2)">
+<text x="152.0" y="13.4" font-size="12" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<clipPath id="clip3"><rect x="4" y="49" width="146" height="17"/></clipPath>
+<g clip-path="url(#clip3)">
+<text x="4.0" y="62.3" font-size="17" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">RSSI</text>
+</g>
+</g>
+<text x="26.0" y="260.9" font-size="12.0" fill="#ffffff" font-weight="600" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">normal</text>
+<text x="26.0" y="273.9" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">300x70  compact/horizontal  bar  9 obj</text>
+<text x="26.0" y="286.9" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">78 dB  normal</text>
+<rect x="345.0" y="175.0" width="306.0" height="72.9" rx="4" fill="#1a1a1a" stroke="#4a4a4a"/>
+<g transform="translate(346.00,176.00) scale(1.0133)">
+<rect width="300" height="70" fill="#1a1a1a"/>
+<rect x="4" y="22" width="292" height="23" rx="11" fill="#9fb4c8" fill-opacity="0.35"/>
+<rect x="4" y="22" width="131" height="23" rx="11" fill="#ce6100" fill-opacity="1.00"/>
+<polyline points="106.0,22.0 106.0,45.0" fill="none" stroke="#ff0000" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="165.0,22.0 165.0,45.0" fill="none" stroke="#ce6100" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="135.0,20.0 135.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="135.0,20.0 135.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip4"><rect x="127" y="5" width="26" height="12"/></clipPath>
+<g clip-path="url(#clip4)">
+<text x="140.0" y="14.4" font-size="12" fill="#ffffff" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">45</text>
+</g>
+<clipPath id="clip5"><rect x="152" y="4" width="13" height="12"/></clipPath>
+<g clip-path="url(#clip5)">
+<text x="152.0" y="13.4" font-size="12" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<clipPath id="clip6"><rect x="4" y="49" width="146" height="17"/></clipPath>
+<g clip-path="url(#clip6)">
+<text x="4.0" y="62.3" font-size="17" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">RSSI</text>
+</g>
+<rect x="244" y="45" width="53" height="25" rx="12" fill="#000000" fill-opacity="1.00"/>
+<rect x="245" y="46" width="51" height="23" rx="11" fill="#ce6100" fill-opacity="1.00"/>
+<clipPath id="clip7"><rect x="245" y="49" width="51" height="17"/></clipPath>
+<g clip-path="url(#clip7)">
+<text x="270.5" y="62.3" font-size="17" fill="#000000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">WARN</text>
+</g>
+</g>
+<text x="346.0" y="260.9" font-size="12.0" fill="#ffffff" font-weight="600" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">warning</text>
+<text x="346.0" y="273.9" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">300x70  compact/horizontal  bar  12 obj</text>
+<text x="346.0" y="286.9" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">45 dB  warning  [WARN]</text>
+<rect x="665.0" y="175.0" width="306.0" height="72.9" rx="4" fill="#1a1a1a" stroke="#4a4a4a"/>
+<g transform="translate(666.00,176.00) scale(1.0133)">
+<rect width="300" height="70" fill="#1a1a1a"/>
+<rect x="4" y="22" width="292" height="23" rx="11" fill="#9fb4c8" fill-opacity="0.35"/>
+<rect x="4" y="22" width="64" height="23" rx="11" fill="#ff0000" fill-opacity="1.00"/>
+<polyline points="106.0,22.0 106.0,45.0" fill="none" stroke="#ff0000" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="165.0,22.0 165.0,45.0" fill="none" stroke="#ce6100" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="68.0,20.0 68.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="68.0,20.0 68.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip8"><rect x="127" y="5" width="26" height="12"/></clipPath>
+<g clip-path="url(#clip8)">
+<text x="140.0" y="14.4" font-size="12" fill="#ff0000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">22</text>
+</g>
+<clipPath id="clip9"><rect x="152" y="4" width="13" height="12"/></clipPath>
+<g clip-path="url(#clip9)">
+<text x="152.0" y="13.4" font-size="12" fill="#ff0000" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<clipPath id="clip10"><rect x="4" y="49" width="146" height="17"/></clipPath>
+<g clip-path="url(#clip10)">
+<text x="4.0" y="62.3" font-size="17" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">RSSI</text>
+</g>
+<rect x="244" y="45" width="53" height="25" rx="12" fill="#000000" fill-opacity="1.00"/>
+<rect x="245" y="46" width="51" height="23" rx="11" fill="#ff0000" fill-opacity="1.00"/>
+<clipPath id="clip11"><rect x="245" y="49" width="51" height="17"/></clipPath>
+<g clip-path="url(#clip11)">
+<text x="270.5" y="62.3" font-size="17" fill="#000000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">CRIT</text>
+</g>
+</g>
+<text x="666.0" y="260.9" font-size="12.0" fill="#ffffff" font-weight="600" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">critico</text>
+<text x="666.0" y="273.9" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">300x70  compact/horizontal  bar  12 obj</text>
+<text x="666.0" y="286.9" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">22 dB  critical  [CRIT]</text>
+<rect x="25.0" y="316.9" width="306.0" height="46.6" rx="4" fill="#1a1a1a" stroke="#4a4a4a"/>
+<g transform="translate(26.00,317.93) scale(1.0133)">
+<rect width="300" height="44" fill="#1a1a1a"/>
+<rect x="2" y="16" width="296" height="8" rx="4" fill="#9fb4c8" fill-opacity="0.35"/>
+<rect x="2" y="16" width="65" height="8" rx="4" fill="#ff0000" fill-opacity="1.00"/>
+<polyline points="106.0,16.0 106.0,24.0" fill="none" stroke="#ff0000" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="165.0,16.0 165.0,24.0" fill="none" stroke="#ce6100" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="67.0,14.0 67.0,26.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="67.0,14.0 67.0,26.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip12"><rect x="127" y="2" width="26" height="12"/></clipPath>
+<g clip-path="url(#clip12)">
+<text x="140.0" y="11.4" font-size="12" fill="#ff0000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">22</text>
+</g>
+<clipPath id="clip13"><rect x="152" y="1" width="13" height="12"/></clipPath>
+<g clip-path="url(#clip13)">
+<text x="152.0" y="10.4" font-size="12" fill="#ff0000" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<rect x="246" y="25" width="53" height="19" rx="9" fill="#000000" fill-opacity="1.00"/>
+<rect x="247" y="26" width="51" height="17" rx="8" fill="#ff0000" fill-opacity="1.00"/>
+<clipPath id="clip14"><rect x="247" y="26" width="51" height="17"/></clipPath>
+<g clip-path="url(#clip14)">
+<text x="272.5" y="39.3" font-size="17" fill="#000000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">CRIT</text>
+</g>
+</g>
+<text x="26.0" y="376.5" font-size="12.0" fill="#ffffff" font-weight="600" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">300 x 44</text>
+<text x="26.0" y="389.5" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">300x44  micro/horizontal  bar  11 obj</text>
+<text x="26.0" y="402.5" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">22 dB  critical  [CRIT]</text>
+<rect x="345.0" y="316.9" width="306.0" height="85.6" rx="4" fill="#1a1a1a" stroke="#4a4a4a"/>
+<g transform="translate(346.00,317.93) scale(1.9000)">
+<rect width="160" height="44" fill="#1a1a1a"/>
+<rect x="2" y="16" width="156" height="8" rx="4" fill="#9fb4c8" fill-opacity="0.35"/>
+<rect x="2" y="16" width="34" height="8" rx="4" fill="#ff0000" fill-opacity="1.00"/>
+<polyline points="57.0,16.0 57.0,24.0" fill="none" stroke="#ff0000" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="88.0,16.0 88.0,24.0" fill="none" stroke="#ce6100" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="36.0,14.0 36.0,26.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="36.0,14.0 36.0,26.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip15"><rect x="57" y="2" width="26" height="12"/></clipPath>
+<g clip-path="url(#clip15)">
+<text x="70.0" y="11.4" font-size="12" fill="#ff0000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">22</text>
+</g>
+<clipPath id="clip16"><rect x="82" y="1" width="13" height="12"/></clipPath>
+<g clip-path="url(#clip16)">
+<text x="82.0" y="10.4" font-size="12" fill="#ff0000" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<rect x="106" y="25" width="53" height="19" rx="9" fill="#000000" fill-opacity="1.00"/>
+<rect x="107" y="26" width="51" height="17" rx="8" fill="#ff0000" fill-opacity="1.00"/>
+<clipPath id="clip17"><rect x="107" y="26" width="51" height="17"/></clipPath>
+<g clip-path="url(#clip17)">
+<text x="132.5" y="39.3" font-size="17" fill="#000000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">CRIT</text>
+</g>
+</g>
+<text x="346.0" y="415.5" font-size="12.0" fill="#ffffff" font-weight="600" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">160 x 44 (pill al minimo)</text>
+<text x="346.0" y="428.5" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">160x44  micro/horizontal  bar  11 obj</text>
+<text x="346.0" y="441.5" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">22 dB  critical  [CRIT]</text>
+<rect x="665.0" y="316.9" width="306.0" height="72.9" rx="4" fill="#1a1a1a" stroke="#4a4a4a"/>
+<g transform="translate(666.00,317.93) scale(1.0133)">
+<rect width="300" height="70" fill="#1a1a1a"/>
+<rect x="4" y="22" width="292" height="23" rx="11" fill="#9fb4c8" fill-opacity="0.35"/>
+<rect x="4" y="22" width="231" height="23" rx="11" fill="#ff0000" fill-opacity="1.00"/>
+<polyline points="174.0,22.0 174.0,45.0" fill="none" stroke="#21925a" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="223.0,22.0 223.0,45.0" fill="none" stroke="#ce6100" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="235.0,20.0 235.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="235.0,20.0 235.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip18"><rect x="130" y="5" width="26" height="12"/></clipPath>
+<g clip-path="url(#clip18)">
+<text x="143.0" y="14.4" font-size="12" fill="#ff0000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">95</text>
+</g>
+<clipPath id="clip19"><rect x="155" y="4" width="6" height="12"/></clipPath>
+<g clip-path="url(#clip19)">
+<text x="155.0" y="13.4" font-size="12" fill="#ff0000" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="6.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">C</text>
+</g>
+<clipPath id="clip20"><rect x="4" y="49" width="146" height="17"/></clipPath>
+<g clip-path="url(#clip20)">
+<text x="4.0" y="62.3" font-size="17" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="18.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">T1</text>
+</g>
+<rect x="244" y="45" width="53" height="25" rx="12" fill="#000000" fill-opacity="1.00"/>
+<rect x="245" y="46" width="51" height="23" rx="11" fill="#ff0000" fill-opacity="1.00"/>
+<clipPath id="clip21"><rect x="245" y="49" width="51" height="17"/></clipPath>
+<g clip-path="url(#clip21)">
+<text x="270.5" y="62.3" font-size="17" fill="#000000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">CRIT</text>
+</g>
+</g>
+<text x="666.0" y="402.9" font-size="12.0" fill="#ffffff" font-weight="600" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">low-is-good (T1)</text>
+<text x="666.0" y="415.9" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">300x70  compact/horizontal  bar  12 obj</text>
+<text x="666.0" y="428.9" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">95 C  critical  [CRIT]</text>
+<rect x="25.0" y="471.5" width="306.0" height="72.9" rx="4" fill="#1a1a1a" stroke="#4a4a4a"/>
+<g transform="translate(26.00,472.53) scale(1.0133)">
+<rect width="300" height="70" fill="#1a1a1a"/>
+<rect x="4" y="22" width="292" height="23" rx="11" fill="#9fb4c8" fill-opacity="0.35"/>
+<rect x="4" y="22" width="64" height="23" rx="11" fill="#ff0000" fill-opacity="1.00"/>
+<polyline points="106.0,22.0 106.0,45.0" fill="none" stroke="#ff0000" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="165.0,22.0 165.0,45.0" fill="none" stroke="#ce6100" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="68.0,20.0 68.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="68.0,20.0 68.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip22"><rect x="127" y="5" width="26" height="12"/></clipPath>
+<g clip-path="url(#clip22)">
+<text x="140.0" y="14.4" font-size="12" fill="#ff0000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">22</text>
+</g>
+<clipPath id="clip23"><rect x="152" y="4" width="13" height="12"/></clipPath>
+<g clip-path="url(#clip23)">
+<text x="152.0" y="13.4" font-size="12" fill="#ff0000" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<clipPath id="clip24"><rect x="4" y="49" width="146" height="17"/></clipPath>
+<g clip-path="url(#clip24)">
+<text x="4.0" y="62.3" font-size="17" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">RSSI</text>
+</g>
+<rect x="244" y="45" width="53" height="25" rx="12" fill="#000000" fill-opacity="1.00"/>
+<rect x="245" y="46" width="51" height="23" rx="11" fill="#ff0000" fill-opacity="1.00"/>
+<clipPath id="clip25"><rect x="245" y="49" width="51" height="17"/></clipPath>
+<g clip-path="url(#clip25)">
+<text x="270.5" y="62.3" font-size="17" fill="#000000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">CRIT</text>
+</g>
+</g>
+<text x="26.0" y="557.5" font-size="12.0" fill="#ffffff" font-weight="600" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">chip Off: CRIT sigue visible</text>
+<text x="26.0" y="570.5" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">300x70  compact/horizontal  bar  12 obj</text>
+<text x="26.0" y="583.5" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">22 dB  critical  [CRIT]</text>
+<rect x="345.0" y="471.5" width="306.0" height="62.8" rx="4" fill="#1a1a1a" stroke="#4a4a4a"/>
+<g transform="translate(346.00,472.53) scale(1.0133)">
+<rect width="300" height="60" fill="#1a1a1a"/>
+<rect x="4" y="20" width="292" height="15" rx="7" fill="#9fb4c8" fill-opacity="0.35"/>
+<rect x="4" y="20" width="228" height="15" rx="7" fill="#21925a" fill-opacity="1.00"/>
+<polyline points="106.0,20.0 106.0,35.0" fill="none" stroke="#ff0000" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="165.0,20.0 165.0,35.0" fill="none" stroke="#ce6100" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="232.0,18.0 232.0,37.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="232.0,18.0 232.0,37.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip26"><rect x="127" y="4" width="26" height="12"/></clipPath>
+<g clip-path="url(#clip26)">
+<text x="140.0" y="13.4" font-size="12" fill="#ffffff" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">78</text>
+</g>
+<clipPath id="clip27"><rect x="152" y="3" width="13" height="12"/></clipPath>
+<g clip-path="url(#clip27)">
+<text x="152.0" y="12.4" font-size="12" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<clipPath id="clip28"><rect x="4" y="39" width="146" height="17"/></clipPath>
+<g clip-path="url(#clip28)">
+<text x="4.0" y="52.3" font-size="17" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">RSSI</text>
+</g>
+</g>
+<text x="346.0" y="547.3" font-size="12.0" fill="#ffffff" font-weight="600" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Auto -&gt; barra (ratio &gt; 2.6)</text>
+<text x="346.0" y="560.3" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">300x60  micro/horizontal  bar  9 obj</text>
+<text x="346.0" y="573.3" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">78 dB  normal</text>
+<line x1="26" y1="624.5" x2="1266" y2="624.5" stroke="#4a4a4a"/>
+<text x="26.0" y="644.5" font-size="15.0" fill="#ffffff" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Cobertura de opciones</text>
+<text x="26.0" y="660.5" font-size="10.5" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Que opciones varia realmente esta hoja. Una opcion que ninguna escena cambia es una opcion que la hoja NO verifica.</text>
+<text x="26.0" y="676.5" font-size="10.0" fill="#9fb4c8" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">OPCION</text>
+<text x="216.0" y="676.5" font-size="10.0" fill="#9fb4c8" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">VARIANTES</text>
+<text x="326.0" y="676.5" font-size="10.0" fill="#9fb4c8" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">VALORES USADOS</text>
+<line x1="26" y1="682.5" x2="1266" y2="682.5" stroke="#4a4a4a"/>
+<text x="26.0" y="697.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Scale low</text>
+<text x="216.0" y="697.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="697.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="712.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Scale high</text>
+<text x="216.0" y="712.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="712.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="727.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Warn level</text>
+<text x="216.0" y="727.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="727.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="742.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Critical level</text>
+<text x="216.0" y="742.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="742.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="757.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">High = good</text>
+<text x="216.0" y="757.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="757.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="772.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Style</text>
+<text x="216.0" y="772.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">2/4</text>
+<text x="326.0" y="772.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Auto, Bar</text>
+<text x="26.0" y="787.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Colour mode</text>
+<text x="216.0" y="787.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="787.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="802.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Decimals</text>
+<text x="216.0" y="802.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="802.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="817.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Min/max marks</text>
+<text x="216.0" y="817.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="817.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="832.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Normal colour</text>
+<text x="216.0" y="832.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="832.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="847.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Name override</text>
+<text x="216.0" y="847.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="847.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="862.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Unit override</text>
+<text x="216.0" y="862.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="862.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="877.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Scale ends</text>
+<text x="216.0" y="877.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="877.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="892.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Dial sweep</text>
+<text x="216.0" y="892.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="892.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="907.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Needle damping</text>
+<text x="216.0" y="907.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="907.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="922.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Cell reading</text>
+<text x="216.0" y="922.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="922.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="937.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Volts as %</text>
+<text x="216.0" y="937.5" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="937.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="952.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Alerts</text>
+<text x="216.0" y="952.5" font-size="11.0" fill="#9fb4c8" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">n/a</text>
+<text x="326.0" y="952.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">sonido/haptic, no pintan nada</text>
+<text x="26.0" y="967.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">  Alert switch</text>
+<text x="216.0" y="967.5" font-size="11.0" fill="#9fb4c8" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">n/a</text>
+<text x="326.0" y="967.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">compuerta de alertas</text>
+<text x="26.0" y="982.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">  Startup delay (s)</text>
+<text x="216.0" y="982.5" font-size="11.0" fill="#9fb4c8" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">n/a</text>
+<text x="326.0" y="982.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">retardo de arranque de alertas</text>
+<text x="26.0" y="997.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">  Vibrate</text>
+<text x="216.0" y="997.5" font-size="11.0" fill="#9fb4c8" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">n/a</text>
+<text x="326.0" y="997.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">haptic</text>
+<text x="26.0" y="1012.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Reset min/max</text>
+<text x="216.0" y="1012.5" font-size="11.0" fill="#9fb4c8" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">n/a</text>
+<text x="326.0" y="1012.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">accion, no estado</text>
+<text x="26.0" y="1027.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Info badges</text>
+<text x="216.0" y="1027.5" font-size="11.0" fill="#ffffff" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">1</text>
+<text x="326.0" y="1027.5" font-size="11.0" fill="#9fb4c8" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">false</text>
+<rect x="26" y="624.5" width="1240" height="0.6" fill="#4a4a4a"/>
+</svg>

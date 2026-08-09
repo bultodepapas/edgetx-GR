@@ -313,7 +313,7 @@ M.sections = {
         zone = { 220, 200 }, source = "Thr",
         opts = { Scale = "Manual", Min = 100, Max = 0, Warn = 55, Crit = 35 },
         value = 40,
-        note = "valor 40 deberia ser WARNING - ver Tanda 6 F-3" },
+        note = "valor 40 queda en WARNING tambien con escala descendente" },
       { name = "sc-cliff", title = "warn == crit", zone = { 220, 200 },
         source = "Thr",
         opts = { Scale = "Manual", Min = 0, Max = 100, Warn = 50, Crit = 50,
@@ -363,7 +363,7 @@ M.sections = {
         note = "F9: el badge de seguridad sobrevive a la opcion" },
       { name = "op-mm-off", title = "Min/max Off", zone = { 220, 200 },
         opts = { ShowMinMax = "Off" }, value = 78, history = { 31, 92 },
-        note = "el ghost no aparece - ver Tanda 6 F-8" },
+        note = "el ghost permanece: no depende de las marcas min/max" },
       { name = "op-mm-mark", title = "Min/max Markers", zone = { 220, 200 },
         opts = { ShowMinMax = "Markers" }, value = 78, history = { 31, 92 } },
       { name = "op-mm-text", title = "Min/max + texto", zone = { 220, 200 },
@@ -412,6 +412,10 @@ M.sections = {
       { name = "tx-prec2", title = "Decimales 2", zone = { 200, 160 },
         source = "RxBt", opts = { Precision = "2", Scale = "Manual",
           Min = 0, Max = 20 }, value = 16.62 },
+      { name = "tx-prec2-micro", title = "Decimales 2 / micro",
+        zone = { 60, 60 }, source = "RxBt",
+        opts = { Precision = "2", Scale = "Manual", Min = 0, Max = 20 },
+        value = 16.62 },
       { name = "tx-override", title = "Name + Unit override",
         zone = { 220, 200 }, opts = { Label = "PACK", Suffix = "volt" },
         value = 78 },
@@ -426,7 +430,7 @@ M.sections = {
     key = "bateria",
     title = "7 - Bateria y celdas",
     note = "Agregacion de la tabla CELLS y porcentaje de carga. Lowest y"
-      .. " Average con Battery ON estan rotos - ver Tanda 6 F-2.",
+      .. " Average conservan correctamente el valor por celda.",
     cases = {
       { name = "ba-cels-low", title = "Cels - Lowest (V)", zone = { 200, 160 },
         source = "Cels", opts = { Cells = "Lowest" },
@@ -440,7 +444,7 @@ M.sections = {
       { name = "ba-pct-low", title = "Li-Po % / Lowest", zone = { 200, 160 },
         source = "Cels", opts = { Battery = "Li-Po", Cells = "Lowest" },
         value = { 3.85, 3.84, 3.86, 3.85 },
-        note = "deberia ser ~55 % - F-2" },
+        note = "regresion: 3.85 V/celda permanece cerca de 55 %" },
       { name = "ba-pct-tot", title = "Li-Po % / Total", zone = { 200, 160 },
         source = "Cels", opts = { Battery = "Li-Po", Cells = "Total" },
         value = { 3.85, 3.84, 3.86, 3.85 } },
@@ -455,9 +459,9 @@ M.sections = {
   {
     key = "acento",
     title = "8 - Color de acento",
-    note = "El acento sustituye el verde del estado normal. Ojo: aqui cada"
-      .. " escena es una construccion nueva; cambiarlo EN CALIENTE no repinta"
-      .. " nada - Tanda 6 F-5.",
+    note = "El acento sustituye el verde del estado normal. Estas escenas"
+      .. " comparan construcciones; el repintado en caliente queda cubierto"
+      .. " por la regresion automatizada.",
     cases = {
       { name = "ac-default", title = "por defecto (verde)",
         zone = { 200, 160 }, opts = { ColorMode = "Sections" }, value = 78 },

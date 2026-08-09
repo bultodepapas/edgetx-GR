@@ -1,0 +1,138 @@
+<svg viewBox="0 0 1292 925" width="1292" height="925" xmlns="http://www.w3.org/2000/svg">
+<rect width="1292" height="925" fill="#c8d8de"/>
+<rect x="26" y="26" width="1240" height="78" rx="10" fill="#e4eef2" stroke="#b6e0f2"/>
+<text x="46.0" y="56.0" font-size="21.0" fill="#000000" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">GaugePro - hoja de contraste visual</text>
+<text x="46.0" y="77.0" font-size="11.5" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">1 escenas  -  tema light  -  feat/gauge-v2@d46102e26  -  2026-08-09 22:26 UTC  -  Lua 5.3</text>
+<text x="46.0" y="94.0" font-size="10.5" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Las cajas de texto que desbordan se marcan con un recuadro rojo discontinuo; las escenas con avisos llevan un punto rojo arriba a la derecha.</text>
+<line x1="26" y1="128.0" x2="1266" y2="128.0" stroke="#b6e0f2"/>
+<text x="26.0" y="148.0" font-size="15.0" fill="#000000" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">10 - Matriz de zonas</text>
+<text x="26.0" y="164.0" font-size="10.5" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">La misma configuracion en cada tamano de hueco que un layout de EdgeTX puede dar. Ningun texto puede desbordar ni cruzar el aro.</text>
+<rect x="25.0" y="175.0" width="216.0" height="216.0" rx="4" fill="#c8d8de" stroke="#b6e0f2"/>
+<g transform="translate(26.00,176.00) scale(1.0700)">
+<rect width="200" height="200" fill="#c8d8de"/>
+<path d="M 51.21 141.79 A 69.00 69.00 0 1 1 148.79 141.79" fill="none" stroke="#125e99" stroke-width="12" stroke-opacity="0.35" stroke-linecap="round"/>
+<path d="M 43.43 149.57 A 80.00 80.00 0 0 1 48.58 31.72" fill="none" stroke="#ff0000" stroke-width="4" stroke-opacity="0.78" stroke-linecap="butt"/>
+<path d="M 48.58 31.72 A 80.00 80.00 0 0 1 119.35 15.38" fill="none" stroke="#ce6100" stroke-width="4" stroke-opacity="0.78" stroke-linecap="butt"/>
+<polyline points="42.0,151.0 38.5,154.5" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="18.0,93.0 13.0,93.0" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="42.0,35.0 38.5,31.5" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="100.0,11.0 100.0,6.0" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="158.0,35.0 161.5,31.5" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="182.0,93.0 187.0,93.0" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="158.0,151.0 161.5,154.5" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="24.2,124.4 22.4,125.1" fill="none" stroke="#125e99" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<polyline points="24.2,61.6 22.4,60.9" fill="none" stroke="#125e99" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<polyline points="68.6,17.2 67.9,15.4" fill="none" stroke="#125e99" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<polyline points="131.4,17.2 132.1,15.4" fill="none" stroke="#125e99" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<polyline points="175.8,61.6 177.6,60.9" fill="none" stroke="#125e99" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<polyline points="175.8,124.4 177.6,125.1" fill="none" stroke="#125e99" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<path d="M 51.21 141.79 A 69.00 69.00 0 1 1 163.51 119.96" fill="none" stroke="#125e99" stroke-width="5" stroke-opacity="0.43" stroke-linecap="round"/>
+<path d="M 51.21 141.79 A 69.00 69.00 0 1 1 166.95 76.31" fill="none" stroke="#21925a" stroke-width="12" stroke-opacity="1.00" stroke-linecap="round"/>
+<polyline points="110.7,90.3 129.1,85.7" fill="none" stroke="#000000" stroke-width="8" stroke-opacity="1.00" stroke-linecap="round"/>
+<polyline points="126.2,86.5 145.6,81.6" fill="none" stroke="#000000" stroke-width="4" stroke-opacity="1.00" stroke-linecap="round"/>
+<polyline points="144.6,81.9 160.2,78.0" fill="none" stroke="#000000" stroke-width="2" stroke-opacity="1.00" stroke-linecap="round"/>
+<circle cx="100" cy="93" r="6" fill="#125e99" fill-opacity="1.00"/>
+<polyline points="51.8,54.0 37.1,42.0" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="157.1,117.2 174.6,124.6" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip1"><rect x="56" y="101" width="63" height="29"/></clipPath>
+<g clip-path="url(#clip1)">
+<text x="87.5" y="123.6" font-size="29" fill="#000000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="31.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">78</text>
+</g>
+<clipPath id="clip2"><rect x="109" y="112" width="18" height="17"/></clipPath>
+<g clip-path="url(#clip2)">
+<text x="109.0" y="125.3" font-size="17" fill="#125e99" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="18.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<clipPath id="clip3"><rect x="0" y="150" width="200" height="12"/></clipPath>
+<g clip-path="url(#clip3)">
+<text x="100.0" y="159.4" font-size="12" fill="#125e99" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="26.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">RSSI</text>
+</g>
+<clipPath id="clip4"><rect x="28" y="155" width="6" height="12"/></clipPath>
+<g clip-path="url(#clip4)">
+<text x="31.0" y="164.4" font-size="12" fill="#125e99" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="6.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">0</text>
+</g>
+<clipPath id="clip5"><rect x="162" y="159" width="19" height="12"/></clipPath>
+<g clip-path="url(#clip5)">
+<text x="171.5" y="168.4" font-size="12" fill="#125e99" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="19.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">100</text>
+</g>
+</g>
+<text x="26.0" y="404.0" font-size="12.0" fill="#000000" font-weight="600" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">200 x 200</text>
+<text x="26.0" y="417.0" font-size="10.5" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">200x200  large/balanced  dial  29 obj</text>
+<text x="26.0" y="430.0" font-size="10.5" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">78 dB  normal</text>
+<line x1="26" y1="471.0" x2="1266" y2="471.0" stroke="#b6e0f2"/>
+<text x="26.0" y="491.0" font-size="15.0" fill="#000000" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Cobertura de opciones</text>
+<text x="26.0" y="507.0" font-size="10.5" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Que opciones varia realmente esta hoja. Una opcion que ninguna escena cambia es una opcion que la hoja NO verifica.</text>
+<text x="26.0" y="523.0" font-size="10.0" fill="#125e99" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">OPCION</text>
+<text x="216.0" y="523.0" font-size="10.0" fill="#125e99" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">VARIANTES</text>
+<text x="326.0" y="523.0" font-size="10.0" fill="#125e99" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">VALORES USADOS</text>
+<line x1="26" y1="529.0" x2="1266" y2="529.0" stroke="#b6e0f2"/>
+<text x="26.0" y="544.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Scale low</text>
+<text x="216.0" y="544.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="544.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="559.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Scale high</text>
+<text x="216.0" y="559.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="559.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="574.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Warn level</text>
+<text x="216.0" y="574.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="574.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="589.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Critical level</text>
+<text x="216.0" y="589.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="589.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="604.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">High = good</text>
+<text x="216.0" y="604.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="604.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="619.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Style</text>
+<text x="216.0" y="619.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="619.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="634.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Colour mode</text>
+<text x="216.0" y="634.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="634.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="649.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Decimals</text>
+<text x="216.0" y="649.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="649.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="664.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Min/max marks</text>
+<text x="216.0" y="664.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">1/3</text>
+<text x="326.0" y="664.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Markers + text</text>
+<text x="26.0" y="679.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Normal colour</text>
+<text x="216.0" y="679.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="679.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="694.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Name override</text>
+<text x="216.0" y="694.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="694.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="709.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Unit override</text>
+<text x="216.0" y="709.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="709.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="724.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Scale ends</text>
+<text x="216.0" y="724.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="724.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="739.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Dial sweep</text>
+<text x="216.0" y="739.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="739.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="754.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Needle damping</text>
+<text x="216.0" y="754.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="754.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="769.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Cell reading</text>
+<text x="216.0" y="769.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="769.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="784.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Volts as %</text>
+<text x="216.0" y="784.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="784.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<text x="26.0" y="799.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Alerts</text>
+<text x="216.0" y="799.0" font-size="11.0" fill="#125e99" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">n/a</text>
+<text x="326.0" y="799.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">sonido/haptic, no pintan nada</text>
+<text x="26.0" y="814.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">  Alert switch</text>
+<text x="216.0" y="814.0" font-size="11.0" fill="#125e99" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">n/a</text>
+<text x="326.0" y="814.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">compuerta de alertas</text>
+<text x="26.0" y="829.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">  Startup delay (s)</text>
+<text x="216.0" y="829.0" font-size="11.0" fill="#125e99" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">n/a</text>
+<text x="326.0" y="829.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">retardo de arranque de alertas</text>
+<text x="26.0" y="844.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">  Vibrate</text>
+<text x="216.0" y="844.0" font-size="11.0" fill="#125e99" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">n/a</text>
+<text x="326.0" y="844.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">haptic</text>
+<text x="26.0" y="859.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Reset min/max</text>
+<text x="216.0" y="859.0" font-size="11.0" fill="#125e99" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">n/a</text>
+<text x="326.0" y="859.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">accion, no estado</text>
+<text x="26.0" y="874.0" font-size="11.0" fill="#000000" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">Info badges</text>
+<text x="216.0" y="874.0" font-size="11.0" fill="#ff3b30" font-weight="700" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif">SIN COBERTURA</text>
+<text x="326.0" y="874.0" font-size="11.0" fill="#125e99" font-weight="400" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif"></text>
+<rect x="26" y="471.0" width="1240" height="0.6" fill="#b6e0f2"/>
+</svg>

@@ -1,0 +1,33 @@
+<svg viewBox="0 0 200 160" width="300" height="240" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(0.00,0.00) scale(1.0000)">
+<rect width="200" height="160" fill="#1a1a1a"/>
+<path d="M 63.23 109.77 A 52.00 52.00 0 1 1 136.77 109.77" fill="none" stroke="#9fb4c8" stroke-width="11" stroke-opacity="0.35" stroke-linecap="round"/>
+<path d="M 56.87 116.13 A 61.00 61.00 0 0 1 60.79 26.27" fill="none" stroke="#ff0000" stroke-width="3" stroke-opacity="0.78" stroke-linecap="butt"/>
+<path d="M 60.79 26.27 A 61.00 61.00 0 0 1 114.76 13.81" fill="none" stroke="#ce6100" stroke-width="3" stroke-opacity="0.78" stroke-linecap="butt"/>
+<polyline points="55.5,117.5 52.6,120.4" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="41.8,48.9 38.1,47.4" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="100.0,10.0 100.0,6.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="158.2,48.9 161.9,47.4" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="144.5,117.5 147.4,120.4" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<path d="M 63.23 109.77 A 52.00 52.00 0 1 1 149.45 89.07" fill="none" stroke="#9fb4c8" stroke-width="4" stroke-opacity="0.43" stroke-linecap="round"/>
+<path d="M 63.23 109.77 A 52.00 52.00 0 0 1 70.92 29.89" fill="none" stroke="#21925a" stroke-width="11" stroke-opacity="1.00" stroke-linecap="round"/>
+<polyline points="95.5,66.4 87.7,54.8" fill="none" stroke="#ffffff" stroke-width="6" stroke-opacity="1.00" stroke-linecap="round"/>
+<polyline points="89.4,57.2 80.4,44.0" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity="1.00" stroke-linecap="round"/>
+<polyline points="81.0,44.8 74.3,34.9" fill="none" stroke="#ffffff" stroke-width="2" stroke-opacity="1.00" stroke-linecap="round"/>
+<circle cx="100" cy="73" r="4" fill="#9fb4c8" fill-opacity="1.00"/>
+<polyline points="56.3,87.2 41.0,92.2" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="143.7,87.2 159.0,92.2" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip1"><rect x="65" y="79" width="46" height="21"/></clipPath>
+<g clip-path="url(#clip1)">
+<text x="88.0" y="95.4" font-size="21" fill="#ffffff" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="23.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">90</text>
+</g>
+<clipPath id="clip2"><rect x="105" y="82" width="18" height="17"/></clipPath>
+<g clip-path="url(#clip2)">
+<text x="105.0" y="95.3" font-size="17" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="18.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<clipPath id="clip3"><rect x="0" y="115" width="200" height="12"/></clipPath>
+<g clip-path="url(#clip3)">
+<text x="100.0" y="124.4" font-size="12" fill="#9fb4c8" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="26.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">RSSI</text>
+</g>
+</g>
+</svg>

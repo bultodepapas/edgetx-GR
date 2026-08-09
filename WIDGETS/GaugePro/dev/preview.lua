@@ -29,10 +29,11 @@ local PALETTES = {
   dark = svgkit.palette("dark"),
 }
 
-local FONT_PX = {
-  [0x000] = 16, [0x200] = 11, [0x300] = 13, [0x400] = 24,
-  [0x500] = 32, [0x600] = 48, [0x700] = 40,
-}
+-- One metric source for every visual tool.  Duplicating this table here left
+-- the preview on the old guessed sizes after the gallery/mock moved to the
+-- measured EdgeTX font tables, so the two tools could approve different
+-- layouts.
+local FONT_PX = svgkit.FONT_PX
 
 local function colorOf(palette, flags, fallback)
   if flags == nil then return fallback or "none" end
@@ -132,7 +133,7 @@ local function emit(out, obj, pal)
       'fill-opacity="%.2f"/>',
       p.x, p.y, p.w or 0, p.h or 0, p.rounded or 0, colorOf(pal, p.color), opa)
   elseif obj.kind == "label" then
-    local size = FONT_PX[p.font or 0] or 16
+    local size = FONT_PX[p.font or 0] or FONT_PX[0]
     local anchor, x = "start", p.x
     if p.align == CENTER then
       anchor, x = "middle", p.x + (p.w or 0) / 2

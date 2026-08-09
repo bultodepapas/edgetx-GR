@@ -34,9 +34,10 @@ local PALETTES = {
   dark = svgkit.palette("dark"),
 }
 
--- mock lcd.sizeText heights, so the emitter measures exactly what layout did
-local FONT_PX = { [0x000]=16, [0x200]=11, [0x300]=13, [0x400]=24,
-                  [0x500]=32, [0x600]=48, [0x700]=48 }
+-- Reuse the measured EdgeTX font map used by the mock and gallery.  A copied
+-- approximation here makes the audit model a different display from the one
+-- that calculated the production layout.
+local FONT_PX = svgkit.FONT_PX
 
 local warnings = {}
 local function warn(fmt, ...) warnings[#warnings+1] = string.format(fmt, ...) end
@@ -172,7 +173,7 @@ local function emit(out, obj, pal, label)
   elseif obj.kind == "label" then
     local text = tostring(p.text or "")
     if text == "" then return end
-    local size = FONT_PX[p.font or 0] or 16
+    local size = FONT_PX[p.font or 0] or FONT_PX[0]
     local bw, bh = p.w or 0, p.h or 0
     local lines, wrapped = wrapLines(text, bw, size)
     local lineH = size

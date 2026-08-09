@@ -9,9 +9,8 @@
 local widgetDir = arg[1] or "./"
 local mock = dofile(widgetDir .. "tests/mock_env.lua")
 mock.install(_ENV or _G)
-
-local FONT_PX = { [0x000]=16, [0x200]=11, [0x300]=13, [0x400]=24,
-                  [0x500]=32, [0x600]=48, [0x700]=48 }
+local svgkit = dofile(widgetDir .. "dev/svgkit.lua")
+local FONT_PX = svgkit.FONT_PX
 
 local ID_RSSI, ID_MIN, ID_MAX, ID_STICK = 3072, 3073, 3074, 100
 
@@ -40,7 +39,7 @@ end
 -- ink box of a label: LVGL aligns inside [x, x+w]; the glyphs occupy
 -- `textW` px placed by the alignment.
 local function labelInk(p)
-  local size = FONT_PX[p.font or 0] or 16
+  local size = FONT_PX[p.font or 0] or FONT_PX[0]
   local text = tostring(p.text or "")
   if text == "" then return nil end
   local tw = math.floor(#text * (size * 0.55))

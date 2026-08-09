@@ -196,19 +196,29 @@ function M.totalSets()
   return n
 end
 
+-- Exact EdgeTX line heights for the three shipped colour-LCD font tables.
+-- Sources: radio/src/fonts/lvgl/{sml,std,lrg}/lv_font_en_*.c.  Hoisted out of
+-- sizeText: this harness function runs on live value anchoring, so rebuilding
+-- three lookup tables here would make the allocation probe measure the mock.
+local FONT_PROFILES = {
+  sml = { [0x000] = 17, [0x100] = 17, [0x200] = 10, [0x300] = 14,
+          [0x400] = 23, [0x500] = 33, [0x600] = 54, [0x700] = 42 },
+  std = { [0x000] = 21, [0x100] = 21, [0x200] = 12, [0x300] = 17,
+          [0x400] = 29, [0x500] = 40, [0x600] = 69, [0x700] = 51 },
+  lrg = { [0x000] = 27, [0x100] = 27, [0x200] = 17, [0x300] = 23,
+          [0x400] = 42, [0x500] = 55, [0x600] = 93, [0x700] = 71 },
+}
+
 local lcd = {
-  -- Rough but monotonic metrics: width scales with the font height, which is
-  -- what the layout code reasons about.
+  -- Font IDs are an enum, not a magnitude: 0x700 is LXL (between XL and
+  -- XXL), while 0x600 is XXL. A >= comparison made both 48 px and let the
+  -- harness approve layouts the 69 px standard-screen XXL font can overflow.
   sizeText = function(text, flags)
-    local h = 16
-    if flags then
-      if flags >= 0x600 then h = 48
-      elseif flags >= 0x500 then h = 32
-      elseif flags >= 0x400 then h = 24
-      elseif flags >= 0x300 then h = 13
-      elseif flags >= 0x200 then h = 11
-      end
-    end
+    local scale = lvgl.LCD_SCALE or 1.0
+    local profile = (scale < 0.9 and FONT_PROFILES.sml)
+      or (scale > 1.2 and FONT_PROFILES.lrg) or FONT_PROFILES.std
+    local font = (tonumber(flags) or 0) & 0x0F00
+    local h = profile[font] or profile[0x000]
     return math.floor(#tostring(text) * (h * 0.55)), h
   end,
   -- The REAL encoding, not a convenient one (Tanda 8 F7). colors.h:

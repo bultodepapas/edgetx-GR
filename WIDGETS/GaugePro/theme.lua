@@ -293,7 +293,7 @@ end
 -- An RGB flag can be decoded without calling anything, so the API is only
 -- consulted for theme roles. Nothing here is load-bearing: every caller has a
 -- defined answer for nil.
-local function rgbOf(flag)
+local function resolveColor(flag)
   if type(flag) ~= "number" then return nil end
   local v = flag
   if (v & 0x8000) == 0 then
@@ -304,6 +304,12 @@ local function rgbOf(flag)
     if not ok or type(got) ~= "number" then return nil end
     v = got
   end
+  return v
+end
+
+local function rgbOf(flag)
+  local v = resolveColor(flag)
+  if not v then return nil end
   local c = (v >> 16) & 0xFFFF
   return (c & 0xF800) >> 8, (c & 0x07E0) >> 3, (c & 0x001F) << 3
 end
@@ -329,13 +335,23 @@ M.luminance = luminance
 -- on a light theme, a dark theme, and a theme that ships a background.png
 -- photograph alike. No flat colour can promise that.
 --
--- Memoized: the argument set is the four status colours plus whatever the user
--- picked as an Accent, so the cache is bounded by configuration, not by time.
+-- Memoized by BOTH the fill and the resolved theme inks. Theme role flags are
+-- stable numeric IDs while lcd.getColor(role) changes when the pilot switches
+-- theme. Caching by `fill` alone therefore returned a decision made for the
+-- previous theme until the Lua state was reloaded.
 local inkCache = {}
 function M.labelOn(fill)
-  local ink = inkCache[fill]
-  if ink then return ink end
-  local r, g, b = rgbOf(fill)
+  local fillResolved = resolveColor(fill)
+  local darkResolved = resolveColor(M.color.inkDark)
+  local liteResolved = resolveColor(M.color.inkLite)
+  local cached = inkCache[fill]
+  if cached and cached.fill == fillResolved and cached.dark == darkResolved
+     and cached.lite == liteResolved then
+    return cached.ink
+  end
+
+  local r, g, b = rgbOf(fillResolved)
+  local ink
   if not r then
     -- Unknowable fill: PRIMARY1 is the theme's own ink and the safer guess,
     -- since a widget on a stock radio is drawn on a light background.
@@ -356,7 +372,9 @@ function M.labelOn(fill)
         and M.color.inkDark or M.color.inkLite
     end
   end
-  inkCache[fill] = ink
+  inkCache[fill] = {
+    fill = fillResolved, dark = darkResolved, lite = liteResolved, ink = ink,
+  }
   return ink
 end
 

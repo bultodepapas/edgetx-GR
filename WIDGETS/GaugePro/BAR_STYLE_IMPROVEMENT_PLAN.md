@@ -3,7 +3,7 @@
 **Document version:** 2.0 — personalization mandate and grilling review integrated
 **Date:** 2026-08-09
 **Branch:** feat/gauge-v2
-**Baseline:** a0b3247d4
+**Analysis baseline:** `d46102e26634cadd069e7d44d8a887e421957ee0`
 **Scope:** Gauge Pro Bar style only. The dial/clock style is the quality reference and is not being redesigned.
 
 ---
@@ -75,9 +75,9 @@ This plan is based on the current Gauge Pro implementation and the HTX/EdgeTX co
 - The dial has the visual maturity the bar must reach.
 - The current bar is retained-mode and inexpensive, but visually reads as a generic rounded progress bar.
 - At the canonical 300 × 70 scene, the current bar uses nine visible objects.
-- The current automated baseline passes 38 unit tests and 138 lifecycle/smoke tests.
+- The current automated baseline passes 38 unit tests and 143 lifecycle/smoke tests.
 - The measured bar refresh is approximately 810 Lua instructions, about 4% of the 20,000-instruction test budget.
-- The dial's worst audited scene uses approximately 35 objects. Rich bar faces may approach that budget, but must not grow without a measured reason.
+- The dial's revised worst audited scene uses 33 objects. Rich bar faces may approach that budget, but must not grow without a measured reason.
 - The current descending-scale history logic maps both ghost and min markers to history.min. The high historical extreme can disappear. This is a correctness defect and is fixed before cosmetic expansion.
 
 ### 3.2 Option contract
@@ -267,13 +267,13 @@ The current verified baseline is:
 | Probe | Result |
 |---|---:|
 | Pure unit tests | 38 passed, 0 failed |
-| Lifecycle/smoke tests | 138 passed, 0 failed |
+| Lifecycle/smoke tests | 143 passed, 0 failed |
 | Default bar, 300 × 70 | 9 visible objects |
 | Default bar, 300 × 60 changing frame | approximately 810 instructions, 4% of the firmware limit |
 | Default bar structural update/build probe | approximately 3,800 instructions, 81% headroom |
-| Worst current dial callback | approximately 10,000 instructions, 50% headroom |
-| Stable-frame allocation probe | approximately 309 B/frame harness/runtime baseline |
-| Advancing dial history overhead | approximately 507 B/frame above the plateau baseline |
+| Worst current dial callback | approximately 10,200 instructions, 49% headroom |
+| Stable-frame allocation probe | approximately 310 B/frame harness/runtime baseline |
+| Advancing dial history overhead | approximately 339 B/frame above the plateau baseline |
 
 The present scene catalog uses a hand-authored size matrix. Bar v2 should extend it with the generated firmware-layout atlas described later, not replace the gallery pipeline.
 
@@ -1015,7 +1015,7 @@ Global gates:
 - a structural bar configure/rebuild below 10,000 instructions;
 - every callback remains below the firmware's hard 20,000-instruction limit;
 - no cache growth under continuously changing values or colors;
-- no face-owned table allocation in its ordinary update path; measure total allocation relative to the existing approximately 309 B/frame harness/runtime baseline;
+- no face-owned table allocation in its ordinary update path; measure total allocation relative to the existing approximately 310 B/frame harness/runtime baseline;
 - no face exceeds 40 visible objects without an explicit architecture review.
 
 ### 12.5 Exact module change map
@@ -1295,6 +1295,13 @@ Each phase has subphases and an exit gate. Later visual richness does not bypass
 
 ### Phase 0 — Product and feasibility foundation
 
+**Status: COMPLETE (2026-08-09).** The measured results, fixes, commands, and
+deferred owners are recorded in [PHASE0_REPORT.md](PHASE0_REPORT.md); the
+source-derived geometry is in [PHASE0_ZONE_ATLAS.md](PHASE0_ZONE_ATLAS.md).
+The complete 79-scene visual and stress rerun is recorded in
+[PHASE0_VALIDATION_REPORT.md](PHASE0_VALIDATION_REPORT.md).
+Phase 0 changed no option slots and introduced no production face.
+
 #### 0.1 Freeze the philosophy
 
 - Commit Useful, Beautiful, Customizable as acceptance criteria.
@@ -1332,6 +1339,15 @@ Each phase has subphases and an exit gate. Later visual richness does not bypass
 - document the frozen integer limitation of manual scale/threshold options.
 
 **Exit gate:** every proposed face has a feasible retained-mode construction and an explicit object budget, and the font/gallery/deployment evidence is trustworthy.
+
+**Gate result: PASS.** The current worst bar reserves 10 shared objects. The
+measured totals are Continuous 14/24, spatial Gradient 34/38, Blocks 26/38,
+Hex 40/40, Ticks 34/40, Steps 20/32, and Dual Rail 18/36. Twenty-four
+gapless gradient slices are the portable cap; 32 slices were rejected at 42
+total objects. Ten true three-object hexes pass at every LCD scale. The atlas
+parses all 17 layout sources and classifies 6,570 exact rectangles across the
+three display families and all meaningful decoration branches. The full test
+and evidence record is linked above.
 
 ### Phase 1 — Personalization architecture
 

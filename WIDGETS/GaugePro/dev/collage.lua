@@ -97,6 +97,7 @@ local EN_TITLE = {
   ["ne-pos100"] = "high stop",
   ["tx-prec0"] = "Decimals 0", ["tx-prec1"] = "Decimals 1",
   ["tx-prec2"] = "Decimals 2",
+  ["tx-prec2-micro"] = "Decimals 2 / micro",
   ["tx-timer"] = "countdown timer elapsed",
   ["tx-scalelabels"] = "scale end labels",
   ["ba-rxbt"] = "RxBt, 4S latched",

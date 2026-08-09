@@ -50,11 +50,41 @@ function M.unitName(unit)
   return UNIT_NAMES[unit] or ""
 end
 
--- getFieldInfo can return names starting with an invalid character on some
--- firmware versions (GaugeRotary lib_widget_tools cleanInvalidChar).
+-- getFieldInfo can return names starting with a stray invalid byte on some
+-- firmware versions (GaugeRotary lib_widget_tools cleanInvalidChar).  Do not
+-- confuse that firmware defect with UTF-8: every valid non-ASCII character
+-- also starts above 127.  Strip only bytes that cannot begin a valid UTF-8
+-- sequence; preserve an intact 2/3/4-byte character such as "É" or "温".
+local function validUtf8At(s, i)
+  local b1 = string.byte(s, i)
+  if not b1 then return false end
+  if b1 < 0x80 then return true end
+
+  local b2, b3, b4 = string.byte(s, i + 1), string.byte(s, i + 2),
+                      string.byte(s, i + 3)
+  local function cont(b) return b and b >= 0x80 and b <= 0xBF end
+  if b1 >= 0xC2 and b1 <= 0xDF then
+    return cont(b2)
+  elseif b1 == 0xE0 then
+    return b2 and b2 >= 0xA0 and b2 <= 0xBF and cont(b3)
+  elseif (b1 >= 0xE1 and b1 <= 0xEC) or (b1 >= 0xEE and b1 <= 0xEF) then
+    return cont(b2) and cont(b3)
+  elseif b1 == 0xED then
+    return b2 and b2 >= 0x80 and b2 <= 0x9F and cont(b3)
+  elseif b1 == 0xF0 then
+    return b2 and b2 >= 0x90 and b2 <= 0xBF and cont(b3) and cont(b4)
+  elseif b1 >= 0xF1 and b1 <= 0xF3 then
+    return cont(b2) and cont(b3) and cont(b4)
+  elseif b1 == 0xF4 then
+    return b2 and b2 >= 0x80 and b2 <= 0x8F and cont(b3) and cont(b4)
+  end
+  return false
+end
+
 local function cleanName(name)
+  if type(name) ~= "string" then return "" end
   local n = string.byte(name, 1)
-  while n and n > 127 do
+  while n and n >= 0x80 and not validUtf8At(name, 1) do
     name = string.sub(name, 2)
     n = string.byte(name, 1)
   end

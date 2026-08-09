@@ -505,6 +505,25 @@ function()
   assertTrue(T.labelOn(RED) ~= nil, "an undecodable fill still yields an ink")
 end)
 
+test("P0: labelOn invalidates its decision when theme inks change", function()
+  mock.setThemeColors(nil)
+  local T = dofile(widgetDir .. "theme.lua")
+  local fill = T.color.accent
+  assertEq(T.labelOn(fill), COLOR_THEME_PRIMARY1,
+    "stock theme chooses its dark ink")
+
+  -- Keep PRIMARY1/PRIMARY2 as the same role IDs but change their resolved
+  -- colours, exactly as an EdgeTX theme switch does. Mid-grey is a poor ink
+  -- on the green fill, while white is the better of the two candidates.
+  mock.setThemeColors({
+    [COLOR_THEME_PRIMARY1] = { 128, 128, 128 },
+    [COLOR_THEME_PRIMARY2] = { 255, 255, 255 },
+  })
+  assertEq(T.labelOn(fill), COLOR_THEME_PRIMARY2,
+    "cached choice must be recomputed for the active theme")
+  mock.setThemeColors(nil)
+end)
+
 test("F9: ShowChip=Off keeps the badge for WARN and CRIT", function()
   -- Colour is the ONLY channel separating normal from warning, and a
   -- deuteranope cannot separate this widget's warning from its critical by
@@ -745,13 +764,36 @@ test("P1-1: the visible value + unit group stays centred at any digit count", fu
       math.abs(c1 - c2)))
 end)
 
-test("G-7: the min/max row stays inside the ring and off the scale labels", function()
+test("G-7: min/max text degrades before it can wrap", function()
+  -- The exact standard-screen XXS metrics make "min 31" 39 px wide.  The
+  -- safe ring chord in the 200x200 and 220x200 balanced families leaves only
+  -- 36 px per caption.  Keep the useful history marks, but do not pretend the
+  -- optional captions fit: clipped "min 3|max 9" is visual misinformation.
+  for _, zone in ipairs({
+    { x = 0, y = 0, w = 200, h = 200 },
+    { x = 0, y = 0, w = 220, h = 200 },
+  }) do
+    local w = newWidget(zone, {
+      Source = ID_RSSI,
+      ShowMinMax = "Markers + text",
+    })
+    mock.setValue(ID_RSSI_MIN, 31)
+    mock.setValue(ID_RSSI_MAX, 92)
+    refresh(w)
+    assertTrue(w.ui.minText == nil and w.ui.maxText == nil,
+      string.format("%dx%d must drop captions that cannot fit", zone.w, zone.h))
+    assertTrue(w.ui.minMark ~= nil and w.ui.maxMark ~= nil,
+      "responsive caption fallback must retain both history marks")
+  end
+end)
+
+test("G-7b: visible min/max text fits and clears scale labels", function()
   -- In large balanced zones the min/max row hangs below the value INSIDE the
   -- dial circle, competing for the same lower band as the scale end labels
   -- and the history marks (AUDIT.md G-7). The row is clipped to the ring's
   -- chord at its depth, so it must neither cross the ring nor touch the
   -- "0"/"100" labels at the arc ends.
-  local zone = { x = 0, y = 0, w = 200, h = 200 }   -- large: scale labels on
+  local zone = { x = 0, y = 0, w = 260, h = 220 }   -- captions genuinely fit
   local w = newWidget(zone, { Source = ID_RSSI, ShowMinMax = "Markers + text" })
   mock.setValue(ID_RSSI_MIN, 31)
   mock.setValue(ID_RSSI_MAX, 92)
@@ -776,6 +818,10 @@ test("G-7: the min/max row stays inside the ring and off the scale labels", func
   boxInside(w.ui.maxText)
 
   local theme = w.mods.theme
+  assertTrue(w.ui.minText.props.w >= theme.textWidth("min 31", L.minMaxFont),
+    "the min caption fits its cell without wrapping")
+  assertTrue(w.ui.maxText.props.w >= theme.textWidth("max 92", L.minMaxFont),
+    "the max caption fits its cell without wrapping")
   local function ink(label)
     local p = label.props
     local tw = theme.textWidth(p.text or "", p.font)
@@ -1247,6 +1293,35 @@ test("P1-4: an out-of-scale value fits its value box", function()
     string.format("value box %d must hold %d px of text", L.valueBox.w, tw))
 end)
 
+test("P0: a two-decimal value fits the 60x60 micro dial", function()
+  -- The old micro frame left six unused pixels around a face that had already
+  -- dropped every secondary label.  Its 22 px inner chord then clipped the
+  -- 33 px "78.00" value even at XXS.  Precision is telemetry truth, so the
+  -- geometry must yield before the configured digits do.
+  local cases = {
+    { scale = 0.8, side = 48 },
+    { scale = 1.0, side = 60 },
+    { scale = 1.375, side = 83 },
+  }
+  for _, c in ipairs(cases) do
+    local w = newWidget({ x = 0, y = 0, w = c.side, h = c.side }, {
+      Source = ID_RSSI,
+      Scale = "Manual",
+      Min = 0,
+      Max = 100,
+      Precision = "2",
+    }, nil, nil, c.scale)
+    mock.setValue(ID_RSSI, 78)
+    refresh(w)
+    local p = w.ui.valueLabel.props
+    local need = w.mods.theme.textWidth("78.00", p.font)
+    assertTrue(p.w >= need,
+      string.format("scale %.3f micro needs %d px but received %d",
+        c.scale, need, p.w))
+  end
+  lvgl.LCD_SCALE = 1.0
+end)
+
 test("G-10: at 360 degrees the name stays inside the ring and off the value", function()
   -- The 360 deg branch hangs the name under the value inside the circle; the
   -- G-6 band repositioning lifted that pair clear of the ring, where the
@@ -1339,6 +1414,33 @@ test("G-11: at 180 degrees both scale labels clear their end ticks", function()
 end)
 
 -- ---- telemetry -----------------------------------------------------------
+
+test("P0: source-name cleanup preserves valid UTF-8", function()
+  local telemetry = dofile(widgetDir .. "telemetry.lua")
+  assertEq(telemetry.cleanName("Énergie"), "Énergie", "two-byte UTF-8")
+  assertEq(telemetry.cleanName("温度"), "温度", "three-byte UTF-8")
+  assertEq(telemetry.cleanName("🚁RPM"), "🚁RPM", "four-byte UTF-8")
+  assertEq(telemetry.cleanName(string.char(0xFF) .. "RxBt"), "RxBt",
+    "firmware stray byte")
+  assertEq(telemetry.cleanName(string.char(0x80, 0xBF) .. "RSSI"), "RSSI",
+    "orphan continuation bytes")
+end)
+
+test("P0: mock font IDs follow EdgeTX enum order and LCD scale", function()
+  local _, xxl = lcd.sizeText("8", XXLSIZE)
+  local _, lxl = lcd.sizeText("8", XLSIZE)
+  assertEq(xxl, 69, "480x272 XXL line height")
+  assertEq(lxl, 51, "480x272 LXL line height")
+  assertTrue(xxl > lxl, "XXL is larger even though its enum ID is lower")
+
+  lvgl.LCD_SCALE = 0.8
+  local _, smlXxl = lcd.sizeText("8", XXLSIZE)
+  assertEq(smlXxl, 54, "320x240 XXL line height")
+  lvgl.LCD_SCALE = 1.375
+  local _, lrgXxl = lcd.sizeText("8", XXLSIZE)
+  assertEq(lrgXxl, 93, "800x480 XXL line height")
+  lvgl.LCD_SCALE = 1.0
+end)
 
 test("T1 is a temperature sensor, not a timer", function()
   local w = newWidget(nil, { Source = ID_TEMP_T1 })

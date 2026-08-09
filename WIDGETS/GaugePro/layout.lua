@@ -312,11 +312,15 @@ end
 -- ------------------------------------------------------------------ dial --
 
 local function dialLayout(widget, cfg, L, w, h)
-  local pad = T.px(T.space.md)
+  local mode, orientation = L.mode, L.orientation
+  -- A 60x60 micro dial has no name, unit, state chip, history, or needle.
+  -- Keeping the normal six-pixel frame around that already-minimal face made
+  -- its safe inner chord narrower than "16.62" at the smallest EdgeTX font.
+  -- Let containment own the real one-pixel edge limit instead; larger faces
+  -- retain their normal breathing room.
+  local pad = (mode == "micro") and 0 or T.px(T.space.md)
   local sweep = SWEEPS[cfg.sweep or M.SWEEP_270] or SWEEPS[M.SWEEP_270]
   L.startAngle, L.sweep = sweep[1], sweep[2]
-
-  local mode, orientation = L.mode, L.orientation
   local side = min(w, h)
 
   L.showUnit = mode ~= "micro"
@@ -443,13 +447,20 @@ local function dialLayout(widget, cfg, L, w, h)
   L.ghostThickness = max(T.px(2), floor(L.trackThickness * 0.45))
   L.tickCount = (mode == "micro") and 3 or ((mode == "large") and 7 or 5)
   -- Minimum 2 px: at 1 px the scale marks vanished into the background on
-  -- dark themes (~2.5:1 contrast, review P-C). The max is the same as before.
-  L.tickThickness = clamp(floor(side / 90), T.px(2), T.px(3))
+  -- dark themes (~2.5:1 contrast, review P-C). Micro ticks stay at exactly
+  -- two pixels: px(2) becomes three on the 800-class scale, whose half-stroke
+  -- crossed a 60 px stress zone even while its endpoints remained inside.
+  local minTick = (mode == "micro") and 2 or T.px(2)
+  L.tickThickness = clamp(floor(side / 90), minTick, T.px(3))
   L.minorTicks = (mode == "large") and (L.tickCount - 1) or 0
 
   local tickLength = clamp(floor(side / 40), T.px(2), T.px(6))
+  -- The micro face needs every radial pixel.  One pixel still separates its
+  -- three ticks from the rail and leaves their endpoints inside the zone;
+  -- larger faces keep the full xs rhythm.
+  local tickGap = (mode == "micro") and T.px(1) or T.px(T.space.xs)
   local outerReserve = floor(L.trackThickness / 2) + L.railThickness
-    + T.px(T.space.xs) + tickLength + 1
+    + tickGap + tickLength + 1
   local half = floor(min(dial.w, dial.h) / 2)
   L.radius = max(half - outerReserve, T.px(8))
   -- The rail band radius clears the value arc's outer edge by `railGap`: when
@@ -478,8 +489,8 @@ local function dialLayout(widget, cfg, L, w, h)
   -- the dial BOX alone does not capture once the box has been centred.
   local edgeReach = min(L.cx, L.cy, w - L.cx, h - L.cy) - 1
   local railOut = floor(L.trackThickness / 2) + L.railThickness + L.railGap
-  if L.radius + railOut + T.px(T.space.xs) + tickLength > edgeReach then
-    local r = edgeReach - railOut - T.px(T.space.xs) - tickLength
+  if L.radius + railOut + tickGap + tickLength > edgeReach then
+    local r = edgeReach - railOut - tickGap - tickLength
     if r >= T.px(8) then
       L.radius = r                       -- ticks still fit: just shrink
     else
@@ -490,7 +501,7 @@ local function dialLayout(widget, cfg, L, w, h)
 
   L.railRadius = L.radius + floor(L.trackThickness / 2) + L.railThickness
     + L.railGap
-  L.tickInner = L.railRadius + T.px(T.space.xs)
+  L.tickInner = L.railRadius + tickGap
   L.tickOuter = L.tickInner + tickLength
   -- Radial span of the min/max history marks. LAYOUT data, like the bar's
   -- markOverhang: renderer.build and renderer.updateHistory both need it and
@@ -595,10 +606,25 @@ local function dialLayout(widget, cfg, L, w, h)
   -- the vertical rhythm (Tanda 7 B); only the x/w/h of each box matter above.
   local align = (orientation == "horizontal") and LEFT or CENTER
   local stackTop, stackBottom, stackRows
+  -- "Markers + text" is a preference, not permission to wrap a telemetry
+  -- caption into unreadable fragments.  Reserve against the configured range
+  -- endpoints (the longest legitimate history captions for this scale) and
+  -- degrade to the still-visible min/max marks when a responsive family does
+  -- not have two cells wide enough for them.
+  local minCaption = "min " .. F.display(widget, cfg.min)
+  local maxCaption = "max " .. F.display(widget, cfg.max)
+  local minMaxCellNeed = max(T.textWidth(minCaption, L.minMaxFont),
+                             T.textWidth(maxCaption, L.minMaxFont))
+  local function minMaxTextFits(b)
+    return floor(b.w / 2) >= minMaxCellNeed
+  end
   if orientation == "horizontal" then
     L.stateBox = box(textRegion.x, 0, textRegion.w, stateH)
     L.minMaxBox = box(textRegion.x, 0, textRegion.w, minMaxH)
     L.nameBox = box(textRegion.x, 0, textRegion.w, nameH)
+    if L.showMinMaxText and not minMaxTextFits(L.minMaxBox) then
+      L.showMinMaxText = false
+    end
     -- The value joins the stack here, unlike the dial-centred orientations:
     -- in a horizontal zone the text column is the whole right-hand side, and
     -- the value is simply its first row. Distributing all four rows over the
@@ -614,6 +640,9 @@ local function dialLayout(widget, cfg, L, w, h)
   elseif orientation == "vertical" then
     L.minMaxBox = box(textRegion.x, 0, textRegion.w, minMaxH)
     L.nameBox = box(textRegion.x, 0, textRegion.w, nameH)
+    if L.showMinMaxText and not minMaxTextFits(L.minMaxBox) then
+      L.showMinMaxText = false
+    end
     -- the state chip rides on the dial, not in the text column
     L.stateBox = box(dial.x, dial.y + floor(dial.h * 0.24), dial.w, stateH)
     stackRows = {}
@@ -632,6 +661,12 @@ local function dialLayout(widget, cfg, L, w, h)
     -- lines, of which one is visible. Above it the chord is widest, so tight
     -- is also correct here - the slack belongs to the name instead.
     L.minMaxBox = box(dial.x, stackTop + T.px(T.space.xs), dial.w, minMaxH)
+    if L.showMinMaxText then
+      clipToChord(L, L.minMaxBox)
+      if not minMaxTextFits(L.minMaxBox) then
+        L.showMinMaxText = false
+      end
+    end
     if L.sweep >= 360 then
       -- A CLOSED ring has no open wedge to hang the name in, so it goes
       -- INSIDE. It used to be pinned tight under the value - 2 px below it,
@@ -866,7 +901,8 @@ local function barLayout(widget, cfg, L, w, h)
   -- old budget had to under-reserve to keep both, which is what pushed the
   -- pill out of the zone. Short bars (the same breakpoint that drops the
   -- name) buy the room back from the padding instead, honestly.
-  local pad = (h < T.px(46)) and T.px(T.space.xs) or T.px(T.space.sm)
+  local compactPad = T.px(T.space.xs)
+  local pad = (h < T.px(46)) and compactPad or T.px(T.space.sm)
   L.showUnit = true
   L.showName = h >= T.px(46)
   -- the row is reserved whatever ShowChip says: see the dial branch (F9)
@@ -952,9 +988,22 @@ local function barLayout(widget, cfg, L, w, h)
 
   if not L.showState then
     fits(0)
-  elseif not (fits(T.px(6)) or fits(T.px(2)) or fits(0)) then
-    L.showState = false                 -- rung 5: last resort
-    fits(0)
+  else
+    local stateFits = fits(T.px(6)) or fits(T.px(2)) or fits(0)
+    -- The old height breakpoint changed TWO variables at h=px(46): it added
+    -- the name and switched xs -> sm padding. With the real EdgeTX font
+    -- heights, a 46 px bar therefore lost its safety row after a 44 px bar
+    -- had shown it, then regained it later. Padding is another degradation
+    -- rung: if the preferred spacing fails, retry the exact same pill ladder
+    -- with compact spacing before removing WARN/CRIT.
+    if not stateFits and pad > compactPad then
+      pad = compactPad
+      stateFits = fits(T.px(6)) or fits(T.px(2)) or fits(0)
+    end
+    if not stateFits then
+      L.showState = false               -- final rung: last resort
+      fits(0)
+    end
   end
   -- A zone too short for even the smallest value font keeps the font's
   -- height anyway; the value box is what the auto-fit needs (AUDIT.md P1-4).

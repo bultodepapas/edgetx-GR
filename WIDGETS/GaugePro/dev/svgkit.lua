@@ -25,9 +25,11 @@ local M = {}
 local floor = math.floor
 local fmt = string.format
 
--- Font flag -> pixel height. Mirrors tests/mock_env.lua's lcd.sizeText.
-M.FONT_PX = { [0x000] = 16, [0x200] = 11, [0x300] = 13, [0x400] = 24,
-              [0x500] = 32, [0x600] = 48, [0x700] = 48 }
+-- Font flag -> pixel height for the standard 480x272 font table. Mirrors the
+-- default tests/mock_env.lua profile and the real lv_font_en_*.c line_height
+-- values. Note the enum order: LXL is 0x700/51 px; XXL is 0x600/69 px.
+M.FONT_PX = { [0x000] = 21, [0x100] = 21, [0x200] = 12, [0x300] = 17,
+              [0x400] = 29, [0x500] = 40, [0x600] = 69, [0x700] = 51 }
 
 -- Same 0.55 advance ratio the mock uses, so measurement here and measurement
 -- inside the widget agree.
