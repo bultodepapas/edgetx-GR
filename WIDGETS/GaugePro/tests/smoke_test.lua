@@ -2244,6 +2244,47 @@ test("contract: DEFS slot order and types are frozen", function()
   end
 end)
 
+test("contract: the option labels fit the radio's settings screen", function()
+  -- The settings dialog is a two-column LVGL grid inside a dialog 80 % of the
+  -- screen wide (widget_settings.cpp), so the LABEL column is ~40 % of the
+  -- screen - about 20 characters at the standard font. StaticText never calls
+  -- lv_label_set_long_mode, so LVGL's default WRAP applies: an over-long
+  -- label does not clip, it silently takes a second line on every radio, on
+  -- every model, forever. Nothing in the firmware warns about it, and it
+  -- cannot be seen from a headless test - hence this budget.
+  local mod = dofile(widgetDir .. "main.lua")
+  local seen = {}
+  for i, d in ipairs(mod.defs) do
+    assertTrue(d.label ~= nil and d.label ~= "",
+      "slot " .. i .. " (" .. d.key .. ") has no label")
+    assertTrue(#d.label <= 20, string.format(
+      "slot %d label %q is %d chars - over the ~20 the column fits",
+      i, d.label, #d.label))
+    -- Two rows reading the same thing is the defect the Tanda 8 rename set
+    -- out to fix ("Minimum"/"Maximum" against "Min / max"); a duplicate is
+    -- the same bug in its worst form.
+    local key = string.lower((string.gsub(d.label, "^%s+", "")))
+    assertTrue(not seen[key], "duplicate label: " .. d.label)
+    seen[key] = true
+    -- Indentation is the only grouping the firmware offers, so it means
+    -- exactly one thing: this option modifies the one above it.
+    local indent = string.match(d.label, "^( *)")
+    assertTrue(#indent == 0 or #indent == 2,
+      "label " .. d.label .. " indents by " .. #indent .. ", not 0 or 2")
+    if #indent == 2 then
+      assertTrue(d.key == "AlertSw" or d.key == "Delay" or d.key == "Vibrate",
+        d.key .. " is indented but is not an alert sub-option")
+    end
+  end
+  -- translate() is what the firmware actually calls; a key it does not answer
+  -- for falls back to the raw option name (widget_settings.cpp:64).
+  for _, d in ipairs(mod.defs) do
+    assertEq(mod.translate(d.key), d.label, "translate(" .. d.key .. ")")
+  end
+  assertEq(mod.translate("GaugePro"), "Gauge Pro",
+    "the dialog title comes from the widget name")
+end)
+
 test("F-3: the peak-hold ghost follows the scale direction", function()
   -- A descending scale maps the highest value back onto startAngle, so the
   -- ghost must sweep to the scale's FAR extreme - h.min, not h.max - or it

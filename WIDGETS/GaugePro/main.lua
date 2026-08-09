@@ -39,28 +39,59 @@ end
 -- Option declarations. `since` 212 marks options that only exist where the
 -- firmware has more than ten slots. `field` is the name the parsed config
 -- uses; entries without one are not consumed by the widget code.
+--
+-- LABELS ARE WHAT THE PILOT READS, and they are free to change: the wire
+-- contract is (position, key, type) - see the frozen-slot test - so nothing a
+-- model stored depends on this text. They are written to survive the settings
+-- screen, which is a two-column LVGL grid inside a dialog 80 % of the screen
+-- wide (widget_settings.cpp): the label column is HALF of that, ~20 characters
+-- at the standard font, and an lv_label with no long-mode set WRAPS rather
+-- than clipping - so an over-long label silently costs a second line on every
+-- radio.
+--
+-- Three of them are renames that fix a real ambiguity rather than a wording
+-- preference, and the reasoning is worth keeping:
+--
+--   Min/Max -> "Scale low"/"Scale high", ShowMinMax -> "Min/max marks".
+--     "Minimum"/"Maximum" and "Min / max" sat six rows apart naming two
+--     unrelated things - the ends of the SCALE, and the recorded PEAK
+--     markers. Whichever one you were looking for, the other one answered.
+--
+--   Scale -> "Scale ends". It decides where "Scale low"/"Scale high" come
+--     from (a sensor preset, or your values), but it lands eleven slots below
+--     them and the option order is frozen, so it cannot be moved next to
+--     them. Sharing the word "Scale" is what links them when scanning.
+--
+--   ShowChip -> "Info badges". Since Tanda 8 F9 this only suppresses the
+--     informational badges (NO LINK, STALE, NO DATA, NO SOURCE) - WARN and
+--     CRIT always show, because colour alone does not reach a colour-blind
+--     pilot. "State chip" now promises something the option does not do.
+--
+-- The CHOICE values are deliberately NOT renamed. They are the vocabulary
+-- every document, scene name and test in this repo uses (159 references), and
+-- the labels above can carry the meaning on their own.
 local DEFS = {
   -- ---- core ten: identical positions to 1.0, available on 2.11 ----------
   { key = "Source", label = "Source", type = SOURCE, field = "source",
     since = 211, default = { "RSSI", "RQly", "RxBt", "Cels", "TxBt" } },
-  { key = "Min", label = "Minimum", type = VALUE, field = "min",
+  { key = "Min", label = "Scale low", type = VALUE, field = "min",
     since = 211, default = 0, min = -10000, max = 10000 },
-  { key = "Max", label = "Maximum", type = VALUE, field = "max",
+  { key = "Max", label = "Scale high", type = VALUE, field = "max",
     since = 211, default = 100, min = -10000, max = 10000 },
-  { key = "Warn", label = "Warning", type = VALUE, field = "warn",
+  { key = "Warn", label = "Warn level", type = VALUE, field = "warn",
     since = 211, default = 55, min = -10000, max = 10000 },
-  { key = "Crit", label = "Critical", type = VALUE, field = "crit",
+  { key = "Crit", label = "Critical level", type = VALUE, field = "crit",
     since = 211, default = 35, min = -10000, max = 10000 },
-  { key = "HighGood", label = "High is good", type = BOOL, field = "highGood",
+  { key = "HighGood", label = "High = good", type = BOOL, field = "highGood",
     since = 211, default = 1 },
   { key = "Style", label = "Style", type = CHOICE, field = "style",
     since = 211, default = 1, choices = { "Auto", "Needle", "Arc", "Bar" } },
-  { key = "ColorMode", label = "Colours", type = CHOICE, field = "colorMode",
+  { key = "ColorMode", label = "Colour mode", type = CHOICE, field = "colorMode",
     since = 211, default = 3,
     choices = { "Static", "Threshold", "Rail", "Gradient", "Sections" } },
   { key = "Precision", label = "Decimals", type = CHOICE, field = "precision",
     since = 211, default = 1, choices = { "Auto", "0", "1", "2" } },
-  { key = "ShowMinMax", label = "Min / max", type = CHOICE,
+  { key = "ShowMinMax", label = "Min/max marks", type = CHOICE,
     field = "showMinMax", since = 211, default = 2,
     choices = { "Off", "Markers", "Markers + text" } },
 
@@ -76,13 +107,13 @@ local DEFS = {
   -- invisible "all clear" (Tanda 8 F0). The literal here is duplicated from
   -- theme.lua deliberately - main.lua stays data-only, because it is read at
   -- boot for every widget on the card, used or not.
-  { key = "Accent", label = "Accent colour", type = COLOR, field = "accent",
+  { key = "Accent", label = "Normal colour", type = COLOR, field = "accent",
     since = 212, default = lcd.RGB(0x20, 0x90, 0x58) },
   { key = "Label", label = "Name override", type = STRING, field = "label",
     since = 212, default = "" },
   { key = "Suffix", label = "Unit override", type = STRING, field = "suffix",
     since = 212, default = "" },
-  { key = "Scale", label = "Scale", type = CHOICE, field = "scale",
+  { key = "Scale", label = "Scale ends", type = CHOICE, field = "scale",
     since = 212, default = 1, choices = { "Auto", "Manual" } },
   { key = "Sweep", label = "Dial sweep", type = CHOICE, field = "sweep",
     since = 212, default = 1, choices = { "270 deg", "180 deg", "360 deg" } },
@@ -90,7 +121,7 @@ local DEFS = {
     field = "damping", since = 212, default = 4, min = 0, max = 9 },
   { key = "Cells", label = "Cell reading", type = CHOICE, field = "cells",
     since = 212, default = 1, choices = { "Lowest", "Total", "Average" } },
-  { key = "Battery", label = "Battery percent", type = CHOICE,
+  { key = "Battery", label = "Volts as %", type = CHOICE,
     field = "battery", since = 212, default = 1,
     choices = { "Off", "Li-Po", "Li-Ion" } },
   { key = "Alerts", label = "Alerts", type = CHOICE, field = "alerts",
@@ -104,7 +135,7 @@ local DEFS = {
     since = 212, default = 0 },
   { key = "ResetSw", label = "Reset min/max", type = SWITCH,
     field = "resetSw", since = 212, default = 0 },
-  { key = "ShowChip", label = "State chip", type = BOOL, field = "showChip",
+  { key = "ShowChip", label = "Info badges", type = BOOL, field = "showChip",
     since = 212, default = 1 },
 }
 

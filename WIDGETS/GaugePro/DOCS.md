@@ -66,43 +66,52 @@ settings shifted.
 | Option | Type | Default | Meaning |
 |---|---|---|---|
 | **Source** | Source | *auto* | Telemetry sensor, timer, or local source. Defaults to the first available of RSSI, RQly, RxBt, Cels, TxBt (resolved by the firmware). |
-| **Minimum** | Integer | 0 | Scale minimum. |
-| **Maximum** | Integer | 100 | Scale maximum. |
-| **Warning** | Integer | 55 | Warning threshold. |
-| **Critical** | Integer | 35 | Critical threshold. |
-| **High is good** | Bool | On | Direction: higher = better (Off inverts the bands). |
+| **Scale low** | Integer | 0 | The low end of the dial. Not a threshold — see **Warn level** below. |
+| **Scale high** | Integer | 100 | The high end of the dial. |
+| **Warn level** | Integer | 55 | Where the gauge turns amber. |
+| **Critical level** | Integer | 35 | Where it turns red and starts pulsing. |
+| **High = good** | Bool | On | Direction: higher is better (Off inverts the bands). |
 | **Style** | Choice | Auto | Auto / Needle / Arc / Bar (see 4.4). |
-| **Colours** | Choice | Rail | Static / Threshold / Rail / Gradient / Sections (see 4.5). |
+| **Colour mode** | Choice | Rail | Static / Threshold / Rail / Gradient / Sections (see 4.5). |
 | **Decimals** | Choice | Auto | Auto follows the sensor precision, or 0 / 1 / 2. |
-| **Min / max** | Choice | Markers | Off / Markers / Markers + text. |
+| **Min/max marks** | Choice | Markers | The **recorded** peaks, marked on the scale: Off / Markers / Markers + text. Nothing to do with **Scale low/high**. |
 
 **Appended on 2.12+:**
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
-| **Accent colour** | Color | `#209058` | Native colour picker; overrides the normal-state colour (default green, the "all clear" colour — 4.3 explains why it is a fixed colour and not a theme role). Lets four gauges on one screen be colour-coded. A custom accent is used as given: the contrast guarantee in 4.3 covers the default, not your choice. |
+| **Normal colour** | Color | `#209058` | Native colour picker; overrides the normal-state colour (default green, the "all clear" colour — 4.3 explains why it is a fixed colour and not a theme role). Lets four gauges on one screen be colour-coded. A custom accent is used as given: the contrast guarantee in 4.3 covers the default, not your choice. |
 | **Name override** | String | "" | Custom label ("PACK", "MOTOR"); empty uses the sensor name. |
 | **Unit override** | String | "" | Custom unit; empty uses the sensor unit. |
-| **Scale** | Choice | Auto | Auto uses a known-sensor preset; Manual always uses your Min/Max/Warning/Critical. |
+| **Scale ends** | Choice | Auto | Where **Scale low/high** (and the two levels) come from: Auto takes a known-sensor preset, Manual always uses your values. |
 | **Dial sweep** | Choice | 270° | 270° / 180° / 360°. |
 | **Needle damping** | Slider | 4 | 0 = raw, 9 = heavy (see 6.6). |
 | **Cell reading** | Choice | Lowest | How a `CELLS` table is reduced: Lowest / Total / Average. |
-| **Battery percent** | Choice | Off | Off / Li-Po / Li-Ion — show state of charge instead of volts (see 4.8). |
+| **Volts as %** | Choice | Off | Off / Li-Po / Li-Ion — show state of charge instead of volts (see 4.8). |
 | **Alerts** | Choice | Off | Off / Critical / Warning + critical (see 4.9). |
 | **Alert switch** | Switch | none | Alerts only fire while this switch is on (e.g. armed). |
-| **Startup delay** | Integer | 4 s | No alerts until the model has settled. |
+| **Startup delay (s)** | Integer | 4 | No alerts until the model has settled. The unit is in the label because a Lua widget cannot give a NumberEdit a suffix. |
 | **Vibrate** | Bool | Off | Haptic pulse on critical. |
 | **Reset min/max** | Switch | none | Clears the tracked history in flight. |
-| **State chip** | Bool | On | Hides the *informational* pills (`NO LINK`, `STALE`, `NO DATA`, `NO SOURCE`). **WARN and CRIT always show**, whatever this is set to — they are a safety signal, and colour alone does not reach every pilot (4.3). The row is reserved either way, so turning it off does not buy the value more space. |
+| **Info badges** | Bool | On | Hides the *informational* pills (`NO LINK`, `STALE`, `NO DATA`, `NO SOURCE`). **WARN and CRIT always show**, whatever this is set to — they are a safety signal, and colour alone does not reach every pilot (4.3). The row is reserved either way, so turning it off does not buy the value more space. |
 
 Notes:
 
-- Option **names** are ≤ 10 characters without spaces (a firmware
-  convention); the friendly labels above come from the `translate` callback,
-  which also indents the alert sub-options so they read as a group.
-- Warning/Critical are clamped into [Minimum, Maximum].
-- If Minimum > Maximum the scale is **mirrored**, not swapped: a descending
-  scale works (0 at the right).
+- Option **names** (the keys stored in the model) are ≤ 10 characters without
+  spaces, a firmware convention. The friendly labels above are what the radio
+  shows, and come from the `translate` callback.
+- **Labels are display only.** The wire contract is (position, key, type), so
+  a label can be reworded at any time without touching a saved model — which
+  is why several were reworded in Tanda 8 to say what they actually do.
+- They are also **budgeted**: the settings dialog is a two-column grid inside
+  a dialog 80 % of the screen wide, so a label gets about 20 characters, and
+  the firmware's label wraps rather than clipping. A pinned test enforces the
+  budget, rejects duplicates, and allows the two-space indent only on the
+  alert sub-options — indentation is the only grouping the firmware offers, so
+  it has to mean exactly one thing.
+- The two levels are clamped into [Scale low, Scale high].
+- If Scale low > Scale high the scale is **mirrored**, not swapped: a
+  descending scale works (0 at the right).
 
 ### 4.2 Scale: presets vs your values
 
@@ -202,7 +211,7 @@ trade: it stops any one state shouting louder than another by accident, but it
 means the non-colour channels are not decoration. A simulated deuteranope sees
 this widget's warning and critical **25.6** perceptual units apart — inside the
 ~60 confusion threshold. What separates them for those users is the badge
-*text* and the critical pulse, which is why **State chip = Off can no longer
+*text* and the critical pulse, which is why **Info badges = Off can no longer
 hide a WARN or CRIT badge** (4.1).
 
 The **needle never changes colour**: it stays a fixed, theme-neutral tone
@@ -338,7 +347,7 @@ them itself. Either way the history drives:
   count is derived from the first reading (`floor(V / 4.35) + 1`) and latched
   — a pack sags under load, so re-deriving it later would step the scale down
   mid-flight. The scale is rebuilt once, to `cells × [3.0 … 4.2] V`.
-- **Battery percent** turns the reading into state of charge on a 0–100 %
+- **Volts as %** turns the reading into state of charge on a 0–100 %
   scale using a Li-Po or Li-Ion discharge curve, with warning at 30 % and
   critical at 15 %. Voltage alone is a poor charge indicator; the curve makes
   the dial mean something.
@@ -464,7 +473,7 @@ The counts are reproducible: `lua5.3 dev/census.lua ./`.
 | Major ticks | line | 3 / 5 / 7 | micro / compact+normal / large |
 | Minor ticks | line | 6 | large mode |
 | Min/max markers | line | 2 | markers on |
-| State chip + edge | rectangle | 2 | chip shown |
+| State badge + edge | rectangle | 2 | badge shown |
 
 Per-frame writes: arc `endAngle`, needle `pts` (only when the angle
 changed), `color`/`opacity` on a state change, label `text` when the string

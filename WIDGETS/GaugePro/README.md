@@ -61,7 +61,7 @@ SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
 - **Alerts**: tone and haptic on state transitions, gated by a switch, a
   startup delay and a rate limit
 - Reset min/max from a switch, in flight
-- Accent colour, custom name and unit, needle damping
+- Normal-state colour, custom name and unit, needle damping
 - Responsive: micro / compact / normal / large × horizontal / vertical /
   balanced / fullscreen
 - Availability model: distinguishes no source, stale sensor, link down and
@@ -73,9 +73,15 @@ SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
 ## Options
 
 Ten options on EdgeTX 2.11 (the firmware limit there, in both the radio and
-Companion), and 23 on 2.12+. The core ten keep fixed positions on every
+Companion), and all 24 on 2.12+. The core ten keep fixed positions on every
 firmware, so a model can move between versions without its settings shifting.
-See [`DOCS.md` §4.1](DOCS.md).
+
+The labels are written for the radio's settings screen, where a label gets
+about half the dialog width and wraps rather than clips. Names that used to
+answer for each other — *Minimum* / *Maximum* against *Min / max* — now say
+which is the **scale** and which is the **recorded peaks**, and *State chip*
+became *Info badges*, because since the colour work it can no longer hide a
+WARN or CRIT. See [`DOCS.md` §4.1](DOCS.md).
 
 ## Architecture
 
