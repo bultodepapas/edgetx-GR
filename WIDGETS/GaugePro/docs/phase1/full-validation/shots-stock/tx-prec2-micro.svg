@@ -1,0 +1,16 @@
+<svg viewBox="0 0 60 60" width="132" height="132" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(0.00,0.00) scale(1.0000)">
+<rect width="60" height="60" fill="#c8d8de"/>
+<path d="M 15.15 44.85 A 21.00 21.00 0 1 1 44.85 44.85" fill="none" stroke="#125e99" stroke-width="4" stroke-opacity="0.35" stroke-linecap="round"/>
+<path d="M 11.62 48.38 A 26.00 26.00 0 0 1 13.29 10.08" fill="none" stroke="#ff0000" stroke-width="2" stroke-opacity="0.78" stroke-linecap="butt"/>
+<path d="M 13.29 10.08 A 26.00 26.00 0 0 1 36.29 4.77" fill="none" stroke="#ce6100" stroke-width="2" stroke-opacity="0.78" stroke-linecap="butt"/>
+<polyline points="10.9,49.1 9.5,50.5" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="30.0,3.0 30.0,1.0" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="49.1,49.1 50.5,50.5" fill="none" stroke="#125e99" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<path d="M 15.15 44.85 A 21.00 21.00 0 1 1 51.00 29.63" fill="none" stroke="#21925a" stroke-width="4" stroke-opacity="1.00" stroke-linecap="round"/>
+<clipPath id="clip1"><rect x="13" y="24" width="35" height="12"/></clipPath>
+<g clip-path="url(#clip1)">
+<text x="30.5" y="33.4" font-size="12" fill="#000000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="33.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">16.62</text>
+</g>
+</g>
+</svg>

@@ -18,6 +18,10 @@ local presets = load("presets")
 local options = load("options")
 local format = load("format")
 local smoothing = load("smoothing")
+local theme = load("theme")
+local barStyle = load("bar_style")
+local barFaces = load("bar_faces")
+barStyle.setup(theme, presets)
 
 local passed, failed = 0, 0
 
@@ -332,6 +336,224 @@ test("capacity follows the firmware version", function()
   assertEq(options.capacity(), 50)
 end)
 
+-- ---- bar personalization contracts --------------------------------------
+
+local function visualConfig(overrides)
+  local cfg = {
+    barPreset = 2, barFace = 1, barDir = 1, barOrigin = 1,
+    barSize = 1, barEnds = 1, segments = 1, segGap = 1,
+    palette = 1, warnClr = theme.color.warn, critClr = theme.color.crit,
+    trackClr = COLOR_THEME_SECONDARY1, surface = 1,
+    panelClr = COLOR_THEME_SECONDARY3, contrast = 1,
+    accent = theme.color.accent,
+  }
+  for k, v in pairs(overrides or {}) do cfg[k] = v end
+  return cfg
+end
+
+local function visualWidget(name, zone)
+  return { source = { name = name or "Unknown", unit = nil },
+           zone = zone or { w = 300, h = 70 } }
+end
+
+test("bar preset default resolves the pixel-compatible Classic Rail", function()
+  local visual, palette = barStyle.resolve(visualWidget("RSSI"), visualConfig())
+  assertEq(visual.preset, "classic-rail")
+  assertEq(visual.face, "continuous")
+  assertEq(visual.direction, "horizontal")
+  assertEq(visual.thickness, "medium")
+  assertEq(visual.ends, "round")
+  assertEq(visual.surface, "transparent")
+  assertEq(palette.mode, "classic")
+  assertEq(palette.normal, theme.color.accent)
+  assertEq(palette.warning, theme.color.warn)
+  assertEq(palette.critical, theme.color.crit)
+  assertTrue(palette.calibrated, "default classic ramp remains calibrated")
+end)
+
+test("explicit bar overrides win without mutating stored config", function()
+  local cfg = visualConfig{
+    barPreset = 4, barFace = 3, barDir = 3, barSize = 2,
+    segments = 7, segGap = 4, surface = 2,
+  }
+  local before = {}
+  for k, v in pairs(cfg) do before[k] = v end
+  local visual = barStyle.resolve(visualWidget("Cels", { w = 400, h = 120 }), cfg)
+  assertEq(visual.face, "blocks")
+  assertEq(visual.direction, "vertical")
+  assertEq(visual.thickness, "thin")
+  assertEq(visual.segments, 24)
+  assertEq(visual.gap, "wide")
+  assertEq(visual.surface, "transparent")
+  for k, v in pairs(before) do assertEq(cfg[k], v, "config mutated at " .. k) end
+end)
+
+test("Auto Source uses stable semantic hints only for appearance", function()
+  local signal = barStyle.resolve(visualWidget("RSSI"),
+                                  visualConfig{ barPreset = 1 })
+  local battery = barStyle.resolve(visualWidget("Cels"),
+                                   visualConfig{ barPreset = 1 })
+  local control = barStyle.resolve(visualWidget("Thr"),
+                                   visualConfig{ barPreset = 1 })
+  assertEq(signal.face, "ticks")
+  assertEq(signal.sourceHint, "signal")
+  assertEq(battery.face, "hex")
+  assertEq(battery.sourceHint, "battery")
+  assertEq(control.face, "dual-rail")
+  assertEq(control.origin, "zero")
+  -- The sensor preset remains the owner of range truth.
+  assertEq(presets.find({ name = "RSSI" }).minimum, 0)
+  assertEq(presets.find({ name = "RSSI" }).maximum, 100)
+end)
+
+test("compact variants cap detail and report the downgrade", function()
+  local visual = barStyle.resolve(visualWidget("RSSI", { w = 74, h = 30 }),
+    visualConfig{ barPreset = 6, segments = 7, surface = 3 })
+  assertEq(visual.profile.family, "micro")
+  assertEq(visual.face, "ticks")
+  assertEq(visual.segments, 10)
+  assertEq(visual.surface, "transparent")
+  assertTrue(#visual.downgrades >= 2, "segment and surface downgrades reported")
+  assertTrue(visual.compactDescription ~= "", "preset compact form documented")
+end)
+
+test("hex requests are capped by the 40-object face budget", function()
+  local visual = barStyle.resolve(visualWidget("Cels", { w = 600, h = 180 }),
+    visualConfig{ barPreset = 4, segments = 7 })
+  assertEq(visual.face, "hex")
+  assertEq(visual.segments, 10)
+  assertEq(visual.downgrades[1], "segments-object-budget")
+end)
+
+test("bar configuration signatures are stable and complete", function()
+  local a = visualConfig()
+  local b = visualConfig()
+  assertEq(barStyle.configSignature(a), barStyle.configSignature(b))
+  b.barEnds = 3
+  assertTrue(barStyle.configSignature(a) ~= barStyle.configSignature(b),
+             "end shape participates")
+  b = visualConfig(); b.panelClr = lcd.RGB(1, 2, 3)
+  assertTrue(barStyle.configSignature(a) ~= barStyle.configSignature(b),
+             "custom panel participates")
+end)
+
+test("Theme Adaptive preserves authored roles and analyzes separation", function()
+  mock.setThemeColors()
+  local _, palette = barStyle.resolve(visualWidget(), visualConfig{ palette = 3 })
+  assertEq(palette.normal, COLOR_THEME_ACTIVE)
+  assertEq(palette.warning, COLOR_THEME_WARNING)
+  assertEq(palette.critical, theme.color.crit)
+  assertTrue(type(palette.analysis.normalWarningDistance) == "number")
+  assertTrue(type(palette.analysis.normalTrackContrast) == "number")
+end)
+
+test("palette signatures invalidate when runtime theme inks change", function()
+  mock.setThemeColors()
+  local _, before = barStyle.resolve(visualWidget(), visualConfig())
+  mock.setThemeColors({
+    [COLOR_THEME_PRIMARY1] = { 240, 240, 240 },
+    [COLOR_THEME_PRIMARY2] = { 12, 12, 12 },
+    [COLOR_THEME_SECONDARY1] = { 80, 20, 120 },
+  })
+  local _, after = barStyle.resolve(visualWidget(), visualConfig())
+  assertTrue(before.signature ~= after.signature,
+             "resolved theme roles participate in the signature")
+  mock.setThemeColors()
+end)
+
+test("Custom Three preserves all user severity anchors exactly", function()
+  local normal = lcd.RGB(110, 20, 180)
+  local warning = lcd.RGB(245, 220, 20)
+  local critical = lcd.RGB(10, 180, 230)
+  local _, p = barStyle.resolve(visualWidget(), visualConfig{
+    palette = 4, accent = normal, warnClr = warning, critClr = critical,
+  })
+  assertEq(p.normal, normal)
+  assertEq(p.warning, warning)
+  assertEq(p.critical, critical)
+  assertEq(theme.paletteColor(p, 0, 20), critical)
+  assertEq(theme.paletteColor(p, 1, 20), normal)
+end)
+
+test("Custom Two preserves endpoints and derives a luminance-aware midpoint", function()
+  local normal = lcd.RGB(120, 20, 190)
+  local critical = lcd.RGB(250, 220, 20)
+  local _, p = barStyle.resolve(visualWidget(), visualConfig{
+    palette = 5, accent = normal, critClr = critical,
+  })
+  assertEq(p.normal, normal)
+  assertEq(p.critical, critical)
+  assertEq(p.warning, theme.mixColor(critical, normal, 0.5))
+  assertTrue(p.warning ~= normal and p.warning ~= critical)
+end)
+
+test("palette interpolation cache is quantized and bounded", function()
+  theme.clearPaletteCache()
+  for i = 1, 30 do
+    local p = {
+      normal = lcd.RGB(i, 140, 80), warning = theme.color.warn,
+      critical = theme.color.crit, signature = "test-" .. i,
+    }
+    for step = 0, 100 do theme.paletteColor(p, step / 100, 24) end
+  end
+  local stats = theme.paletteCacheStats()
+  assertTrue(stats.signatures <= stats.maximum, "signature cache bounded")
+  assertTrue(stats.entries <= stats.maximum * 25, "step cache bounded")
+end)
+
+test("badge ink cache stays bounded across custom palette edits", function()
+  for i = 1, 80 do
+    local fill = lcd.RGB(i * 3 % 255, i * 7 % 255, i * 11 % 255)
+    theme.labelOn(fill, {
+      inkDark = COLOR_THEME_PRIMARY1, inkLite = COLOR_THEME_PRIMARY2,
+      signature = "ink-edit-" .. i,
+    })
+  end
+  local stats = theme.inkCacheStats()
+  assertTrue(stats.entries <= stats.maximum)
+end)
+
+test("color analysis utilities resolve RGB and theme flags", function()
+  -- RGB flags are RGB565, so nominal white resolves to 248/252/248.
+  assertNear(theme.contrastRatio(lcd.RGB(0, 0, 0), lcd.RGB(255, 255, 255)),
+             20.27, 0.1)
+  assertNear(theme.colorDistance(lcd.RGB(10, 10, 10), lcd.RGB(10, 10, 10)),
+             0, 0.001)
+  assertTrue(theme.colorDistance(COLOR_THEME_ACTIVE, COLOR_THEME_WARNING) > 0)
+end)
+
+test("every bar face exposes the retained interface and a hard ceiling", function()
+  local methods = { "supports", "estimateObjects", "build", "update",
+                    "applyPalette", "setVisible" }
+  for _, name in ipairs(barFaces.ORDER) do
+    local face = barFaces.REGISTRY[name]
+    assertEq(face.name, name)
+    assertTrue(face.hardCeiling <= 40, name .. " object ceiling")
+    assertEq(face.ownsAlerts, false, name .. " may not own alerts")
+    for _, method in ipairs(methods) do
+      assertEq(type(face[method]), "function", name .. "." .. method)
+    end
+    local maximumEffective = (name == "hex") and 10 or 24
+    assertTrue(face.estimateObjects({}, { segments = maximumEffective })
+                 <= face.hardCeiling,
+               name .. " estimate exceeds its hard ceiling")
+  end
+end)
+
+test("pending faces select the explicit Continuous production fallback", function()
+  local face, reason = barFaces.select("hex", {}, { segments = 8 })
+  assertEq(face.name, "continuous")
+  assertTrue(string.find(reason, "face%-phase%-pending") ~= nil)
+  local ready, noReason = barFaces.select("continuous", {}, {})
+  assertEq(ready.name, "continuous")
+  assertEq(noReason, nil)
+  local vertical, verticalReason = barFaces.select("continuous", {}, {
+    direction = "vertical", origin = "scale-low",
+  })
+  assertEq(vertical.name, "continuous")
+  assertTrue(string.find(verticalReason, "orientation%-phase%-pending") ~= nil)
+end)
+
 -- ---- format --------------------------------------------------------------
 
 test("number formatting honours precision", function()
@@ -366,12 +588,13 @@ test("F-10: RAMP degrades without a hole when a font constant is missing", funct
   for k, v in pairs(_ENV or _G) do env[k] = v end
   env.XXLSIZE = nil
   local chunk = assert(loadfile(widgetDir .. "theme.lua", "t", env))
-  local theme = chunk()
-  assertEq(#theme.RAMP, 6, "XXLSIZE missing -> 6 usable fonts")
-  assertEq(theme.RAMP[1], theme.FONTS.XL,
+  local isolatedTheme = chunk()
+  assertEq(#isolatedTheme.RAMP, 6, "XXLSIZE missing -> 6 usable fonts")
+  assertEq(isolatedTheme.RAMP[1], isolatedTheme.FONTS.XL,
     "the ramp starts at the largest font that actually exists")
-  for i = 1, #theme.RAMP do
-    assertTrue(theme.RAMP[i] ~= nil, "RAMP[" .. i .. "] must not be a hole")
+  for i = 1, #isolatedTheme.RAMP do
+    assertTrue(isolatedTheme.RAMP[i] ~= nil,
+               "RAMP[" .. i .. "] must not be a hole")
   end
 end)
 

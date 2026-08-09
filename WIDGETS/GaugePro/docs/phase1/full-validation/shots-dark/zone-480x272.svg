@@ -1,0 +1,57 @@
+<svg viewBox="0 0 480 272" width="552" height="312" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(0.00,0.00) scale(1.0000)">
+<rect width="480" height="272" fill="#1a1a1a"/>
+<path d="M 57.51 214.49 A 111.00 111.00 0 1 1 214.49 214.49" fill="none" stroke="#9fb4c8" stroke-width="12" stroke-opacity="0.35" stroke-linecap="round"/>
+<path d="M 49.73 222.27 A 122.00 122.00 0 0 1 57.58 42.54" fill="none" stroke="#ff0000" stroke-width="4" stroke-opacity="0.78" stroke-linecap="butt"/>
+<path d="M 57.58 42.54 A 122.00 122.00 0 0 1 165.51 17.62" fill="none" stroke="#ce6100" stroke-width="4" stroke-opacity="0.78" stroke-linecap="butt"/>
+<polyline points="48.3,223.7 44.1,227.9" fill="none" stroke="#9fb4c8" stroke-width="3" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="12.0,136.0 6.0,136.0" fill="none" stroke="#9fb4c8" stroke-width="3" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="48.3,48.3 44.1,44.1" fill="none" stroke="#9fb4c8" stroke-width="3" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="136.0,12.0 136.0,6.0" fill="none" stroke="#9fb4c8" stroke-width="3" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="223.7,48.3 227.9,44.1" fill="none" stroke="#9fb4c8" stroke-width="3" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="260.0,136.0 266.0,136.0" fill="none" stroke="#9fb4c8" stroke-width="3" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="223.7,223.7 227.9,227.9" fill="none" stroke="#9fb4c8" stroke-width="3" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="21.4,183.5 18.7,184.6" fill="none" stroke="#9fb4c8" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<polyline points="21.4,88.5 18.7,87.4" fill="none" stroke="#9fb4c8" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<polyline points="88.5,21.4 87.4,18.7" fill="none" stroke="#9fb4c8" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<polyline points="183.5,21.4 184.6,18.7" fill="none" stroke="#9fb4c8" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<polyline points="250.6,88.5 253.3,87.4" fill="none" stroke="#9fb4c8" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<polyline points="250.6,183.5 253.3,184.6" fill="none" stroke="#9fb4c8" stroke-width="1" stroke-opacity="0.43" stroke-linecap="butt"/>
+<path d="M 57.51 214.49 A 111.00 111.00 0 1 1 238.18 179.37" fill="none" stroke="#9fb4c8" stroke-width="5" stroke-opacity="0.43" stroke-linecap="round"/>
+<path d="M 57.51 214.49 A 111.00 111.00 0 1 1 243.70 109.15" fill="none" stroke="#21925a" stroke-width="12" stroke-opacity="1.00" stroke-linecap="round"/>
+<polyline points="152.5,131.9 184.5,123.9" fill="none" stroke="#ffffff" stroke-width="12" stroke-opacity="1.00" stroke-linecap="round"/>
+<polyline points="178.7,125.4 212.7,116.9" fill="none" stroke="#ffffff" stroke-width="8" stroke-opacity="1.00" stroke-linecap="round"/>
+<polyline points="209.7,117.6 236.9,110.8" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity="1.00" stroke-linecap="round"/>
+<circle cx="136" cy="136" r="9" fill="#9fb4c8" fill-opacity="1.00"/>
+<polyline points="55.2,70.6 40.4,58.6" fill="none" stroke="#9fb4c8" stroke-width="3" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="231.7,176.6 249.2,184.1" fill="none" stroke="#9fb4c8" stroke-width="3" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip1"><rect x="291" y="81" width="112" height="51"/></clipPath>
+<g clip-path="url(#clip1)">
+<text x="347.0" y="120.8" font-size="51" fill="#ffffff" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="56.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">78</text>
+</g>
+<clipPath id="clip2"><rect x="381" y="91" width="44" height="40"/></clipPath>
+<g clip-path="url(#clip2)">
+<text x="381.0" y="122.2" font-size="40" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="44.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<clipPath id="clip3"><rect x="272" y="179" width="202" height="12"/></clipPath>
+<g clip-path="url(#clip3)">
+<text x="272.0" y="188.4" font-size="12" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="26.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">RSSI</text>
+</g>
+<clipPath id="clip4"><rect x="272" y="161" width="57" height="12"/></clipPath>
+<g clip-path="url(#clip4)">
+<text x="272.0" y="170.4" font-size="12" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="39.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">min 31</text>
+</g>
+<clipPath id="clip5"><rect x="329" y="161" width="57" height="12"/></clipPath>
+<g clip-path="url(#clip5)">
+<text x="386.0" y="170.4" font-size="12" fill="#9fb4c8" text-anchor="end" font-family="DejaVu Sans, Verdana, sans-serif" textLength="39.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">max 92</text>
+</g>
+<clipPath id="clip6"><rect x="33" y="229" width="6" height="12"/></clipPath>
+<g clip-path="url(#clip6)">
+<text x="36.0" y="238.4" font-size="12" fill="#9fb4c8" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="6.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">0</text>
+</g>
+<clipPath id="clip7"><rect x="228" y="232" width="19" height="12"/></clipPath>
+<g clip-path="url(#clip7)">
+<text x="237.5" y="241.4" font-size="12" fill="#9fb4c8" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="19.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">100</text>
+</g>
+</g>
+</svg>

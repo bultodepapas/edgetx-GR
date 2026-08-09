@@ -440,13 +440,14 @@ end
 -- The colour for a semantic key: accent in Static mode, the gradient ramp
 -- for gradN, the theme role otherwise. Shared with the bar (Tanda 6 F-15:
 -- bar.lua used to carry its own copy of this).
-local function resolveColor(widget, key)
+local function resolveColor(widget, key, palette)
   if key == "static" then return widget.accent or T.color.accent end
   if string.sub(key, 1, 4) == "grad" then
     local step = tonumber(string.sub(key, 5)) or 0
+    if palette then return T.paletteColor(palette, step / 20, 20) end
     return T.gradientColor(step / 20)
   end
-  return T.stateColor(key, widget.accent)
+  return T.stateColor(key, widget.accent, palette)
 end
 M.resolveColor = resolveColor
 
@@ -464,21 +465,25 @@ M.resolveColor = resolveColor
 -- Takes the STATE key, never the frame's colour key: in Static mode colorKey
 -- is permanently "static" and in Gradient mode "grad0".."grad20", so a value
 -- coloured from there would never have turned red in two of the five modes.
-function M.valueColor(key)
-  if key == "critical" then return T.color.crit end
-  if key == "muted" then return T.color.muted end
-  return T.color.value
+function M.valueColor(key, palette)
+  if key == "critical" then
+    return (palette and palette.critical) or T.color.crit
+  end
+  if key == "muted" then return (palette and palette.muted) or T.color.muted end
+  return (palette and palette.value) or T.color.value
 end
 
 -- The value's ink follows the STATE, and the state moves independently of the
 -- colour key, so it needs a gate of its own. Shared with the bar.
-function M.applyStateInk(widget)
+function M.applyStateInk(widget, palette)
   local frame = widget.frame
   -- through the module table: stateKey is declared further down the file
   local skey = M.stateKey(widget)
-  if skey ~= frame.stateKey then
+  local paletteSig = palette and palette.signature
+  if skey ~= frame.stateKey or paletteSig ~= frame.stateInkPaletteSig then
     frame.stateKey = skey
-    local ink = M.valueColor(skey)
+    frame.stateInkPaletteSig = paletteSig
+    local ink = M.valueColor(skey, palette)
     setProp(widget, widget.ui.valueLabel, "color", ink)
     -- The unit goes with it in the two EXCEPTION states, and only there.
     -- "22" in red beside "dB" in the label role read as two different things
@@ -488,7 +493,8 @@ function M.applyStateInk(widget)
     -- unit) is what makes the number the thing you see first.
     if widget.ui.unitLabel then
       setProp(widget, widget.ui.unitLabel, "color",
-              (ink == T.color.value) and T.color.label or ink)
+              (ink == ((palette and palette.value) or T.color.value))
+                and ((palette and palette.label) or T.color.label) or ink)
     end
   end
 end
@@ -579,7 +585,7 @@ M.stateKey = stateKey
 -- bar so both signal state identically: the bar used to have no chip at all,
 -- leaving WARN/CRIT as bare text in bar zones while dial zones got the full
 -- pill (AUDIT.md P1-10).
-function M.updateChip(widget, s)
+function M.updateChip(widget, s, palette)
   local ui, frame = widget.ui, widget.frame
   if not ui.chip then return end
   local show = (s ~= "")
@@ -649,8 +655,8 @@ function M.updateChip(widget, s)
     -- Inverted, the badge is self-grounding and measures 5.2:1 (critical),
     -- 5.6:1 (warning), 5.4:1 (normal) and 6.4:1 (muted), on any theme, because
     -- both the fill and the ink are ours (theme.labelOn).
-    local fill = T.stateColor(stateKey(widget), widget.accent)
-    local ink = T.labelOn(fill)
+    local fill = T.stateColor(stateKey(widget), widget.accent, palette)
+    local ink = T.labelOn(fill, palette)
     setProp(widget, ui.chip, "color", fill)
     if ui.stateLabel then
       setProp(widget, ui.stateLabel, "color", ink)

@@ -22,7 +22,8 @@ local M = {}
 
 local MODULES = {
   "theme", "geometry", "format", "options", "ranges", "presets",
-  "smoothing", "telemetry", "layout", "renderer", "bar", "alerts",
+  "smoothing", "telemetry", "layout", "renderer", "bar_style",
+  "bar_faces", "bar", "alerts",
 }
 
 local SCALE_AUTO = 1
@@ -32,7 +33,7 @@ local BATTERY_OFF = 1
 -- (all per-widget state lives in the `widget` table), the setup() calls are
 -- idempotent, and theme's metric caches are exactly what should be shared
 -- across instances. main.lua also memoizes app.lua itself, so one screen
--- with four gauges loads 13 chunks once instead of 52 (AUDIT.md P2-3).
+-- with four gauges loads 15 chunks once instead of 60 (AUDIT.md P2-3).
 -- Keyed by path so two differently-located copies of the widget stay
 -- independent.
 local MODS_BY_PATH = {}
@@ -56,7 +57,10 @@ local function loadModules(path)
   end
   mods.layout.setup(mods.theme, mods.geometry, mods.format)
   mods.renderer.setup(mods.theme, mods.geometry, mods.format)
-  mods.bar.setup(mods.theme, mods.geometry, mods.format, mods.renderer)
+  mods.bar_style.setup(mods.theme, mods.presets)
+  mods.bar_faces.setup(mods.theme, mods.geometry, mods.renderer)
+  mods.bar.setup(mods.theme, mods.geometry, mods.format, mods.renderer,
+                 mods.bar_faces)
   return mods
 end
 
@@ -201,11 +205,22 @@ local function configure(widget)
 
   local L = m.layout.calculate(widget, cfg)
   widget.layout = L
+  -- Resolve bar appearance from immutable stored config only when the active
+  -- layout can consume it. A dial ignores every bar-only option, so it should
+  -- not pay RGB analysis/cache-signature cost during configure either.
+  if L.style == "bar" then
+    widget.barVisual, widget.barPalette = m.bar_style.resolve(widget, cfg)
+  else
+    widget.barVisual, widget.barPalette = nil, nil
+  end
   -- rangeSig is included so a range edit (min/max/warn/crit/precision, or the
   -- battery cell latch) rebuilds everything derived from it at BUILD time:
   -- section/rail arcs, bar threshold marks, scale end labels (AUDIT.md P0-2).
   local sig = m.layout.signature(L, cfg) .. ":" .. widget.unitText
     .. ":" .. widget.rangeSig
+  if L.style == "bar" then
+    sig = sig .. ":" .. widget.barVisual.structuralSig
+  end
   if sig ~= widget.layoutSig then
     widget.layoutSig = sig
     widget.layoutRebuilt = true

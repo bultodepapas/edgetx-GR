@@ -273,7 +273,13 @@ end
 
 -- Colour for a semantic state key. `accent` overrides the normal colour when
 -- the user picked one (Accent option); nil keeps the theme role.
-function M.stateColor(key, accent)
+function M.stateColor(key, accent, palette)
+  if palette then
+    if key == "warning" then return palette.warning end
+    if key == "critical" then return palette.critical end
+    if key == "muted" then return palette.muted or M.color.muted end
+    return palette.normal or accent or M.color.accent
+  end
   if key == "warning" then return M.color.warn end
   if key == "critical" then return M.color.crit end
   if key == "muted" then return M.color.muted end
@@ -306,6 +312,7 @@ local function resolveColor(flag)
   end
   return v
 end
+M.resolveColor = resolveColor
 
 local function rgbOf(flag)
   local v = resolveColor(flag)
@@ -327,6 +334,56 @@ local function luminance(r, g, b)
 end
 M.luminance = luminance
 
+-- Contrast and distance are analysis signals, not color-replacement rules.
+-- A theme or custom palette whose colors are close keeps the exact authored
+-- colors; bar_style uses these measurements to request redundant structure.
+function M.contrastRatio(a, b)
+  local ar, ag, ab = rgbOf(a)
+  local br, bg, bb = rgbOf(b)
+  if not ar or not br then return nil end
+  local la, lb = luminance(ar, ag, ab), luminance(br, bg, bb)
+  local hi, lo = max(la, lb), (la < lb) and la or lb
+  return (hi + 0.05) / (lo + 0.05)
+end
+
+function M.colorDistance(a, b)
+  local ar, ag, ab = rgbOf(a)
+  local br, bg, bb = rgbOf(b)
+  if not ar or not br then return nil end
+  local dr, dg, db = ar - br, ag - bg, ab - bb
+  return math.sqrt(dr * dr + dg * dg + db * db)
+end
+
+-- A stable signature uses resolved RGB values for theme roles. Theme flags
+-- themselves do not change when the pilot changes theme; lcd.getColor does.
+function M.colorSignature(colors)
+  local parts = {}
+  for i = 1, #colors do
+    local flag = colors[i]
+    parts[i] = tostring(resolveColor(flag) or flag or "nil")
+  end
+  return table.concat(parts, ":")
+end
+
+local function inverseChannel(c)
+  if c <= 0.0031308 then return c * 12.92 * 255 end
+  return (1.055 * (c ^ (1 / 2.4)) - 0.055) * 255
+end
+
+-- Gamma-aware interpolation in linear-light space. Endpoints are returned
+-- byte-for-byte so choosing a custom color never silently edits it.
+function M.mixColor(a, b, t)
+  if t <= 0 then return a end
+  if t >= 1 then return b end
+  local ar, ag, ab = rgbOf(a)
+  local br, bg, bb = rgbOf(b)
+  if not ar or not br then return (t < 0.5) and a or b end
+  local r = inverseChannel(channel(ar) + (channel(br) - channel(ar)) * t)
+  local g = inverseChannel(channel(ag) + (channel(bg) - channel(ag)) * t)
+  local bl = inverseChannel(channel(ab) + (channel(bb) - channel(ab)) * t)
+  return lcd.RGB(floor(r + 0.5), floor(g + 0.5), floor(bl + 0.5))
+end
+
 -- The ink colour to print ON a filled swatch: whichever of the theme's two
 -- text roles contrasts more with the fill.
 --
@@ -339,12 +396,17 @@ M.luminance = luminance
 -- stable numeric IDs while lcd.getColor(role) changes when the pilot switches
 -- theme. Caching by `fill` alone therefore returned a decision made for the
 -- previous theme until the Lua state was reloaded.
-local inkCache = {}
-function M.labelOn(fill)
+local INK_CACHE_MAX = 32
+local inkCache, inkOrder = {}, {}
+function M.labelOn(fill, palette)
   local fillResolved = resolveColor(fill)
-  local darkResolved = resolveColor(M.color.inkDark)
-  local liteResolved = resolveColor(M.color.inkLite)
-  local cached = inkCache[fill]
+  local darkInk = (palette and palette.inkDark) or M.color.inkDark
+  local liteInk = (palette and palette.inkLite) or M.color.inkLite
+  local darkResolved = resolveColor(darkInk)
+  local liteResolved = resolveColor(liteInk)
+  local cacheKey = tostring(fill) .. ":" .. tostring(
+    (palette and palette.signature) or "default")
+  local cached = inkCache[cacheKey]
   if cached and cached.fill == fillResolved and cached.dark == darkResolved
      and cached.lite == liteResolved then
     return cached.ink
@@ -355,27 +417,38 @@ function M.labelOn(fill)
   if not r then
     -- Unknowable fill: PRIMARY1 is the theme's own ink and the safer guess,
     -- since a widget on a stock radio is drawn on a light background.
-    ink = M.color.inkDark
+    ink = darkInk
   else
     local lf = luminance(r, g, b)
-    local dr, dg, db = rgbOf(M.color.inkDark)
-    local lr, lg, lb = rgbOf(M.color.inkLite)
+    local dr, dg, db = rgbOf(darkInk)
+    local lr, lg, lb = rgbOf(liteInk)
     -- No theme information at all: 0.1791 is where black and white tie.
     if not dr or not lr then
-      ink = (lf > 0.1791) and M.color.inkDark or M.color.inkLite
+      ink = (lf > 0.1791) and darkInk or liteInk
     else
       local function ratio(a, c)
         local hi, lo = max(a, c), (a < c) and a or c
         return (hi + 0.05) / (lo + 0.05)
       end
       ink = (ratio(lf, luminance(dr, dg, db)) >= ratio(lf, luminance(lr, lg, lb)))
-        and M.color.inkDark or M.color.inkLite
+        and darkInk or liteInk
     end
   end
-  inkCache[fill] = {
+  if not inkCache[cacheKey] then
+    if #inkOrder >= INK_CACHE_MAX then
+      local old = table.remove(inkOrder, 1)
+      inkCache[old] = nil
+    end
+    inkOrder[#inkOrder + 1] = cacheKey
+  end
+  inkCache[cacheKey] = {
     fill = fillResolved, dark = darkResolved, lite = liteResolved, ink = ink,
   }
   return ink
+end
+
+function M.inkCacheStats()
+  return { entries = #inkOrder, maximum = INK_CACHE_MAX }
 end
 
 -- ----------------------------------------------------------------- gradient --
@@ -444,6 +517,69 @@ function M.gradientColor(t)
   local c = lcd.RGB(floor(r + 0.5), floor(g + 0.5), floor(b + 0.5))
   gradCache[t] = c
   return c
+end
+
+-- Palette-aware interpolation for bar faces. It is quantized and bounded:
+-- live values can only address `steps + 1` entries, and repeated palette or
+-- theme edits retain at most PALETTE_CACHE_MAX signatures. Classic delegates
+-- to the already approved calibrated ramp, keeping its pixels identical.
+local PALETTE_CACHE_MAX = 12
+local paletteCache, paletteOrder = {}, {}
+
+local function paletteBucket(signature)
+  local bucket = paletteCache[signature]
+  if bucket then return bucket end
+  if #paletteOrder >= PALETTE_CACHE_MAX then
+    local old = table.remove(paletteOrder, 1)
+    paletteCache[old] = nil
+  end
+  bucket = {}
+  paletteCache[signature] = bucket
+  paletteOrder[#paletteOrder + 1] = signature
+  return bucket
+end
+
+function M.paletteColor(palette, t, steps)
+  palette = palette or {
+    normal = M.color.accent, warning = M.color.warn,
+    critical = M.color.crit, signature = "classic", calibrated = true,
+  }
+  steps = floor(tonumber(steps) or 24)
+  if steps < 2 then steps = 2 elseif steps > 24 then steps = 24 end
+  if t < 0 then t = 0 elseif t > 1 then t = 1 end
+  local q = floor(t * steps + 0.5)
+  local signature = tostring(palette.signature or M.colorSignature{
+    palette.normal, palette.warning, palette.critical,
+  })
+  local bucket = paletteBucket(signature)
+  local key = steps * 100 + q
+  local cached = bucket[key]
+  if cached then return cached end
+
+  local qt = q / steps
+  local color
+  if q == 0 then color = palette.critical
+  elseif q == steps then color = palette.normal
+  elseif palette.calibrated then color = M.gradientColor(qt)
+  elseif qt <= 0.5 then color = M.mixColor(palette.critical,
+                                            palette.warning, qt * 2)
+  else color = M.mixColor(palette.warning, palette.normal, (qt - 0.5) * 2)
+  end
+  bucket[key] = color
+  return color
+end
+
+function M.paletteCacheStats()
+  local entries = 0
+  for _, bucket in pairs(paletteCache) do
+    for _ in pairs(bucket) do entries = entries + 1 end
+  end
+  return { signatures = #paletteOrder, entries = entries,
+           maximum = PALETTE_CACHE_MAX }
+end
+
+function M.clearPaletteCache()
+  paletteCache, paletteOrder = {}, {}
 end
 
 return M

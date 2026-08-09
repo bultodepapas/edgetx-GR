@@ -1,0 +1,29 @@
+<svg viewBox="0 0 300 70" width="345" height="80" xmlns="http://www.w3.org/2000/svg">
+<g transform="translate(0.00,0.00) scale(1.0000)">
+<rect width="300" height="70" fill="#1a1a1a"/>
+<rect x="4" y="22" width="292" height="23" rx="11" fill="#9fb4c8" fill-opacity="0.35"/>
+<rect x="4" y="22" width="131" height="23" rx="11" fill="#f7db18" fill-opacity="1.00"/>
+<polyline points="106.0,22.0 106.0,45.0" fill="none" stroke="#08bae7" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="165.0,22.0 165.0,45.0" fill="none" stroke="#f7db18" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="135.0,20.0 135.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<polyline points="135.0,20.0 135.0,47.0" fill="none" stroke="#9fb4c8" stroke-width="2" stroke-opacity="1.00" stroke-linecap="butt"/>
+<clipPath id="clip1"><rect x="127" y="5" width="26" height="12"/></clipPath>
+<g clip-path="url(#clip1)">
+<text x="140.0" y="14.4" font-size="12" fill="#ffffff" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">45</text>
+</g>
+<clipPath id="clip2"><rect x="152" y="4" width="13" height="12"/></clipPath>
+<g clip-path="url(#clip2)">
+<text x="152.0" y="13.4" font-size="12" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="13.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">dB</text>
+</g>
+<clipPath id="clip3"><rect x="4" y="49" width="146" height="17"/></clipPath>
+<g clip-path="url(#clip3)">
+<text x="4.0" y="62.3" font-size="17" fill="#9fb4c8" text-anchor="start" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">RSSI</text>
+</g>
+<rect x="244" y="45" width="53" height="25" rx="12" fill="#000000" fill-opacity="1.00"/>
+<rect x="245" y="46" width="51" height="23" rx="11" fill="#f7db18" fill-opacity="1.00"/>
+<clipPath id="clip4"><rect x="245" y="49" width="51" height="17"/></clipPath>
+<g clip-path="url(#clip4)">
+<text x="270.5" y="62.3" font-size="17" fill="#000000" text-anchor="middle" font-family="DejaVu Sans, Verdana, sans-serif" textLength="37.0" lengthAdjust="spacingAndGlyphs" fill-opacity="1.00">WARN</text>
+</g>
+</g>
+</svg>

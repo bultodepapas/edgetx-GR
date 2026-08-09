@@ -137,6 +137,55 @@ local DEFS = {
     field = "resetSw", since = 212, default = 0 },
   { key = "ShowChip", label = "Info badges", type = BOOL, field = "showChip",
     since = 212, default = 1 },
+
+  -- ---- bar personalization foundation (Phase 1) -------------------------
+  -- These are deliberately appended after the frozen 1-24 contract. Every
+  -- geometry choice starts with Auto so an appearance preset can provide a
+  -- coherent answer without overwriting the user's stored option.
+  { key = "BarPreset", label = "Bar preset", type = CHOICE,
+    field = "barPreset", since = 212, default = 2,
+    choices = { "Auto", "Classic", "Theme", "Hex", "Blocks", "Ticks",
+                "RC center", "Minimal", "Bold data" } },
+  { key = "BarFace", label = "Bar face", type = CHOICE,
+    field = "barFace", since = 212, default = 1,
+    choices = { "Auto", "Continuous", "Blocks", "Hex", "Ticks", "Steps",
+                "Dual rail" } },
+  { key = "BarDir", label = "Bar direction", type = CHOICE,
+    field = "barDir", since = 212, default = 1,
+    choices = { "Auto", "Horizontal", "Vertical" } },
+  { key = "BarOrigin", label = "Bar origin", type = CHOICE,
+    field = "barOrigin", since = 212, default = 1,
+    choices = { "Auto", "Scale low", "Zero" } },
+  { key = "BarSize", label = "Bar thickness", type = CHOICE,
+    field = "barSize", since = 212, default = 1,
+    choices = { "Auto", "Thin", "Medium", "Thick", "Maximum" } },
+  { key = "BarEnds", label = "Bar ends", type = CHOICE,
+    field = "barEnds", since = 212, default = 1,
+    choices = { "Auto", "Round", "Square", "Chamfer" } },
+  { key = "Segments", label = "Bar segments", type = CHOICE,
+    field = "segments", since = 212, default = 1,
+    choices = { "Auto", "6", "8", "10", "12", "16", "24" } },
+  { key = "SegGap", label = "Segment gap", type = CHOICE,
+    field = "segGap", since = 212, default = 1,
+    choices = { "Auto", "Tight", "Normal", "Wide" } },
+  { key = "Palette", label = "Palette", type = CHOICE,
+    field = "palette", since = 212, default = 1,
+    choices = { "Auto", "Classic", "Theme adaptive", "Custom 3",
+                "Custom 2" } },
+  { key = "WarnClr", label = "Warning colour", type = COLOR,
+    field = "warnClr", since = 212, default = lcd.RGB(0xc8, 0x60, 0x00) },
+  { key = "CritClr", label = "Critical colour", type = COLOR,
+    field = "critClr", since = 212, default = lcd.RGB(0xff, 0x00, 0x00) },
+  { key = "TrackClr", label = "Track colour", type = COLOR,
+    field = "trackClr", since = 212, default = COLOR_THEME_SECONDARY1 },
+  { key = "Surface", label = "Surface", type = CHOICE,
+    field = "surface", since = 212, default = 1,
+    choices = { "Auto", "Transparent", "Theme panel", "Custom colors" } },
+  { key = "PanelClr", label = "Panel colour", type = COLOR,
+    field = "panelClr", since = 212, default = COLOR_THEME_SECONDARY3 },
+  { key = "Contrast", label = "Contrast assist", type = CHOICE,
+    field = "contrast", since = 212, default = 1,
+    choices = { "Auto", "Off", "Strong" } },
 }
 
 -- Firmware option array. Built inline (rather than in options.lua) so boot
@@ -180,8 +229,8 @@ end
 -- app.lua is loaded once per RADIO, not once per widget instance: main.lua
 -- itself is evaluated once and its upvalues are shared by every instance
 -- (luaLoadWidgetCallback), so a memoized app - whose own module table is
--- likewise shared, see app.lua - cuts 13 loadScript calls per instance
--- (AUDIT.md P2-3: four gauges on one screen used to load 52 chunks).
+-- likewise shared, see app.lua - cuts 15 loadScript calls per instance
+-- (AUDIT.md P2-3: four gauges on one screen would otherwise load 60 chunks).
 local sharedApp
 
 local function create(zone, opts, path)

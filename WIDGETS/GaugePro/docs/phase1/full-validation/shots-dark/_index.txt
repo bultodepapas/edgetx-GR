@@ -1,0 +1,97 @@
+-- Ficheros escritos por dev/shots.lua (tema dark).
+-- Cualquier .svg de este directorio que NO este aqui sobra: es de
+-- una version anterior del catalogo (dev/shots/ esta gitignored).
+ac-default.svg
+ac-edit.svg
+ac-focus.svg
+ba-cels-avg.svg
+ba-cels-low.svg
+ba-cels-tot.svg
+ba-liion.svg
+ba-pct-low.svg
+ba-pct-tot.svg
+ba-rxbt.svg
+br-auto.svg
+br-crit.svg
+br-lowgood.svg
+br-narrow.svg
+br-nochip.svg
+br-normal.svg
+br-short.svg
+br-warn.svg
+color-gradient-crit.svg
+color-gradient-ok.svg
+color-rail-crit.svg
+color-rail-ok.svg
+color-sections-crit.svg
+color-sections-ok.svg
+color-static-crit.svg
+color-static-ok.svg
+color-threshold-crit.svg
+color-threshold-ok.svg
+mode-Rail-crit.svg  (alias de color-rail-crit)
+mode-Rail-nochip.svg  (alias de op-chip-off)
+mode-Rail-normal.svg  (alias de color-rail-ok)
+mode-Rail-pos1.svg  (alias de ne-pos0)
+mode-Rail-pos2.svg  (alias de ne-pos50)
+mode-Rail-pos3.svg  (alias de ne-pos100)
+ne-damp0.svg
+ne-damp9.svg
+ne-pos0.svg
+ne-pos100.svg
+ne-pos50.svg
+op-chip-off-crit.svg
+op-chip-off.svg
+op-chip-on.svg
+op-mm-mark.svg
+op-mm-off.svg
+op-mm-text.svg
+op-style-arc.svg
+op-style-needle.svg
+op-sweep180.svg
+op-sweep270.svg
+op-sweep360.svg
+pal-classic.svg
+pal-custom-track.svg
+pal-custom2.svg
+pal-custom3-crit.svg
+pal-custom3-normal.svg
+pal-custom3-warn.svg
+pal-preset-auto.svg
+pal-preset-theme.svg
+pal-theme.svg
+sc-20000.svg
+sc-cliff.svg
+sc-dbm.svg
+sc-descending.svg
+sc-highgood-off.svg
+sc-highgood-on.svg
+sc-lowgood.svg
+sc-outofrange.svg
+sc-preset.svg
+st-crit.svg
+st-nodata.svg
+st-nolink.svg
+st-normal.svg
+st-nosource.svg
+st-stale.svg
+st-warn.svg
+tx-override.svg
+tx-prec0.svg
+tx-prec1.svg
+tx-prec2-micro.svg
+tx-prec2.svg
+tx-scalelabels.svg
+tx-timer.svg
+zone-100x100.svg
+zone-100x260.svg
+zone-120x220.svg
+zone-128x96.svg
+zone-160x160.svg
+zone-200x160.svg
+zone-200x200.svg
+zone-260x220.svg
+zone-300x150.svg
+zone-480x272.svg
+zone-60x60.svg
+zone-80x60.svg

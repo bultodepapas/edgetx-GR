@@ -1351,6 +1351,15 @@ and evidence record is linked above.
 
 ### Phase 1 — Personalization architecture
 
+**Status: COMPLETE (2026-08-09).** Slots 25–39, immutable preset/override
+resolution, all four palette modes, bounded theme-aware color caches, and the
+retained face interface are implemented. The complete evidence and decisions
+are recorded in [`PHASE1_REPORT.md`](PHASE1_REPORT.md). All 85 pre-existing
+per-scene SVGs are byte-identical in both stock and dark themes; only the nine
+new palette scenes were added. Future face/direction/geometry choices resolve
+now and use an explicit Continuous fallback until their scheduled drawing
+phases.
+
 #### 1.1 Append the configuration schema
 
 - add slots 25–39 behind the 2.12+ capacity guard;

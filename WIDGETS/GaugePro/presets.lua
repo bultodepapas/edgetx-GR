@@ -25,30 +25,36 @@ local PRESETS = {
   {
     names = { "RSSI", "RSSI1", "RSSI2", "RSSI3" },
     units = { 17 },
+    kind = "signal",
     minimum = 0, maximum = 100, warning = 55, critical = 35, highIsGood = true,
   },
   {
     names = { "1RSS", "2RSS", "TRSS" },
     units = { 29 },
+    kind = "signal",
     minimum = -120, maximum = 0, warning = -80, critical = -95,
     highIsGood = true,
   },
   {
     names = { "RQly", "RQly%", "TQly", "VFR%", "VFR" },
+    kind = "signal",
     minimum = 0, maximum = 100, warning = 55, critical = 35, highIsGood = true,
   },
   {
     names = { "SNR" },
+    kind = "signal",
     minimum = -20, maximum = 20, warning = 2, critical = -5, highIsGood = true,
   },
   {
     names = { "RxBt", "RxBatt", "Batt", "Vbat", "VFAS" },
     units = { 1 },
+    kind = "battery",
     minimum = 0, maximum = 8.4, warning = 3.7, critical = 3.5, highIsGood = true,
     battery = true,
   },
   {
     names = { "TxBat", "TxBatt", "Battery", "tx-voltage" },
+    kind = "battery",
     minimum = 6, maximum = 8.4, warning = 6.8, critical = 6.4, highIsGood = true,
   },
   {
@@ -58,12 +64,14 @@ local PRESETS = {
     -- makes sense for a value that IS the pack total (AUDIT.md P1-6) -
     -- Lowest and Average stay single-cell magnitude regardless of pack size.
     names = { "Cell", "Cells", "Cels", "Cel#" },
+    kind = "battery",
     minimum = 3.0, maximum = 4.2, warning = 3.7, critical = 3.5,
     highIsGood = true, battery = true, cellsTable = true,
   },
   {
     names = { "Tmp", "Temp", "Temperature", "Tmp1", "Tmp2", "TFET", "TBEC" },
     units = { 11, 12 },
+    kind = "temperature",
     minimum = 0, maximum = 120, warning = 70, critical = 90, highIsGood = false,
   },
   {
@@ -80,15 +88,18 @@ local PRESETS = {
   {
     names = { "Capa", "Capacity", "Consumption", "mAh" },
     units = { 14 },
+    kind = "capacity",
     minimum = 0, maximum = 5000, warning = 3500, critical = 4500,
     highIsGood = false,
   },
   {
     names = { "Fuel", "Bat%", "Rem" },
+    kind = "capacity",
     minimum = 0, maximum = 100, warning = 30, critical = 15, highIsGood = true,
   },
   {
     names = { "Thr", "Throttle" },
+    kind = "control",
     minimum = 0, maximum = 100, warning = 80, critical = 95, highIsGood = false,
   },
   {
@@ -111,6 +122,7 @@ local PRESETS = {
   },
   {
     names = { "Sats", "Satellites" },
+    kind = "signal",
     minimum = 0, maximum = 24, warning = 8, critical = 5, highIsGood = true,
   },
   {
@@ -162,6 +174,14 @@ function M.find(source)
     end
   end
   return nil
+end
+
+-- Stable semantic hint for the opt-in Auto Source APPEARANCE preset. This is
+-- intentionally coarse: it may select a useful face, but never changes the
+-- scale, thresholds, alerts, or telemetry transforms owned above.
+function M.kind(source)
+  local preset = M.find(source)
+  return (preset and preset.kind) or "generic"
 end
 
 -- ---------------------------------------------------------------- battery --

@@ -3,6 +3,7 @@
 > **Full user & technical reference: [`DOCS.md`](DOCS.md)**
 > **Every option, in one image: [`docs/gauge-pro-options.png`](docs/gauge-pro-options.png)**
 > **Design & engineering plan: [`IMPROVEMENT_PLAN.md`](IMPROVEMENT_PLAN.md)**
+> **Bar experience roadmap: [`BAR_STYLE_IMPROVEMENT_PLAN.md`](BAR_STYLE_IMPROVEMENT_PLAN.md)**
 
 A modern successor to the community `GaugeRotary`: a responsive
 analog-digital instrument for EdgeTX color radios (LVGL, EdgeTX 2.11+,
@@ -25,7 +26,7 @@ assets.
 
 [![Gauge Pro — every option and every state](docs/gauge-pro-options.png)](docs/gauge-pro-options.png)
 
-**[`docs/gauge-pro-options.png`](docs/gauge-pro-options.png)** — 78 scenes
+**[`docs/gauge-pro-options.png`](docs/gauge-pro-options.png)** — 88 scenes
 covering every option, every state, every colour mode and every zone size an
 EdgeTX layout can hand out, on EdgeTX's **stock theme**.
 [`docs/gauge-pro-options-dark.png`](docs/gauge-pro-options-dark.png) is the same
@@ -46,6 +47,9 @@ SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
   pivot ring, adaptive major/minor ticks, scale end labels
 - **Linear bar style** for wide/short zones, chosen automatically where a dial
   cannot work
+- Bar personalization foundation: nine purposeful appearance presets, Classic,
+  Theme Adaptive, Custom Three and Custom Two palettes, exact custom colors,
+  custom track color, surface contracts, and deterministic Auto inheritance
 - Colour modes: Static, Threshold, **Rail** (default), **Gradient**, Sections
 - Sweeps: 270°, 180°, 360°
 - Semantic states with **hysteresis** (no flicker on a threshold), a filled
@@ -73,7 +77,8 @@ SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
 ## Options
 
 Ten options on EdgeTX 2.11 (the firmware limit there, in both the radio and
-Companion), and all 24 on 2.12+. The core ten keep fixed positions on every
+Companion), and all 39 on 2.12+. The original 24 and the new 25–39 tail are
+independently frozen append-only contracts. The core ten keep fixed positions on every
 firmware, so a model can move between versions without its settings shifting.
 
 The labels are written for the radio's settings screen, where a label gets
@@ -94,6 +99,8 @@ widget on the card, used or not. Everything else loads on first use:
 | `app.lua` | lifecycle, config → ranges → layout, rebuild decisions |
 | `options.lua` | the option wire format (integers, 1-based choices, capacity) |
 | `theme.lua` | design tokens and memoized text metrics |
+| `bar_style.lua` | appearance presets, Auto/override resolution, palettes and signatures |
+| `bar_faces.lua` | retained face interface, object ceilings and safe Continuous fallback |
 | `geometry.lua`, `ranges.lua`, `presets.lua`, `format.lua`, `smoothing.lua` | pure Lua domain logic |
 | `telemetry.lua` | sources, values, availability, history |
 | `layout.lua` | classification, geometry, typography, regions |
@@ -105,8 +112,8 @@ widget on the card, used or not. Everything else loads on first use:
 Stock Lua 5.3, no radio needed:
 
 ```sh
-lua5.3 tests/run_tests.lua  ./          # pure modules        (38 tests)
-lua5.3 tests/smoke_test.lua ./          # lifecycle          (137 tests)
+lua5.3 tests/run_tests.lua  ./          # pure modules        (53 tests)
+lua5.3 tests/smoke_test.lua ./          # lifecycle          (151 tests)
 lua5.3 dev/collide.lua      ./          # geometric collision audit
 lua5.3 dev/gallery.lua      ./ /tmp/g   # visual contract sheet + manifest
 lua5.3 dev/collage.lua      ./ docs/    # the official option sheet (committed)

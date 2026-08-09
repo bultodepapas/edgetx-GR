@@ -100,6 +100,18 @@ M.NON_VISUAL = {
   Delay   = "retardo de arranque de alertas",
   Vibrate = "haptic",
   ResetSw = "accion, no estado",
+  -- Phase 1 freezes these contracts before the drawing phases land. They
+  -- resolve deterministically and are unit/smoke tested, but deliberately use
+  -- the Continuous production fallback in this milestone.
+  BarFace   = "contrato Phase 1; caras visuales llegan en Phase 4",
+  BarDir    = "contrato Phase 1; eje vertical llega en Phase 5",
+  BarOrigin = "contrato Phase 1; origen cero llega en Phase 5",
+  BarSize   = "contrato Phase 1; geometria llega en Phase 2",
+  BarEnds   = "contrato Phase 1; geometria llega en Phase 2",
+  Segments  = "contrato Phase 1; caras segmentadas llegan en Phase 4",
+  SegGap    = "contrato Phase 1; caras segmentadas llegan en Phase 4",
+  PanelClr  = "contrato Phase 1; panel visual llega en Phase 3",
+  Contrast  = "analisis Phase 1; tratamiento visual llega en Phase 3",
 }
 
 -- ---------------------------------------------------------------- harness --
@@ -474,8 +486,62 @@ M.sections = {
     },
   },
   {
+    key = "paleta",
+    title = "9 - Personalizacion de paleta",
+    note = "Phase 1: Classic conserva severidad universal; Theme sigue HTX;"
+      .. " Custom 3/2 preservan exactamente los colores del piloto.",
+    cases = {
+      { name = "pal-classic", title = "Classic / warning",
+        zone = { 300, 70 }, opts = { Style = "Bar", Palette = "Classic" },
+        value = 45 },
+      { name = "pal-theme", title = "Theme adaptive / warning",
+        zone = { 300, 70 },
+        opts = { Style = "Bar", Palette = "Theme adaptive" }, value = 45 },
+      { name = "pal-preset-theme", title = "Preset Theme / Auto palette",
+        zone = { 300, 70 },
+        opts = { Style = "Bar", BarPreset = "Theme", Palette = "Auto" },
+        value = 78 },
+      { name = "pal-preset-auto", title = "Auto Source / RSSI",
+        zone = { 300, 70 },
+        opts = { Style = "Bar", BarPreset = "Auto" }, value = 78,
+        note = "Ticks solicitado; Continuous es fallback explicito de Phase 1" },
+      { name = "pal-custom3-normal", title = "Custom 3 / purple normal",
+        zone = { 300, 70 }, opts = {
+          Style = "Bar", Palette = "Custom 3",
+          Accent = lcd.RGB(0x78, 0x20, 0xc0),
+          WarnClr = lcd.RGB(0xf0, 0xd8, 0x18),
+          CritClr = lcd.RGB(0x08, 0xb8, 0xe0),
+        }, value = 78 },
+      { name = "pal-custom3-warn", title = "Custom 3 / yellow warning",
+        zone = { 300, 70 }, opts = {
+          Style = "Bar", Palette = "Custom 3",
+          Accent = lcd.RGB(0x78, 0x20, 0xc0),
+          WarnClr = lcd.RGB(0xf0, 0xd8, 0x18),
+          CritClr = lcd.RGB(0x08, 0xb8, 0xe0),
+        }, value = 45 },
+      { name = "pal-custom3-crit", title = "Custom 3 / cyan critical",
+        zone = { 300, 70 }, opts = {
+          Style = "Bar", Palette = "Custom 3",
+          Accent = lcd.RGB(0x78, 0x20, 0xc0),
+          WarnClr = lcd.RGB(0xf0, 0xd8, 0x18),
+          CritClr = lcd.RGB(0x08, 0xb8, 0xe0),
+        }, value = 22 },
+      { name = "pal-custom2", title = "Custom 2 / derived midpoint",
+        zone = { 300, 70 }, opts = {
+          Style = "Bar", Palette = "Custom 2",
+          Accent = lcd.RGB(0x78, 0x20, 0xc0),
+          CritClr = lcd.RGB(0xf0, 0xd8, 0x18),
+        }, value = 45 },
+      { name = "pal-custom-track", title = "Custom surface / track",
+        zone = { 300, 70 }, opts = {
+          Style = "Bar", Surface = "Custom colors",
+          TrackClr = lcd.RGB(0x50, 0x18, 0x70),
+        }, value = 78 },
+    },
+  },
+  {
     key = "barra",
-    title = "9 - Estilo barra",
+    title = "10 - Estilo barra",
     note = "La barra debe senalar el estado igual que el dial: mismo chip,"
       .. " mismo pulso, mismas marcas de umbral.",
     cases = {
@@ -504,7 +570,7 @@ M.sections = {
   },
   {
     key = "zonas",
-    title = "10 - Matriz de zonas",
+    title = "11 - Matriz de zonas",
     note = "La misma configuracion en cada tamano de hueco que un layout de"
       .. " EdgeTX puede dar. Ningun texto puede desbordar ni cruzar el aro.",
     cases = zoneMatrix(),

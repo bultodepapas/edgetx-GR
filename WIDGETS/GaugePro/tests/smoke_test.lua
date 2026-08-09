@@ -152,7 +152,7 @@ test("contract: 2.12 declares the full set", function()
   mock.reset()
   mock.sim.version = { "2.12.0", "sim", 2, 12, 0 }
   local mod = dofile(widgetDir .. "main.lua")
-  assertTrue(#mod.options > 10, "extended set")
+  assertEq(#mod.options, 39, "Phase 1 extended set")
   for i = 1, #CORE_ORDER do
     assertEq(mod.options[i][1], CORE_ORDER[i], "position " .. i)
   end
@@ -172,6 +172,110 @@ test("contract: registration exposes only supported callbacks", function()
   assertEq(type(mod.create), "function")
   assertEq(type(mod.refresh), "function")
   assertEq(mod.destroy, nil, "destroy is never called by the firmware")
+end)
+
+test("Phase 1: zero-valued Auto choices resolve to declared defaults", function()
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 }, {
+    Source = ID_RSSI, Style = "Bar", BarPreset = 0, BarFace = 0,
+    Palette = 0, Contrast = 0,
+  })
+  assertEq(w.config.barPreset, 2)
+  assertEq(w.config.barFace, 1)
+  assertEq(w.config.palette, 1)
+  assertEq(w.config.contrast, 1)
+  assertEq(w.barVisual.preset, "classic-rail")
+end)
+
+test("Phase 1: default bar resolves Classic without changing its anatomy", function()
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+                      { Source = ID_RSSI, Style = "Bar" })
+  assertEq(w.barVisual.preset, "classic-rail")
+  assertEq(w.barVisual.face, "continuous")
+  assertEq(w.barFaceName, "continuous")
+  assertEq(w.barVisual.faceFallback, nil)
+  assertEq(w.barPalette.mode, "classic")
+  assertEq(w.ui.track.props.color, w.mods.theme.color.rail)
+  refresh(w)
+  assertEq(w.ui.fill.props.color, w.mods.theme.color.accent)
+  local visible = 0
+  for _, obj in ipairs(mock.objects()) do
+    if obj.visible ~= false then visible = visible + 1 end
+  end
+  assertEq(visible, 9, "Phase 0 default visible-object anatomy")
+end)
+
+test("Phase 1: resolving visuals never mutates the stored option table", function()
+  setupRadio()
+  local mod = dofile(widgetDir .. "main.lua")
+  local opts = mock.makeOptions(mod.defs, {
+    Source = ID_RSSI, Style = "Bar", BarPreset = "Hex",
+    BarSize = "Thin", Segments = "24", Palette = "Custom 3",
+  })
+  local before = deepCopy(opts)
+  local w = mod.create({ x = 0, y = 0, w = 400, h = 120 }, opts, widgetDir)
+  mod.update(w, opts)
+  for k, v in pairs(before) do assertEq(opts[k], v, "mutated option " .. k) end
+end)
+
+test("Phase 1: Theme Adaptive recolours only the bar path", function()
+  local wb = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_RSSI, Style = "Bar" })
+  refresh(wb)
+  wb.app.update(wb, withOption(wb.options, "Palette", 3))
+  assertEq(wb.layoutRebuilt, false, "palette is non-structural")
+  refresh(wb)
+  assertEq(wb.ui.fill.props.color, COLOR_THEME_ACTIVE)
+
+  local wd = newWidget({ x = 0, y = 0, w = 200, h = 160 },
+    { Source = ID_RSSI, Style = "Needle" })
+  refresh(wd)
+  local before = wd.ui.valueArc.props.color
+  wd.app.update(wd, withOption(wd.options, "Palette", 3))
+  assertEq(wd.layoutRebuilt, false, "bar options do not rebuild the dial")
+  refresh(wd)
+  assertEq(wd.ui.valueArc.props.color, before, "dial ignores bar palette")
+end)
+
+test("Phase 1: Custom Three drives exact normal warning critical colors", function()
+  local purple = lcd.RGB(110, 20, 180)
+  local yellow = lcd.RGB(245, 220, 20)
+  local cyan = lcd.RGB(10, 180, 230)
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 }, {
+    Source = ID_RSSI, Style = "Bar", Palette = "Custom 3",
+    Accent = purple, WarnClr = yellow, CritClr = cyan,
+  })
+  mock.setValue(ID_RSSI, 70); refresh(w)
+  assertEq(w.ui.fill.props.color, purple, "normal anchor")
+  mock.setValue(ID_RSSI, 45); refresh(w)
+  assertEq(w.ui.fill.props.color, yellow, "warning anchor")
+  mock.setValue(ID_RSSI, 20); refresh(w)
+  assertEq(w.ui.fill.props.color, cyan, "critical anchor")
+  assertEq(w.ui.chip.props.color, cyan, "badge shares exact critical anchor")
+end)
+
+test("Phase 1: custom track recolours in place with no rebuild", function()
+  local first = lcd.RGB(45, 35, 70)
+  local second = lcd.RGB(80, 25, 110)
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 }, {
+    Source = ID_RSSI, Style = "Bar", Surface = "Custom colors",
+    TrackClr = first,
+  })
+  assertEq(w.ui.track.props.color, first)
+  w.app.update(w, withOption(w.options, "TrackClr", second))
+  assertEq(w.layoutRebuilt, false, "color changes update retained objects")
+  refresh(w)
+  assertEq(w.ui.track.props.color, second)
+end)
+
+test("Phase 1: future faces use an explicit retained Continuous fallback", function()
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_RSSI, Style = "Bar", BarFace = "Hex" })
+  assertEq(w.barVisual.face, "hex", "requested contract remains visible")
+  assertEq(w.barFaceName, "continuous", "production fallback")
+  assertTrue(string.find(w.barVisual.faceFallback, "face%-phase%-pending") ~= nil)
+  local before = mock.objectCount()
+  refresh(w, 10)
+  assertEq(mock.objectCount(), before, "fallback remains retained")
 end)
 
 -- ---- build ---------------------------------------------------------------
@@ -232,7 +336,7 @@ end)
 
 test("P2-3: the module table is shared between instances", function()
   -- main.lua is evaluated once per radio and its upvalues are shared; every
-  -- instance used to load app.lua + 12 modules itself (13 loadScript calls
+  -- instance used to load app.lua + all modules itself (15 loadScript calls
   -- each). The app and its module table are now memoized (AUDIT.md P2-3).
   setupRadio()
   local realLoad = loadScript
@@ -2319,7 +2423,7 @@ test("F-6: sensor metadata does not leak between models", function()
   assertEq(w2.source.prec, 2, "precision re-resolved on the new model")
 end)
 
-test("contract: DEFS slot order and types are frozen", function()
+test("contract: the original 24 DEFS slots remain frozen", function()
   -- Inserting an option anywhere but the end shifts every existing model's
   -- saved values silently: WidgetPersistentData::setDefault only resets on
   -- a TYPE change, and LuaWidgetFactory cannot override checkOptions() to
@@ -2339,11 +2443,51 @@ test("contract: DEFS slot order and types are frozen", function()
     { "AlertSw", SWITCH }, { "Delay", VALUE }, { "Vibrate", BOOL },
     { "ResetSw", SWITCH }, { "ShowChip", BOOL },
   }
-  assertEq(#defs, #FROZEN, "option count changed - APPEND only")
+  assertTrue(#defs >= #FROZEN, "the frozen prefix may only be appended to")
   for i, want in ipairs(FROZEN) do
     assertEq(defs[i].key, want[1], "slot " .. i .. " key")
     assertEq(defs[i].type, want[2], "slot " .. i .. " type")
   end
+end)
+
+test("contract: Phase 1 option tail 25-39 is frozen", function()
+  local defs = dofile(widgetDir .. "main.lua").defs
+  local TAIL = {
+    { "BarPreset", CHOICE, 2,
+      "Auto|Classic|Theme|Hex|Blocks|Ticks|RC center|Minimal|Bold data" },
+    { "BarFace", CHOICE, 1,
+      "Auto|Continuous|Blocks|Hex|Ticks|Steps|Dual rail" },
+    { "BarDir", CHOICE, 1, "Auto|Horizontal|Vertical" },
+    { "BarOrigin", CHOICE, 1, "Auto|Scale low|Zero" },
+    { "BarSize", CHOICE, 1, "Auto|Thin|Medium|Thick|Maximum" },
+    { "BarEnds", CHOICE, 1, "Auto|Round|Square|Chamfer" },
+    { "Segments", CHOICE, 1, "Auto|6|8|10|12|16|24" },
+    { "SegGap", CHOICE, 1, "Auto|Tight|Normal|Wide" },
+    { "Palette", CHOICE, 1,
+      "Auto|Classic|Theme adaptive|Custom 3|Custom 2" },
+    { "WarnClr", COLOR },
+    { "CritClr", COLOR }, { "TrackClr", COLOR },
+    { "Surface", CHOICE, 1,
+      "Auto|Transparent|Theme panel|Custom colors" },
+    { "PanelClr", COLOR },
+    { "Contrast", CHOICE, 1, "Auto|Off|Strong" },
+  }
+  assertEq(#defs, 39, "Phase 1 owns exactly slots 25-39")
+  for i, want in ipairs(TAIL) do
+    local slot, d = i + 24, defs[i + 24]
+    assertEq(d.key, want[1], "slot " .. slot .. " key")
+    assertEq(d.type, want[2], "slot " .. slot .. " type")
+    assertEq(d.since, 212, "slot " .. slot .. " requires 2.12+")
+    if want[3] then assertEq(d.default, want[3], "slot " .. slot .. " default") end
+    if want[4] then
+      assertEq(table.concat(d.choices, "|"), want[4],
+               "slot " .. slot .. " choices")
+    end
+  end
+  assertEq(defs[34].default, lcd.RGB(0xc8, 0x60, 0x00))
+  assertEq(defs[35].default, lcd.RGB(0xff, 0x00, 0x00))
+  assertEq(defs[36].default, COLOR_THEME_SECONDARY1)
+  assertEq(defs[38].default, COLOR_THEME_SECONDARY3)
 end)
 
 test("contract: the option labels fit the radio's settings screen", function()

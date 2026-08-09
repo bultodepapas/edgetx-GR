@@ -24,19 +24,11 @@ if (-not $target.EndsWith($expectedSuffix,
 $runtimeRequired = @(
   "main.lua", "app.lua", "options.lua", "theme.lua", "geometry.lua",
   "ranges.lua", "presets.lua", "format.lua", "smoothing.lua",
-  "telemetry.lua", "layout.lua", "renderer.lua", "bar.lua", "alerts.lua"
+  "telemetry.lua", "layout.lua", "renderer.lua", "bar_style.lua",
+  "bar_faces.lua", "bar.lua", "alerts.lua"
 )
 
-# Phase 1 modules are optional until they land. Keeping them in the manifest
-# now prevents a future radio copy from silently omitting a newly required
-# module, while the required list still fails fast on today's payload.
-$runtimeFuture = @("bar_style.lua", "bar_faces.lua")
 $runtime = @($runtimeRequired)
-foreach ($f in $runtimeFuture) {
-  if (Test-Path -LiteralPath (Join-Path $source $f) -PathType Leaf) {
-    $runtime += $f
-  }
-}
 
 New-Item -ItemType Directory -Force -Path $target | Out-Null
 

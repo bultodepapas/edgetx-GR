@@ -13,12 +13,12 @@
 
 local M = {}
 
-local floor, max = math.floor, math.max
+local floor = math.floor
 
-local T, G, F, R  -- theme, geometry, format, renderer (shared helpers)
+local T, G, F, R, Faces  -- shared helpers + retained face registry
 
-function M.setup(theme, geometry, format, renderer)
-  T, G, F, R = theme, geometry, format, renderer
+function M.setup(theme, geometry, format, renderer, faces)
+  T, G, F, R, Faces = theme, geometry, format, renderer, faces
   -- Source-edit text path: shared with the dial (Tanda 6 F-15). The bar has
   -- no scale labels, so the shared helper's guarded fields no-op here. The
   -- alias is assigned HERE - R is nil until setup runs.
@@ -64,21 +64,15 @@ end
 function M.build(widget)
   local L, ui, cfg = widget.layout, widget.ui, widget.config
   local b = L.bar
-
-  ui.track = lvgl.rectangle{
-    x = b.x, y = b.y, w = b.w, h = b.h,
-    color = T.color.rail, filled = 1, rounded = L.barRadius,
-    opacity = T.opacity.rail,
+  local visual = widget.barVisual or {
+    face = "continuous", profile = {}, segments = 10,
   }
-
-  -- The fill is created BEFORE the threshold marks so the marks paint on top
-  -- of it, not under it: a mark sitting inside the filled portion of the bar
-  -- must stay visible there too (AUDIT.md G-12) - that is exactly the
-  -- moment a value approaching a threshold most needs the reference line.
-  ui.fill = lvgl.rectangle{
-    x = b.x, y = b.y, w = 1, h = b.h,
-    color = T.color.accent, filled = 1, rounded = L.barRadius,
-  }
+  local face, fallback = Faces.select(visual.face, visual.profile, visual)
+  widget.barFace = face
+  widget.barFaceName = face.name
+  visual.faceFallback = fallback
+  if fallback then visual.downgrades[#visual.downgrades + 1] = fallback end
+  assert(face.build(widget, b, visual), "GaugePro: bar face build failed")
 
   -- threshold marks on the track, the linear equivalent of the dial's rail.
   -- Compare the NORMALISED position, not the raw value against cfg.min/max:
@@ -96,7 +90,8 @@ function M.build(widget)
       local t = G.normalize(r.to, cfg.min, cfg.max)
       if t > 0 and t < 1 then
         local m = vline(markX(widget, r.to), b.y, b.h,
-          L.markThickness, T.stateColor(r.role, widget.accent))
+          L.markThickness,
+          T.stateColor(r.role, widget.accent, widget.barPalette))
         -- role rides on the object so an accent edit can recolor the
         -- normal-boundary mark without pairing by index (Tanda 6 F-5)
         m.role = r.role
@@ -114,23 +109,31 @@ function M.build(widget)
   local markTop, markBottom = b.y - over, b.y + b.h + over
   if L.showGhost then
     movingMark(ui, "ghost", b.x, markTop, markBottom, L.markThickness,
-               T.color.history)
+               (widget.barPalette and widget.barPalette.history)
+                 or T.color.history)
   end
   if L.showMarkers then
     movingMark(ui, "minMark", b.x, markTop, markBottom, L.markThickness,
-               T.color.history)
+               (widget.barPalette and widget.barPalette.history)
+                 or T.color.history)
   end
 
   -- DATA text takes the theme's ink role, not the status colour (Tanda 8
   -- §3.2) - see renderer.valueColor.
-  ui.valueLabel = R.label(L.valueBox, L.valueFont, T.color.value,
+  local palette = widget.barPalette
+  ui.valueLabel = R.label(L.valueBox, L.valueFont,
+                          (palette and palette.value) or T.color.value,
                           L.valueAlign, F.NO_VALUE)
   if L.showUnit and widget.unitText ~= "" then
-    ui.unitLabel = R.label(L.unitBox, L.unitFont, T.color.label, L.unitAlign,
+    ui.unitLabel = R.label(L.unitBox, L.unitFont,
+                           (palette and palette.label) or T.color.label,
+                           L.unitAlign,
                            widget.unitText)
   end
   if L.showName then
-    ui.nameLabel = R.label(L.nameBox, L.nameFont, T.color.label, L.nameAlign,
+    ui.nameLabel = R.label(L.nameBox, L.nameFont,
+                           (palette and palette.label) or T.color.label,
+                           L.nameAlign,
                            widget.nameText)
   end
   if L.showState then
@@ -142,18 +145,20 @@ function M.build(widget)
     ui.chipEdge = lvgl.rectangle{
       x = L.stateBox.x - edge, y = L.stateBox.y - L.chipOff - edge,
       w = L.stateBox.w + edge * 2, h = L.chipHeight + edge * 2,
-      color = T.color.label, filled = 1,
+      color = (palette and palette.label) or T.color.label, filled = 1,
       rounded = floor((L.chipHeight + edge * 2) / 2),
     }
     -- built muted, shown coloured: R.updateChip owns the fill and the ink
     ui.chip = lvgl.rectangle{
       x = L.stateBox.x, y = L.stateBox.y - L.chipOff,
       w = L.stateBox.w, h = L.chipHeight,
-      color = T.color.muted, filled = 1, rounded = floor(L.chipHeight / 2),
+      color = (palette and palette.muted) or T.color.muted,
+      filled = 1, rounded = floor(L.chipHeight / 2),
     }
     lvgl.hide(ui.chipEdge)
     lvgl.hide(ui.chip)
-    ui.stateLabel = R.label(L.stateBox, L.stateFont, T.labelOn(T.color.muted),
+    local muted = (palette and palette.muted) or T.color.muted
+    ui.stateLabel = R.label(L.stateBox, L.stateFont, T.labelOn(muted, palette),
                             L.stateAlign)
     lvgl.hide(ui.stateLabel)
   end
@@ -163,31 +168,13 @@ function M.build(widget)
     dirty = {},
     fillW = -1, ghostX = -1, minX = -1,
     needleShown = true, markersShown = false, chipShown = false,
-    colorKey = "", accentKey = nil, valueStr = "", stateStr = "",
+    colorKey = "", accentKey = nil, paletteSig = palette and palette.signature,
+    valueStr = "", stateStr = "",
     minStr = "", maxStr = "",
     prevAvail = "unset", pulse = false, pulseAt = 0,
   }
+  Faces.buildRenderState(widget)
   ui.built = true
-end
-
-local function updateFill(widget)
-  local ui, L, frame = widget.ui, widget.layout, widget.frame
-  local data = widget.data
-  if data.availability ~= "valid" or data.displayValue == nil then
-    widget.smooth.value = nil
-    if frame.fillW ~= 0 then
-      frame.fillW = 0
-      R.setProp(widget, ui.fill, "w", 1)
-    end
-    return
-  end
-  if frame.prevAvail ~= "valid" then widget.smooth.value = nil end
-  local sv = widget.mods.smoothing.step(widget, data.displayValue)
-  local w = max(G.barFill(L.bar.w, sv, widget.config.min, widget.config.max), 1)
-  if w ~= frame.fillW then
-    frame.fillW = w
-    R.setProp(widget, ui.fill, "w", w)
-  end
 end
 
 local function updateHistory(widget)
@@ -240,29 +227,34 @@ function M.update(widget)
   local ui, frame = widget.ui, widget.frame
   if not ui.built then return end
 
-  local key = R.colorKey(widget)
+  local state = Faces.updateRenderState(widget)
+  local key = state.colorKey
+  local palette = widget.barPalette
+  local paletteSig = palette and palette.signature
+  local paletteChanged = paletteSig ~= frame.paletteSig
+  state.paletteChanged = paletteChanged
   -- the accent is an input to the colour: see renderer.update (Tanda 6 F-5)
-  if key ~= frame.colorKey or widget.accent ~= frame.accentKey then
+  if key ~= frame.colorKey or widget.accent ~= frame.accentKey
+     or paletteChanged then
     frame.colorKey = key
     frame.accentKey = widget.accent
-    local c = R.resolveColor(widget, key)
-    local opa = (key == "muted") and T.opacity.muted or T.opacity.full
-    R.setProp(widget, ui.fill, "color", c)
-    R.setProp(widget, ui.fill, "opacity", opa)
+    frame.paletteSig = paletteSig
+    widget.barFace.applyPalette(widget, ui, palette, state)
     if ui.marks then
       -- threshold marks were painted at build time; the normal-boundary
       -- mark carries the accent and must follow an accent edit (F-5).
       -- F2: and they follow the fill into the muted state, so a bar with no
       -- data does not keep three fully saturated threshold marks on it.
       for _, m in ipairs(ui.marks) do
-        R.setProp(widget, m, "color", T.stateColor(m.role, widget.accent))
-        R.setProp(widget, m, "opacity", opa)
+        R.setProp(widget, m, "color",
+                  T.stateColor(m.role, widget.accent, palette))
+        R.setProp(widget, m, "opacity", state.opacity)
       end
     end
     -- the badge's fill and ink belong to R.updateChip: see renderer.applyColors
   end
 
-  R.applyStateInk(widget)
+  R.applyStateInk(widget, palette)
 
   local str = (widget.data.availability == "unset") and F.NO_VALUE
     or F.display(widget, widget.data.displayValue)
@@ -276,11 +268,17 @@ function M.update(widget)
     if s ~= frame.stateStr then
       frame.stateStr = s
       R.setProp(widget, ui.stateLabel, "text", s)
-      R.updateChip(widget, s)
+      R.updateChip(widget, s, palette)
     end
   end
 
-  updateFill(widget)
+  -- A palette/theme edit can recolor a visible badge without changing its
+  -- text, so its color gate cannot be the state string alone.
+  if paletteChanged and ui.stateLabel and frame.stateStr ~= "" then
+    R.updateChip(widget, frame.stateStr, palette)
+  end
+
+  widget.barFace.update(widget, ui, state)
   updateHistory(widget)
   R.updatePulse(widget, key, ui.fill)
 

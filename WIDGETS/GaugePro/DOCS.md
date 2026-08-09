@@ -94,6 +94,27 @@ settings shifted.
 | **Vibrate** | Bool | Off | Haptic pulse on critical. |
 | **Reset min/max** | Switch | none | Clears the tracked history in flight. |
 | **Info badges** | Bool | On | Hides the *informational* pills (`NO LINK`, `STALE`, `NO DATA`, `NO SOURCE`). **WARN and CRIT always show**, whatever this is set to — they are a safety signal, and colour alone does not reach every pilot (4.3). The row is reserved either way, so turning it off does not buy the value more space. |
+| **Bar preset** | Choice | Classic | Auto Source / Classic / Theme / Hex / Blocks / Ticks / RC Center / Minimal / Bold Data. A coherent starting point; explicit overrides below win. |
+| **Bar face** | Choice | Auto | Continuous / Blocks / Hex / Ticks / Steps / Dual Rail. Phase 1 freezes and resolves the contract; non-Continuous drawing lands in Phase 4 and currently uses an explicit Continuous fallback. |
+| **Bar direction** | Choice | Auto | Horizontal / Vertical. Auto resolves tall zones vertically; vertical drawing lands in Phase 5. |
+| **Bar origin** | Choice | Auto | Scale low / Zero. Zero-origin drawing lands in Phase 5. |
+| **Bar thickness** | Choice | Auto | Thin / Medium / Thick / Maximum; inherits from the preset. Geometry lands with the Phase 2 flagship bar. |
+| **Bar ends** | Choice | Auto | Round / Square / Chamfer; inherits from the preset. Geometry lands with the Phase 2 flagship bar. |
+| **Bar segments** | Choice | Auto | 6 / 8 / 10 / 12 / 16 / 24. Responsive and object ceilings may lower it; Hex is already capped at 10 by its 40-object budget. |
+| **Segment gap** | Choice | Auto | Tight / Normal / Wide. Used by segmented faces. |
+| **Palette** | Choice | Auto | Classic / Theme adaptive / Custom 3 / Custom 2. This is live on the current Continuous bar. |
+| **Warning colour** | Color | `#c86000` | Exact Custom Three warning anchor. |
+| **Critical colour** | Color | `#ff0000` | Exact Custom Three critical anchor and Custom Two endpoint. |
+| **Track colour** | Color | theme `SECONDARY1` | Used when Surface = Custom colors; updates retained objects without rebuilding. |
+| **Surface** | Choice | Auto | Transparent / Theme panel / Custom colors. Custom track is live; panel drawing lands in Phase 3. |
+| **Panel colour** | Color | theme `SECONDARY3` | Exact custom panel color, consumed when the panel layer lands in Phase 3. |
+| **Contrast assist** | Choice | Auto | Off / Strong. Phase 1 measures contrast and color distance without replacing authored colors; structural assistance lands in Phase 3. |
+
+The Phase 1 milestone intentionally freezes slots 25–39 before every face is
+drawn. Palette customization is functional now. Geometry/face choices resolve
+deterministically, participate in signatures, report responsive downgrades,
+and fall back to the production Continuous face until their scheduled drawing
+phase; they never mutate the stored option table.
 
 Notes:
 
@@ -231,6 +252,16 @@ State changes are **hysteretic**: a worse state is adopted immediately, a
 better one only once the value has cleared the threshold by 2 % of the range.
 A value resting on a threshold therefore cannot flicker — and cannot
 machine-gun the alerts.
+
+The bar adds an independent **Palette** axis without recoloring the approved
+dial. Classic keeps the measured green/amber/red defaults above. Theme
+Adaptive uses the active HTX `ACTIVE` and `WARNING` roles plus a fixed critical
+fallback. Custom Three uses the existing Normal colour plus exact warning and
+critical pickers. Custom Two keeps the exact normal/critical endpoints and
+derives a gamma-aware midpoint. Theme ink, track and surface roles remain
+separate from severity, so custom status colors still belong to the active
+HTX theme. If colors are close, the analyzer requests redundant structure; it
+never silently substitutes a user's color.
 
 ### 4.4 Styles
 
@@ -392,8 +423,8 @@ current value instead of sweeping up from zero.
 |---|---|
 | `main.lua` | **Boot-weight only**: option declarations, version gate, `lvgl` guard, and a `loadScript` of `app.lua` on first use. Every widget's `main.lua` is executed at radio startup, used or not (see 6.1). |
 | `app.lua` | Lifecycle: create / update / refresh, config → ranges → layout, rebuild decisions. |
-| `options.lua` | The option wire format: capacity, declaration building, and typed parsing. Pure Lua. |
-| `theme.lua` | Design tokens (colour roles, opacity, spacing, ratios) and memoized text metrics. |
+| `options.lua` | The option wire format: capacity and typed parsing. Pure Lua. |
+| `theme.lua` | Design tokens, text metrics, RGB/luminance/contrast analysis, bounded palette and badge-ink caches. |
 | `geometry.lua` | Clamp/normalize, value→angle, circle points, line/tick/triangle builders, bar fill. Pure Lua. |
 | `ranges.lua` | Band ordering, state detection, hysteresis. Pure Lua. |
 | `presets.lua` | Known-sensor profiles, cell detection, discharge curves. Pure Lua. |
@@ -402,7 +433,9 @@ current value instead of sweeping up from zero.
 | `telemetry.lua` | Source metadata cache, value reading, cell aggregation, availability model, history. |
 | `layout.lua` | Mode/orientation/style classification, dial and bar geometry, typography, regions. |
 | `renderer.lua` | Retained LVGL dial tree; per-frame property-only updates. |
-| `bar.lua` | Linear renderer sharing the same state model. |
+| `bar_style.lua` | Appearance presets, Auto inheritance, runtime palettes, compact variants and signatures. |
+| `bar_faces.lua` | Retained face interface, normalized render state, object ceilings and Continuous fallback. |
+| `bar.lua` | Linear orchestrator: shared thresholds/history/labels/badges plus face dispatch. |
 | `alerts.lua` | Transition alerts with startup delay, switch gate and rate limiting. |
 | `dev/preview.lua` | Renders the real object tree to SVG for off-radio design review. |
 | `dev/collage.lua` | The official option sheet committed under `docs/` (7.1). |
@@ -647,9 +680,12 @@ in readable form (`Style = "Needle"`) and converted to the wire format by
 `mock.makeOptions`, so the tests stay legible without lying about the
 contract.
 
-Coverage includes: the option contract (positions, name lengths, 1-based
+Coverage includes: the two frozen option contracts (slots 1–24 and 25–39),
+name lengths, 1-based
 defaults, the 2.11 ten-slot build and the 2.12 full build), all colour modes
-and styles reaching the objects, cell aggregation modes, pack detection,
+and styles reaching the objects, preset/override precedence, all four bar
+palettes, exact custom anchors, bounded color caches, face contracts and
+ceilings, cell aggregation modes, pack detection,
 battery percent, timer vs temperature disambiguation, every availability
 state, needle hide/snap on reconnect, hysteresis on a noisy ramp, alerts and
 their startup delay, the reset switch, a golden layout matrix over eight zone

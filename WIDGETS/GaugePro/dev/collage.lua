@@ -75,6 +75,9 @@ local EN_SECTION = {
   ["acento"]  = { "Accent colour",
     "The accent replaces the normal state's green. Each scene here is a"
     .. " fresh build." },
+  ["paleta"]  = { "Palette personalization",
+    "Classic keeps universal severity; Theme follows HTX; Custom Three and"
+    .. " Custom Two preserve the pilot's chosen colors." },
   ["barra"]   = { "Bar style",
     "The bar signals state exactly as the dial does: same badge, same"
     .. " pulse, same threshold marks." },
@@ -98,6 +101,15 @@ local EN_TITLE = {
   ["tx-prec0"] = "Decimals 0", ["tx-prec1"] = "Decimals 1",
   ["tx-prec2"] = "Decimals 2",
   ["tx-prec2-micro"] = "Decimals 2 / micro",
+  ["pal-classic"] = "Classic / warning",
+  ["pal-theme"] = "Theme adaptive / warning",
+  ["pal-preset-theme"] = "Theme preset / Auto palette",
+  ["pal-preset-auto"] = "Auto Source / RSSI",
+  ["pal-custom3-normal"] = "Custom Three / purple normal",
+  ["pal-custom3-warn"] = "Custom Three / yellow warning",
+  ["pal-custom3-crit"] = "Custom Three / cyan critical",
+  ["pal-custom2"] = "Custom Two / derived midpoint",
+  ["pal-custom-track"] = "Custom surface / track",
   ["tx-timer"] = "countdown timer elapsed",
   ["tx-scalelabels"] = "scale end labels",
   ["ba-rxbt"] = "RxBt, 4S latched",
