@@ -354,9 +354,12 @@ function M.build(widget)
     -- survive a no-op update(), which replaces the layout table but only
     -- rebuilds on a signature change - a renderer-written field was lost
     -- and the next chip render crashed on nil (Tanda 6 F-1).
-    -- 1 px outline in the lighter label role, behind the dark pill, so the
-    -- chip reads as a label with a defined edge instead of "a piece of the
-    -- rail behind the text" (review P-B).
+    -- 1 px outline in the label role, behind the pill, so the badge keeps a
+    -- defined edge instead of reading as "a piece of the rail behind the
+    -- text" (review P-B). It matters more now that the fill is a status
+    -- colour: the outline is what separates the badge from a theme whose
+    -- background happens to sit near the same luminance, or from a
+    -- background.png photograph.
     local edge = L.chipOutline
     ui.chipEdge = lvgl.rectangle{
       x = L.stateBox.x - edge, y = L.stateBox.y - L.chipOff - edge,
@@ -364,14 +367,20 @@ function M.build(widget)
       color = T.color.label, filled = 1,
       rounded = floor((L.chipHeight + edge * 2) / 2),
     }
+    -- Built muted, shown coloured: the badge is hidden here and updateChip
+    -- sets its fill and its ink from the state before it is ever shown.
     ui.chip = lvgl.rectangle{
       x = L.stateBox.x, y = L.stateBox.y - L.chipOff,
       w = L.stateBox.w, h = L.chipHeight,
-      color = T.color.chip, filled = 1, rounded = floor(L.chipHeight / 2),
+      color = T.color.muted, filled = 1, rounded = floor(L.chipHeight / 2),
     }
     lvgl.hide(ui.chipEdge)
     lvgl.hide(ui.chip)
-    ui.stateLabel = label(L.stateBox, L.stateFont, T.color.label, L.stateAlign)
+    -- hidden at build like the pill it belongs to: the three are one object
+    -- as far as visibility is concerned (see updateChip)
+    ui.stateLabel = label(L.stateBox, L.stateFont, T.labelOn(T.color.muted),
+                          L.stateAlign)
+    lvgl.hide(ui.stateLabel)
   end
   if L.showMinMaxText then
     ui.minText = label(L.minTextBox, L.minMaxFont, T.color.history, LEFT)
@@ -441,28 +450,78 @@ local function resolveColor(widget, key)
 end
 M.resolveColor = resolveColor
 
+-- The colour for the VALUE text. Shared with the bar (bar.lua calls it), so
+-- both orientations obey the same rule.
+--
+-- The status colour used to drive this directly, which is how a UI-background
+-- role ended up as the primary readout's ink. The value is DATA, so it takes
+-- the theme's own text role and stays legible whatever the state (Tanda 8
+-- §3.2). Two exceptions, both deliberate:
+--   * CRITICAL - alarm outranks neutral legibility, it is the universal
+--     convention, and the fixed red clears 3:1 on both reference backgrounds.
+--   * MUTED - a gauge with no data must RECEDE; leaving the value at full
+--     theme ink would make a stale reading look like a live one.
+-- Takes the STATE key, never the frame's colour key: in Static mode colorKey
+-- is permanently "static" and in Gradient mode "grad0".."grad20", so a value
+-- coloured from there would never have turned red in two of the five modes.
+function M.valueColor(key)
+  if key == "critical" then return T.color.crit end
+  if key == "muted" then return T.color.muted end
+  return T.color.value
+end
+
+-- The value's ink follows the STATE, and the state moves independently of the
+-- colour key, so it needs a gate of its own. Shared with the bar.
+function M.applyStateInk(widget)
+  local frame = widget.frame
+  -- through the module table: stateKey is declared further down the file
+  local skey = M.stateKey(widget)
+  if skey ~= frame.stateKey then
+    frame.stateKey = skey
+    local ink = M.valueColor(skey)
+    setProp(widget, widget.ui.valueLabel, "color", ink)
+    -- The unit goes with it in the two EXCEPTION states, and only there.
+    -- "22" in red beside "dB" in the label role read as two different things
+    -- when they are one token; the same split made a stale "78" grey next to
+    -- a live-looking blue "dB". In the ordinary states the unit keeps its
+    -- quieter role on purpose - that hierarchy (big dark number, small quiet
+    -- unit) is what makes the number the thing you see first.
+    if widget.ui.unitLabel then
+      setProp(widget, widget.ui.unitLabel, "color",
+              (ink == T.color.value) and T.color.label or ink)
+    end
+  end
+end
+
 local function applyColors(widget, key)
   local ui = widget.ui
   local c = resolveColor(widget, key)
   local opa = (key == "muted") and T.opacity.muted or T.opacity.full
   setProp(widget, ui.valueArc, "color", c)
   setProp(widget, ui.valueArc, "opacity", opa)
-  setProp(widget, ui.valueLabel, "color", c)
+  -- the VALUE's ink is not set here: it follows the state, which moves on its
+  -- own gate (M.applyStateInk)
   -- the needle is intentionally NOT touched here: it keeps T.color.needle,
   -- set once at build time (buildNeedle)
-  if ui.stateLabel then
-    local sc = T.color.label
-    if key == "warning" then sc = T.color.warn
-    elseif key == "critical" then sc = T.color.crit end
-    setProp(widget, ui.stateLabel, "color", sc)
-  end
+  --
+  -- Neither is the badge: its fill and label are set by updateChip, which runs
+  -- on a change of the state STRING. That is the correct gate - in Static mode
+  -- colorKey never leaves "static", so a normal -> warning transition does not
+  -- reach this function at all, and a badge coloured from here would have kept
+  -- saying WARN in the all-clear colour.
   if ui.sections then
     -- The NORMAL band carries the accent and was painted at build time; an
     -- Accent edit repaints here without a rebuild, so it must be recolored
-    -- in place (Tanda 6 F-5). The warn/crit bands are theme roles and
+    -- in place (Tanda 6 F-5). The warn/crit bands are fixed colours and
     -- resolve to the same colour as before - setProp filters the no-ops.
     for _, sec in ipairs(ui.sections) do
       setProp(widget, sec, "color", T.stateColor(sec.role, widget.accent))
+      -- F2: the reference bands used to keep full opacity while the gauge
+      -- itself was muted, so a widget announcing NO LINK still had three
+      -- fully saturated bands on it - one of them red - and they were the
+      -- brightest thing on the dial. Whatever the value arc does, the passive
+      -- reference behind it does too.
+      setProp(widget, sec, "bgOpacity", opa)
     end
   end
   if ui.rails then
@@ -470,8 +529,10 @@ local function applyColors(widget, key)
     -- band one step further so the full-red arc/text stay the brightest
     -- thing on the ring. WARN keeps the normal reference opacity - there
     -- the amber band IS the active state, not a competing one.
-    local railOpa = (key == "critical") and T.opacity.railBandCrit
-      or T.opacity.railBand
+    -- Muted overrides both: see the note on sections above.
+    local railOpa = T.opacity.railBand
+    if key == "muted" then railOpa = T.opacity.muted
+    elseif key == "critical" then railOpa = T.opacity.railBandCrit end
     for _, rail in ipairs(ui.rails) do
       setProp(widget, rail, "bgOpacity", railOpa)
     end
@@ -500,6 +561,20 @@ local function stateText(widget)
 end
 M.stateText = stateText
 
+-- The semantic key BEHIND the chip's text, which is not always the frame's
+-- colour key: in Static mode colorKey is permanently "static", and in Gradient
+-- mode it is "grad0".."grad20". Colouring the badge from those would have
+-- printed CRIT on an all-clear fill in two of the five colour modes.
+local function stateKey(widget)
+  local data = widget.data
+  if data.availability ~= "valid" then return "muted" end
+  if widget.source.isTimer and data.value and data.value < 0 then
+    return "warning"
+  end
+  return data.state or "normal"
+end
+M.stateKey = stateKey
+
 -- Show or hide the state chip, hugging its text. Shared by the dial and the
 -- bar so both signal state identically: the bar used to have no chip at all,
 -- leaving WARN/CRIT as bare text in bar zones while dial zones got the full
@@ -508,6 +583,19 @@ function M.updateChip(widget, s)
   local ui, frame = widget.ui, widget.frame
   if not ui.chip then return end
   local show = (s ~= "")
+  -- F9: `State chip = Off` is an appearance preference, and it used to
+  -- suppress the pill in EVERY state - including WARN and CRIT. That left the
+  -- normal/warning distinction resting on hue alone, which is precisely the
+  -- discrimination ~8 % of a heavily male audience cannot make; the measured
+  -- deuteranopia distance between this widget's warning and critical colours
+  -- is 25.6, well inside the ~60 confusion threshold. The option now hides the
+  -- INFORMATIONAL chips (NO LINK, STALE, NO DATA, NO SOURCE) and leaves the
+  -- two that carry a safety signal alone. In the normal state it never had
+  -- anything to hide: stateText returns "" there.
+  if show and widget.config.showChip == false then
+    local k = stateKey(widget)
+    show = (k == "warning" or k == "critical")
+  end
   if show then
     -- the chip hugs its text: measured here because the state string changes
     -- rarely (never per frame), unlike the value
@@ -548,8 +636,43 @@ function M.updateChip(widget, s)
       setProp(widget, ui.stateLabel, "w", w)
       setProp(widget, ui.stateLabel, "align", CENTER)
     end
+    -- F8: the pill is a BADGE - the status colour is its GROUND, not its ink.
+    --
+    -- It used to be a COLOR_THEME_SECONDARY2 fill (a "label/button background"
+    -- role) carrying the status colour as text. On the stock theme that is a
+    -- #b6e0f2 fill at 1.19:1 against the screen - an invisible pill, read only
+    -- through its 1 px outline - with CRIT printed on it at 2.91:1, under the
+    -- 3:1 floor. So the most glanceable element in the widget, the one that
+    -- says CRIT, was its weakest: a hairline outline around thin coloured text,
+    -- seen for ~200 ms in sunlight with the pilot's eyes on the model.
+    --
+    -- Inverted, the badge is self-grounding and measures 5.2:1 (critical),
+    -- 5.6:1 (warning), 5.4:1 (normal) and 6.4:1 (muted), on any theme, because
+    -- both the fill and the ink are ours (theme.labelOn).
+    local fill = T.stateColor(stateKey(widget), widget.accent)
+    local ink = T.labelOn(fill)
+    setProp(widget, ui.chip, "color", fill)
+    if ui.stateLabel then
+      setProp(widget, ui.stateLabel, "color", ink)
+    end
+    -- The outline takes the badge's OWN ink, not the label role. Under a
+    -- SECONDARY2 fill an outline in the label role was the only thing making
+    -- the pill visible, so a contrasting chrome colour made sense; over a
+    -- coloured fill it reads as a third colour stapled on - a blue hairline
+    -- around an amber badge. Ink-coloured, the badge is two colours that
+    -- belong together, and the outline still does its remaining job: holding
+    -- the shape apart from a theme background at a similar luminance, or from
+    -- a background.png photograph.
+    if ui.chipEdge then setProp(widget, ui.chipEdge, "color", ink) end
     lvgl.show(ui.chipEdge)
     lvgl.show(ui.chip)
+    -- The LABEL travels with the pill. Before F9 this was implicit: the chip
+    -- objects only existed when the option was on, so hiding "the chip" hid
+    -- everything. Now the objects always exist and only their visibility
+    -- moves - and a hidden pill with a visible label left "NO LINK" floating
+    -- bare on the dial, which is the very defect the pill was added to fix
+    -- (AUDIT.md P1-10, the bar's chipless WARN/CRIT text).
+    if ui.stateLabel then lvgl.show(ui.stateLabel) end
     -- frame.chipBox used to be maintained here: the pill's footprint, read by
     -- needleReach() to stop the needle short of it. Both are gone with Tanda 7
     -- A - the pill is opaque and painted after the needle, so it occludes the
@@ -557,6 +680,7 @@ function M.updateChip(widget, s)
   else
     lvgl.hide(ui.chipEdge)
     lvgl.hide(ui.chip)
+    if ui.stateLabel then lvgl.hide(ui.stateLabel) end
   end
   frame.chipShown = show
 end
@@ -834,6 +958,7 @@ function M.update(widget)
     applyColors(widget, key)
   end
 
+  M.applyStateInk(widget)
   updateText(widget)
   updateArc(widget)
   updateHistory(widget)

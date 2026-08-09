@@ -121,7 +121,9 @@ function M.build(widget)
                T.color.history)
   end
 
-  ui.valueLabel = R.label(L.valueBox, L.valueFont, T.color.accent,
+  -- DATA text takes the theme's ink role, not the status colour (Tanda 8
+  -- §3.2) - see renderer.valueColor.
+  ui.valueLabel = R.label(L.valueBox, L.valueFont, T.color.value,
                           L.valueAlign, F.NO_VALUE)
   if L.showUnit and widget.unitText ~= "" then
     ui.unitLabel = R.label(L.unitBox, L.unitFont, T.color.label, L.unitAlign,
@@ -143,15 +145,17 @@ function M.build(widget)
       color = T.color.label, filled = 1,
       rounded = floor((L.chipHeight + edge * 2) / 2),
     }
+    -- built muted, shown coloured: R.updateChip owns the fill and the ink
     ui.chip = lvgl.rectangle{
       x = L.stateBox.x, y = L.stateBox.y - L.chipOff,
       w = L.stateBox.w, h = L.chipHeight,
-      color = T.color.chip, filled = 1, rounded = floor(L.chipHeight / 2),
+      color = T.color.muted, filled = 1, rounded = floor(L.chipHeight / 2),
     }
     lvgl.hide(ui.chipEdge)
     lvgl.hide(ui.chip)
-    ui.stateLabel = R.label(L.stateBox, L.stateFont, T.color.label,
+    ui.stateLabel = R.label(L.stateBox, L.stateFont, T.labelOn(T.color.muted),
                             L.stateAlign)
+    lvgl.hide(ui.stateLabel)
   end
 
   widget.frame = {
@@ -242,24 +246,23 @@ function M.update(widget)
     frame.colorKey = key
     frame.accentKey = widget.accent
     local c = R.resolveColor(widget, key)
+    local opa = (key == "muted") and T.opacity.muted or T.opacity.full
     R.setProp(widget, ui.fill, "color", c)
-    R.setProp(widget, ui.fill, "opacity",
-              (key == "muted") and T.opacity.muted or T.opacity.full)
-    R.setProp(widget, ui.valueLabel, "color", c)
+    R.setProp(widget, ui.fill, "opacity", opa)
     if ui.marks then
       -- threshold marks were painted at build time; the normal-boundary
-      -- mark carries the accent and must follow an accent edit (F-5)
+      -- mark carries the accent and must follow an accent edit (F-5).
+      -- F2: and they follow the fill into the muted state, so a bar with no
+      -- data does not keep three fully saturated threshold marks on it.
       for _, m in ipairs(ui.marks) do
         R.setProp(widget, m, "color", T.stateColor(m.role, widget.accent))
+        R.setProp(widget, m, "opacity", opa)
       end
     end
-    if ui.stateLabel then
-      local sc = T.color.label
-      if key == "warning" then sc = T.color.warn
-      elseif key == "critical" then sc = T.color.crit end
-      R.setProp(widget, ui.stateLabel, "color", sc)
-    end
+    -- the badge's fill and ink belong to R.updateChip: see renderer.applyColors
   end
+
+  R.applyStateInk(widget)
 
   local str = (widget.data.availability == "unset") and F.NO_VALUE
     or F.display(widget, widget.data.displayValue)

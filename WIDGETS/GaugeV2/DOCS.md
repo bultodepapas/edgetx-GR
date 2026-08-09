@@ -80,7 +80,7 @@ settings shifted.
 
 | Option | Type | Default | Meaning |
 |---|---|---|---|
-| **Accent colour** | Color | green | Native colour picker; overrides the normal-state colour (default green, the "all clear" colour). Lets four gauges on one screen be colour-coded. |
+| **Accent colour** | Color | `#209058` | Native colour picker; overrides the normal-state colour (default green, the "all clear" colour — 4.3 explains why it is a fixed colour and not a theme role). Lets four gauges on one screen be colour-coded. A custom accent is used as given: the contrast guarantee in 4.3 covers the default, not your choice. |
 | **Name override** | String | "" | Custom label ("PACK", "MOTOR"); empty uses the sensor name. |
 | **Unit override** | String | "" | Custom unit; empty uses the sensor unit. |
 | **Scale** | Choice | Auto | Auto uses a known-sensor preset; Manual always uses your Min/Max/Warning/Critical. |
@@ -93,7 +93,7 @@ settings shifted.
 | **Startup delay** | Integer | 4 s | No alerts until the model has settled. |
 | **Vibrate** | Bool | Off | Haptic pulse on critical. |
 | **Reset min/max** | Switch | none | Clears the tracked history in flight. |
-| **State chip** | Bool | On | Show/hide the WARN / CRIT / no-data pill above the dial. Off leaves colour and the pulse (4.3) as the only state signal. |
+| **State chip** | Bool | On | Hides the *informational* pills (`NO LINK`, `STALE`, `NO DATA`, `NO SOURCE`). **WARN and CRIT always show**, whatever this is set to — they are a safety signal, and colour alone does not reach every pilot (4.3). The row is reserved either way, so turning it off does not buy the value more space. |
 
 Notes:
 
@@ -139,24 +139,76 @@ With **Scale = Manual** your four range values are always used.
 
 ### 4.3 States and colours
 
+The widget separates two channels on purpose, and the split explains every
+colour decision below:
+
+| channel | what it is | coloured by |
+|---|---|---|
+| **status** | the arc, the rail / section bands, the threshold marks, the badge | the state colour |
+| **data** | the value, unit, source name, min/max | the **theme's own text role** |
+
+This is how instruments have always worked — an airspeed indicator has green,
+amber and red arcs *on the dial face* and plain white numerals. Colour on the
+scale is a signal you read at a glance; colour on the number only makes the
+number harder to read. Before this split the state colour drove both, which is
+how a role meant for a button background ended up as the primary readout's ink.
+
 A value maps onto three bands (normal / warning / critical, ordered by the
 direction option):
 
-- **NORMAL** — `COLOR_THEME_ACTIVE` (green), or your Accent option.
-- **WARN** — `COLOR_THEME_WARNING`, chip text "WARN".
-- **CRIT** — high-contrast red, chip text "CRIT", and the value arc **pulses**
-  at ~1 Hz so the state is visible without relying on colour.
-- **No data** — everything dims to `COLOR_THEME_DISABLED`; the chip reads
+- **NORMAL** — a fixed green `#209058`, or your Accent option.
+- **WARN** — a fixed amber `#c86000`, badge text "WARN".
+- **CRIT** — a fixed red `#ff0000`, badge text "CRIT", and the value arc
+  **pulses** at ~1 Hz so the state survives greyscale and colour blindness.
+  Critical is also the one state that tints the value text.
+- **No data** — everything dims to `COLOR_THEME_DISABLED`; the badge reads
   `NO LINK`, `STALE`, `NO DATA` or `NO SOURCE` (see 4.10), and the last known
-  value stays on screen.
+  value stays on screen, dimmed.
 
-The chip is optional (**State chip** option, 4.1); turning it off leaves
-colour and the critical pulse as the only state signal.
+**Why fixed colours and not theme roles.** EdgeTX's role vocabulary is a *UI*
+vocabulary — `PRIMARY*` is text, `SECONDARY*` is chrome, `ACTIVE` is the
+background of a checked control, `WARNING` is warning label text. It has no
+notion of instrument state, so there is no "all clear" role to use, and the two
+that look closest are traps: `COLOR_THEME_ACTIVE` is yellow on the stock theme
+and scores **1.13 : 1** against the stock screen background — the normal state
+used to be invisible on a stock radio — and `COLOR_THEME_WARNING` is *red*
+there, 53 perceptual units from critical's red, so warning and critical were
+the same colour to the eye.
+
+A fixed colour has no theme author looking after it, so each of the three is
+chosen to clear the 3 : 1 non-text contrast floor against **both** a light and
+a dark background. That pins relative luminance into a window only 0.058 wide,
+inside which 3.35 : 1 is the best any colour can achieve on both at once. All
+three land within 0.05 of that optimum, at equal luminance, differing in hue
+alone:
+
+| state | colour | vs stock light | vs a dark theme |
+|---|---|---|---|
+| normal | `#209058` | 3.35 : 1 | 3.35 : 1 |
+| warning | `#c86000` | 3.34 : 1 | 3.35 : 1 |
+| critical | `#ff0000` | 3.39 : 1 | 3.30 : 1 |
+
+**The badge is filled, not outlined.** The state colour is the pill's ground,
+and the label takes whichever of the theme's two text roles contrasts with it
+(read at runtime through `lcd.getColor`). That makes the badge *self-grounding*
+— its contrast is between the fill and its own label, both of which the widget
+controls — so it reads on a light theme, a dark theme, and a theme that ships a
+`background.png` photograph alike, at 5.2–6.4 : 1. The previous outlined pill
+put CRIT on a `SECONDARY2` fill at 2.91 : 1, below the floor, inside a pill
+whose own fill measured 1.19 : 1 against the screen.
+
+**Equal luminance means hue is the only separator**, and that is a deliberate
+trade: it stops any one state shouting louder than another by accident, but it
+means the non-colour channels are not decoration. A simulated deuteranope sees
+this widget's warning and critical **25.6** perceptual units apart — inside the
+~60 confusion threshold. What separates them for those users is the badge
+*text* and the critical pulse, which is why **State chip = Off can no longer
+hide a WARN or CRIT badge** (4.1).
 
 The **needle never changes colour**: it stays a fixed, theme-neutral tone
 (`COLOR_THEME_PRIMARY1`) regardless of state or colour mode, so it stays
 legible pointing across a green, amber or red band alike — only the arc,
-value text and (where applicable) rail bands carry the state colour.
+badge and (where applicable) rail bands carry the state colour.
 
 It also **never changes length**. Where the state chip lies on the needle's
 path, the needle passes *behind* it: the chip is opaque and is created after
@@ -182,15 +234,26 @@ machine-gun the alerts.
 
 ### 4.5 Colour modes
 
-- **Static** — everything uses the accent colour (the needle excepted - 4.3).
-- **Threshold** — the arc and value take the state colour.
+The mode chooses how the **status** channel is coloured. It never changes the
+data text, which always takes the theme's ink role (4.3) — critical excepted.
+
+- **Static** — the arc keeps the accent colour whatever the value (the needle
+  excepted - 4.3). The badge still follows the real state.
+- **Threshold** — the arc takes the state colour.
 - **Rail** *(default)* — as Threshold, plus a thin outer rail that permanently
   marks the warning and critical zones. The value arc keeps the foreground;
   the scale stays readable.
-- **Gradient** — the arc/value colour interpolates green → amber → red
-  across the **thresholds** (red at critical, green once inside the normal
-  band). Uses fixed RGB, so it does not follow the theme.
+- **Gradient** — the arc interpolates critical → warning → normal across the
+  **thresholds** (red at critical, green once inside the normal band). It ramps
+  between the same three fixed colours as every other mode and holds the whole
+  ramp at constant luminance, so every step clears 3 : 1 on both reference
+  backgrounds (worst case 3.02 : 1). Hue varies; brightness does not.
 - **Sections** — the track is drawn as three arcs coloured by band.
+
+In every mode, when the data stops being live all the coloured elements — arc,
+rail bands, section bands and the bar's threshold marks — drop to the same
+muted opacity together, so a gauge announcing `NO LINK` never keeps a fully
+saturated red reference band as the brightest thing on it.
 
 In every mode the needle itself stays the fixed neutral tone described in 4.3.
 
@@ -202,9 +265,17 @@ same physical size on every radio):
 | Mode | min(w, h) | Behaviour |
 |---|---|---|
 | micro | < 64 px | Dial + value only. |
-| compact | < 105 px | Adds the unit and state chip. |
+| compact | < 105 px | Adds the unit and state badge. |
 | normal | < 180 px | Adds the source name. |
 | large | ≥ 180 px | Adds scale end labels, minor ticks, optional min/max text. |
+
+**Micro zones are an ambient display, not a diagnostic one.** There is no room
+for a badge in a 60×60 dial, so state there is carried by the arc's colour and
+— at critical — by its pulse, with no text channel at all. Warning and critical
+are therefore distinguishable at that size only by hue and by the pulse, which
+is a real limitation for a colour-blind pilot (4.3). Pick a micro zone for "is
+it roughly where I expect", and give any reading you would act on at least a
+compact zone.
 
 Orientation: **horizontal** (w/h > 1.4) puts the dial left and the text right;
 **vertical** (w/h < 0.8) puts the dial on top; **balanced** centres the dial

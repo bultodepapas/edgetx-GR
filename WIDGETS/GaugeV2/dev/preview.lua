@@ -15,27 +15,18 @@ mock.install(_ENV or _G)
 
 -- ---- theme palettes (the radio's COLOR_THEME_* roles, both themes) --------
 
+-- Palettes come from dev/svgkit.lua - the SAME tables the gallery and the
+-- shot tool paint with, and the same ones the widget's own lcd.getColor is
+-- pointed at before each build. This file used to carry a third invented
+-- palette of its own (a green COLOR_THEME_ACTIVE, an amber
+-- COLOR_THEME_WARNING, a near-black background); EdgeTX's stock theme has a
+-- yellow ACTIVE, a RED WARNING and a near-WHITE background, so the picture
+-- was of a radio that does not exist. Four review rounds missed a 1.13:1
+-- normal state because of exactly this (Tanda 8 F7).
+local svgkit = dofile(widgetDir .. "dev/svgkit.lua")
 local PALETTES = {
-  dark = {
-    bg = "#12161c",
-    [COLOR_THEME_PRIMARY1] = "#e8ecf1", [COLOR_THEME_PRIMARY2] = "#9fb2c6",
-    [COLOR_THEME_PRIMARY3] = "#5b6b7c", [COLOR_THEME_SECONDARY1] = "#8fa0b3",
-    [COLOR_THEME_SECONDARY2] = "#48586a", [COLOR_THEME_SECONDARY3] = "#1c2430",
-    [COLOR_THEME_FOCUS] = "#2f81f7", [COLOR_THEME_EDIT] = "#f0883e",
-    [COLOR_THEME_ACTIVE] = "#3fb950", [COLOR_THEME_WARNING] = "#e3b341",
-    [COLOR_THEME_DISABLED] = "#6b7684",
-    [RED] = "#f85149", [WHITE] = "#ffffff", [BLACK] = "#000000",
-  },
-  light = {
-    bg = "#eef1f5",
-    [COLOR_THEME_PRIMARY1] = "#1b2430", [COLOR_THEME_PRIMARY2] = "#41525f",
-    [COLOR_THEME_PRIMARY3] = "#8b98a5", [COLOR_THEME_SECONDARY1] = "#55636f",
-    [COLOR_THEME_SECONDARY2] = "#b6c0ca", [COLOR_THEME_SECONDARY3] = "#dfe4ea",
-    [COLOR_THEME_FOCUS] = "#0969da", [COLOR_THEME_EDIT] = "#bc4c00",
-    [COLOR_THEME_ACTIVE] = "#1a7f37", [COLOR_THEME_WARNING] = "#bf8700",
-    [COLOR_THEME_DISABLED] = "#9aa4b0",
-    [RED] = "#cf222e", [WHITE] = "#ffffff", [BLACK] = "#000000",
-  },
+  stock = svgkit.palette("stock"),
+  dark = svgkit.palette("dark"),
 }
 
 local FONT_PX = {
@@ -249,9 +240,12 @@ for _, case in ipairs(CASES) do
   local z = { x = 0, y = 0, w = zone.w, h = zone.h }
   local scale = (zone.w < 130) and 2 or 1.4
   build(z, overrides, value, history)
-  local dark = renderSvg(z, "dark", scale)
+  mock.setThemeColors(svgkit.themeColors("stock"))
   build(z, overrides, value, history)
-  local light = renderSvg(z, "light", scale)
+  local dark = renderSvg(z, "stock", scale)
+  mock.setThemeColors(svgkit.themeColors("dark"))
+  build(z, overrides, value, history)
+  local light = renderSvg(z, "dark", scale)
   html[#html + 1] = string.format(
     "<div class='card'><h2>%s &nbsp;<span style='color:#6f7b87'>%dx%d</span>" ..
     "</h2><div class='pair'>%s%s</div></div>", esc(title), zone.w, zone.h,

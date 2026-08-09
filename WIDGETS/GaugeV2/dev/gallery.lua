@@ -551,38 +551,53 @@ if opt.only then
   slug = "-only-" .. (string.gsub(opt.only, "[^%w]+", "_"))
 end
 
--- Render every scene ONCE; both themes reuse the captured object trees.
+-- Build every scene ONCE PER THEME.
+--
+-- It used to build once and let both themes repaint the same captured object
+-- trees, which was correct while nothing the widget emitted depended on the
+-- theme's actual colours. theme.labelOn broke that: it reads the theme's two
+-- text roles through lcd.getColor to choose the badge ink, so a tree captured
+-- under the stock table and repainted in the dark palette shows an ink the
+-- radio would never have picked (measured on the amber badge: white at
+-- 3.94:1, where a dark-theme radio picks black at 5.32:1). Pointing the mock's
+-- colour table at the palette before building is what keeps the sheet honest.
+--
 -- (The mock is global state, so each scene must be captured before the next
 -- one resets it.)
-local results, failures = {}, {}
-for _, c in ipairs(cases) do
-  local ok, ctx = pcall(scenes.build, mock, widgetDir, c)
-  if not ok then
-    failures[#failures + 1] = fmt("%s: %s", c.name, tostring(ctx))
-  else
-    local snapshot = {}
-    for _, o in ipairs(mock.objects()) do
-      if o.visible then snapshot[#snapshot + 1] = o end
+local failures = {}
+local function buildAll()
+  local out = {}
+  failures = {}
+  for _, c in ipairs(cases) do
+    local ok, ctx = pcall(scenes.build, mock, widgetDir, c)
+    if not ok then
+      failures[#failures + 1] = fmt("%s: %s", c.name, tostring(ctx))
+    else
+      local snapshot = {}
+      for _, o in ipairs(mock.objects()) do
+        if o.visible then snapshot[#snapshot + 1] = o end
+      end
+      out[#out + 1] = {
+        case = c, zone = ctx.zone, objects = snapshot,
+        facts = scenes.facts(ctx), warnings = {},
+      }
     end
-    results[#results + 1] = {
-      case = c, zone = ctx.zone, objects = snapshot,
-      facts = scenes.facts(ctx), warnings = {},
-    }
   end
-end
-
-if #failures > 0 then
-  io.stderr:write("gallery: " .. #failures .. " escena(s) fallaron:\n")
-  for _, f in ipairs(failures) do io.stderr:write("  " .. f .. "\n") end
+  if #failures > 0 then
+    io.stderr:write("gallery: " .. #failures .. " escena(s) fallaron:\n")
+    for _, f in ipairs(failures) do io.stderr:write("  " .. f .. "\n") end
+  end
+  return out
 end
 
 local cov = coverage(defs, cases)
 
-local themes = (opt.theme == "both") and { "dark", "light" } or { opt.theme }
+local themes = (opt.theme == "both") and { "stock", "dark" } or { opt.theme }
 local written, allWarnings = {}, {}
+local results = {}
 for _, theme in ipairs(themes) do
-  -- clear any warnings the previous theme collected on the same scenes
-  for _, r in ipairs(results) do r.warnings = {} end
+  mock.setThemeColors(svgkit.themeColors(theme))
+  results = buildAll()
   -- first pass populates per-scene warnings so the badges are right
   for _, r in ipairs(results) do
     local probe = svgkit.newCanvas(theme)

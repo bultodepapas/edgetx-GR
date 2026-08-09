@@ -148,6 +148,26 @@ function M.build(mock, widgetDir, case)
   local ctx = { mock = mock, mod = mod, widget = w, opts = opts,
                 srcId = src.id, zone = zone, case = case }
   if case.post then case.post(ctx) end
+
+  -- F6: settle the critical pulse on its CREST before anyone renders this.
+  --
+  -- The pulse flips every 500 ms and a scene advances exactly 500 ms per
+  -- frame, so the phase a render caught was decided by the PARITY of the
+  -- frame count - and `post` adds frames to some scenes and not others. Two
+  -- catalogue images of the same critical state therefore came out visibly
+  -- different reds, one at full opacity and one at the trough's 150, and
+  -- nothing in the picture said which was which.
+  --
+  -- The crest is the right choice for a still: it is the state the eye reads
+  -- as "the" colour. Reached by running ordinary frames at the catalogue's own
+  -- 50 ms cadence - not by jumping the clock 500 ms, which would also age the
+  -- staleness and history timers this scene may be posing with. The pulse gate
+  -- is 50 ticks and a frame is 5, so eleven frames always cross it.
+  for _ = 1, 11 do
+    if not (w.frame and w.frame.pulse) then break end
+    mock.advance(50)
+    mod.refresh(w)
+  end
   return ctx
 end
 
@@ -319,11 +339,28 @@ M.sections = {
         opts = { Style = "Needle" }, value = 78 },
       { name = "op-style-arc", title = "Style Arc (sin aguja)",
         zone = { 200, 160 }, opts = { Style = "Arc" }, value = 78 },
-      { name = "op-chip-on", title = "State chip ON", zone = { 200, 160 },
-        opts = { ColorMode = "Rail", ShowChip = true }, value = 22 },
-      { name = "op-chip-off", title = "State chip OFF", zone = { 200, 160 },
-        alias = "mode-Rail-nochip",
-        opts = { ColorMode = "Rail", ShowChip = false }, value = 22 },
+      -- The pair has to pose a MUTED state, not a critical one: since Tanda 8
+      -- F9 the option only suppresses the informational badges, so two
+      -- critical scenes now render identically and the card would show a
+      -- difference that no longer exists. What the option really costs the
+      -- user is the NO LINK pill; what it may never cost them is CRIT.
+      { name = "op-chip-on", title = "State chip ON (sin enlace)",
+        zone = { 200, 160 }, opts = { ColorMode = "Rail", ShowChip = true },
+        value = 78, post = function(c)
+          c.mock.setValue(c.srcId, nil); c.mock.sim.rssi = 0
+          for _ = 1, 3 do c.mock.advance(50); c.mod.refresh(c.widget) end
+        end },
+      { name = "op-chip-off", title = "State chip OFF (sin enlace)",
+        zone = { 200, 160 }, alias = "mode-Rail-nochip",
+        opts = { ColorMode = "Rail", ShowChip = false },
+        value = 78, post = function(c)
+          c.mock.setValue(c.srcId, nil); c.mock.sim.rssi = 0
+          for _ = 1, 3 do c.mock.advance(50); c.mod.refresh(c.widget) end
+        end },
+      { name = "op-chip-off-crit", title = "State chip OFF, pero CRIT",
+        zone = { 200, 160 },
+        opts = { ColorMode = "Rail", ShowChip = false }, value = 22,
+        note = "F9: el badge de seguridad sobrevive a la opcion" },
       { name = "op-mm-off", title = "Min/max Off", zone = { 220, 200 },
         opts = { ShowMinMax = "Off" }, value = 78, history = { 31, 92 },
         note = "el ghost no aparece - ver Tanda 6 F-8" },
@@ -454,7 +491,8 @@ M.sections = {
         zone = { 160, 44 }, opts = { Style = "Bar" }, value = 22 },
       { name = "br-lowgood", title = "low-is-good (T1)", zone = { 300, 70 },
         source = "T1", opts = { Style = "Bar" }, value = 95 },
-      { name = "br-nochip", title = "chip desactivado", zone = { 300, 70 },
+      { name = "br-nochip", title = "chip Off: CRIT sigue visible",
+        zone = { 300, 70 },
         opts = { Style = "Bar", ShowChip = false }, value = 22 },
       { name = "br-auto", title = "Auto -> barra (ratio > 2.6)",
         zone = { 300, 60 }, opts = { Style = "Auto" }, value = 78 },

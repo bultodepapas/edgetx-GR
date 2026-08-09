@@ -67,29 +67,90 @@ for i = 1, #RAMP_ORDER do
 end
 assert(#M.RAMP > 0, "GaugeV2: firmware exposes no usable font constants")
 
+-- TWO CHANNELS, NEVER ONE (Tanda 8 §3). A gauge has to say two different
+-- things at once, and they have incompatible requirements:
+--
+--   STATUS - the arc, the rail/section bands, the threshold marks, the badge.
+--            Large, peripheral, read as a blob of colour in ~200 ms with the
+--            pilot's eyes on the aircraft. Hue is the right channel here.
+--   DATA   - the value, unit, source name, min/max. Read as SHAPES. Legibility
+--            beats identity, and a hue that must survive an unknown background
+--            buys nothing you can actually read.
+--
+-- Every real instrument splits them this way: an airspeed indicator has green,
+-- yellow and red arcs ON THE DIAL FACE and plain white numerals. Colouring the
+-- number is what a dashboard does; colouring the scale is what an instrument
+-- does. Before Tanda 8 the status colour drove BOTH, which is why a role
+-- chosen for a button background ended up as the value's text colour.
+--
+-- The one deliberate exception is CRITICAL, where alarm outranks neutrality.
 M.color = {
-  -- Green: the conventional "all clear" colour a gauge should default to
-  -- (owner request, Tanda 5). This is also Static mode's fixed colour and
-  -- the fallback wherever `widget.accent` is nil - but on 2.12+ firmware
-  -- the Accent OPTION itself always carries a real colour (its own default,
-  -- main.lua), never nil, so that default must point at this same role too
-  -- (main.lua's Accent default = COLOR_THEME_ACTIVE) or the option's
-  -- default silently shadows this fallback and 2.12+ radios never see it.
-  accent  = COLOR_THEME_ACTIVE,
+  -- The three status colours are FIXED, not theme roles. The reasoning that
+  -- already justified a literal for `crit` - EdgeTX has no "critical" role -
+  -- applies just as well to "good" and "warning": the role vocabulary is a UI
+  -- vocabulary (PRIMARY* is text, SECONDARY* is chrome, ACTIVE is the
+  -- background of a CHECKED control, WARNING is warning LABEL TEXT), and it
+  -- has no notion of instrument state.
+  --
+  -- This used to be COLOR_THEME_ACTIVE, which is #ffde00 on the stock theme
+  -- and scores 1.13:1 against the stock screen background - the normal state,
+  -- arc and value alike, was effectively invisible on a stock radio. It
+  -- measured 9.87:1 on a dark theme, which is why every render in this repo
+  -- looked right for four review rounds.
+  --
+  -- A fixed colour has no theme author looking after it, so each one is
+  -- chosen to clear the WCAG 1.4.11 non-text floor (3:1) against BOTH
+  -- reference backgrounds - stock light #e4eef2 and a dark theme #303030.
+  -- That constrains relative luminance to [0.189, 0.247], a window only 0.058
+  -- wide, and 3.35:1 is the best ANY colour can do on both at once. All three
+  -- land within 0.05 of that optimum:
+  --
+  --        light      dark
+  --   #209058  3.35:1  3.35:1   normal    (was 1.13:1)
+  --   #c86000  3.34:1  3.35:1   warning   (stock WARNING role: 2.76:1 on dark)
+  --   #ff0000  3.39:1  3.30:1   critical  (unchanged - already near optimal)
+  --
+  -- Equal luminance by construction, so no state shouts louder than another by
+  -- accident and the three differ in HUE alone - which is exactly how dial
+  -- arcs are drawn. It also means hue is the ONLY separator, so the badge text
+  -- (renderer.stateText) is not decoration: see the note on `warn` below.
+  accent  = lcd.RGB(0x20, 0x90, 0x58),
+  -- Fixed too, and for a reason beyond contrast. On the stock theme
+  -- COLOR_THEME_WARNING is #e00000 - a red 53 perceptual units from critical's
+  -- #ff0000, i.e. THE SAME COLOUR to the eye, which wasted the hue channel
+  -- entirely. This amber sits 213 units away. The cost is real and worth
+  -- naming: a theme author who picked a warning colour no longer sees it here.
+  warn    = lcd.RGB(0xc8, 0x60, 0x00),
+  -- An lcd.RGB literal rather than the RED constant, though they are the same
+  -- #ff0000: lcd.getColor() returns NIL for the fixed colour indices
+  -- (api_colorlcd.cpp:968 - only RGB flags and the 14 theme indices resolve),
+  -- so RED could not be decoded by labelOn() below.
+  crit    = lcd.RGB(0xff, 0x00, 0x00),
+
+  -- ---- DATA channel: theme roles, never the status colour ----------------
+  -- PRIMARY1 is the theme's own ink - "label text" in the theme vocabulary,
+  -- 17.81:1 on the stock background, and whatever a dark theme's author chose
+  -- in its place. The value is the one thing on the widget that must stay
+  -- readable in every state, so it gets the role whose whole job is that.
+  value   = COLOR_THEME_PRIMARY1,
+  -- The badge label picks between these two by the fill's luminance
+  -- (M.labelOn): PRIMARY1/PRIMARY2 are a PAIR in the theme vocabulary - ink
+  -- on the screen background, and ink on chrome - so a theme that inverts one
+  -- inverts the other, and the badge follows without being told.
+  inkDark = COLOR_THEME_PRIMARY1,
+  inkLite = COLOR_THEME_PRIMARY2,
+
   needle  = COLOR_THEME_PRIMARY1,    -- the needle NEVER follows the state
                                      -- colour (owner request): a fixed,
                                      -- always-legible tone against every
                                      -- band colour, including the green
                                      -- normal state above, and both themes
-  warn    = COLOR_THEME_WARNING,
-  crit    = RED,                     -- no theme role exists for critical
   rail    = COLOR_THEME_SECONDARY1,  -- track + rail base (used with opacity)
   tick    = COLOR_THEME_SECONDARY1,  -- scale ticks: the LIGHTER role, so 1 px
                                      -- marks read on dark themes (review P-C)
   label   = COLOR_THEME_SECONDARY1,
   muted   = COLOR_THEME_DISABLED,
   history = COLOR_THEME_SECONDARY1,
-  chip    = COLOR_THEME_SECONDARY2,
 }
 
 M.opacity = {
@@ -219,14 +280,152 @@ function M.stateColor(key, accent)
   return accent or M.color.accent
 end
 
--- Continuous green -> amber -> red ramp (Gradient colour mode). Mirrors
--- GaugeRotary's getRangeColor, expressed on the normalized 0..1 position
--- between the critical end (0) and the good end (1).
+-- ---------------------------------------------------------------- luminance --
+
+-- The RGB behind a colour flag, or nil if the firmware will not say.
+--
+-- lcd.getColor exists (api_colorlcd.cpp:956, since 2.3.11) and returns the
+-- RGB565 value in the HIGH 16 bits with RGB_FLAG set. Its guard resolves RGB
+-- flags and the fourteen THEME indices only, so a FIXED literal (RED, GREEN,
+-- WHITE...) comes back nil - which is why this widget's own status colours are
+-- lcd.RGB literals: those carry RGB_FLAG and always resolve.
+--
+-- An RGB flag can be decoded without calling anything, so the API is only
+-- consulted for theme roles. Nothing here is load-bearing: every caller has a
+-- defined answer for nil.
+local function rgbOf(flag)
+  if type(flag) ~= "number" then return nil end
+  local v = flag
+  if (v & 0x8000) == 0 then
+    if type(lcd) ~= "table" or type(lcd.getColor) ~= "function" then
+      return nil
+    end
+    local ok, got = pcall(lcd.getColor, flag)
+    if not ok or type(got) ~= "number" then return nil end
+    v = got
+  end
+  local c = (v >> 16) & 0xFFFF
+  return (c & 0xF800) >> 8, (c & 0x07E0) >> 3, (c & 0x001F) << 3
+end
+M.rgbOf = rgbOf
+
+local function channel(c)
+  c = c / 255
+  if c <= 0.04045 then return c / 12.92 end
+  return ((c + 0.055) / 1.055) ^ 2.4
+end
+
+-- WCAG 2.x relative luminance, 0..1.
+local function luminance(r, g, b)
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+end
+M.luminance = luminance
+
+-- The ink colour to print ON a filled swatch: whichever of the theme's two
+-- text roles contrasts more with the fill.
+--
+-- This is what makes a filled badge SELF-GROUNDING - its contrast is between
+-- the fill and its own label, both of which the widget controls - so it reads
+-- on a light theme, a dark theme, and a theme that ships a background.png
+-- photograph alike. No flat colour can promise that.
+--
+-- Memoized: the argument set is the four status colours plus whatever the user
+-- picked as an Accent, so the cache is bounded by configuration, not by time.
+local inkCache = {}
+function M.labelOn(fill)
+  local ink = inkCache[fill]
+  if ink then return ink end
+  local r, g, b = rgbOf(fill)
+  if not r then
+    -- Unknowable fill: PRIMARY1 is the theme's own ink and the safer guess,
+    -- since a widget on a stock radio is drawn on a light background.
+    ink = M.color.inkDark
+  else
+    local lf = luminance(r, g, b)
+    local dr, dg, db = rgbOf(M.color.inkDark)
+    local lr, lg, lb = rgbOf(M.color.inkLite)
+    -- No theme information at all: 0.1791 is where black and white tie.
+    if not dr or not lr then
+      ink = (lf > 0.1791) and M.color.inkDark or M.color.inkLite
+    else
+      local function ratio(a, c)
+        local hi, lo = max(a, c), (a < c) and a or c
+        return (hi + 0.05) / (lo + 0.05)
+      end
+      ink = (ratio(lf, luminance(dr, dg, db)) >= ratio(lf, luminance(lr, lg, lb)))
+        and M.color.inkDark or M.color.inkLite
+    end
+  end
+  inkCache[fill] = ink
+  return ink
+end
+
+-- ----------------------------------------------------------------- gradient --
+
+-- Continuous critical -> warning -> normal ramp (Gradient colour mode),
+-- expressed on the normalized 0..1 position between the critical end (0) and
+-- the good end (1).
+--
+-- It interpolates between the THREE STATUS COLOURS rather than inventing its
+-- own endpoints. The old ramp was lcd.RGB(0xdf - g, g, 0): a straight line to
+-- #00df00, which is 1.16:1 against the stock background - the same defect as
+-- the old accent, confined to one mode. Anchoring the ends to colours that
+-- were already chosen for both backgrounds fixes the ends for free.
+--
+-- The MIDDLE is the part that needs work. Mixing amber into green passes
+-- through olive, and luminance is not linear in sRGB values, so intermediate
+-- mixes wander out of the [0.189, 0.247] window even though both endpoints sit
+-- inside it. A scale factor pulls any mix that drifts back to the edge of the
+-- window, which holds the whole ramp at >= 3.02:1 on both reference
+-- backgrounds - against 1.54:1 worst case before. Hue varies; brightness does
+-- not. That is how a dial's colour scale should behave anyway: no part of the
+-- ramp is allowed to shout louder than another.
+--
+-- The bounds are drawn in slightly from the true window so the RGB565
+-- quantisation the panel applies cannot push a step back out.
+local GRAD_LO, GRAD_HI = 0.198, 0.240
+local gradCache = {}
+
+local function gradAnchor(t)
+  local r1, g1, b1 = rgbOf(M.color.crit)
+  local r2, g2, b2 = rgbOf(M.color.warn)
+  local r3, g3, b3 = rgbOf(M.color.accent)
+  -- rgbOf cannot fail for these (lcd.RGB literals), but a nil here would
+  -- otherwise become an arithmetic error inside a render callback.
+  if not r1 or not r2 or not r3 then return nil end
+  local a, b, u
+  if t < 0.5 then
+    a, b, u = { r1, g1, b1 }, { r2, g2, b2 }, t * 2
+  else
+    a, b, u = { r2, g2, b2 }, { r3, g3, b3 }, (t - 0.5) * 2
+  end
+  return a[1] + (b[1] - a[1]) * u,
+         a[2] + (b[2] - a[2]) * u,
+         a[3] + (b[3] - a[3]) * u
+end
+
 function M.gradientColor(t)
   if t < 0 then t = 0 elseif t > 1 then t = 1 end
-  local g = floor(0xdf * t)
-  local r = 0xdf - g
-  return lcd.RGB(r, g, 0)
+  local cached = gradCache[t]
+  if cached then return cached end
+  local r, g, b = gradAnchor(t)
+  if not r then return M.color.accent end
+  local l = luminance(r, g, b)
+  -- 1/2.2 undoes the display gamma well enough to land inside the window in
+  -- one step; the exact figure does not matter because the window is a band,
+  -- not a point.
+  local k
+  if l > GRAD_HI then k = (GRAD_HI / l) ^ (1 / 2.2)
+  elseif l < GRAD_LO then k = (GRAD_LO / l) ^ (1 / 2.2) end
+  if k then
+    r, g, b = r * k, g * k, b * k
+    if r > 255 then r = 255 end
+    if g > 255 then g = 255 end
+    if b > 255 then b = 255 end
+  end
+  local c = lcd.RGB(floor(r + 0.5), floor(g + 0.5), floor(b + 0.5))
+  gradCache[t] = c
+  return c
 end
 
 return M

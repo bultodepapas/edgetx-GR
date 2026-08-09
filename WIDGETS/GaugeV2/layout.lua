@@ -321,10 +321,14 @@ local function dialLayout(widget, cfg, L, w, h)
 
   L.showUnit = mode ~= "micro"
   L.showName = (mode == "normal" or mode == "large")
-  -- ShowChip (owner request, Tanda 5): the WARN/CRIT/no-data pill is opt-out,
-  -- not mandatory - `~= false` so it defaults on for callers/tests that never
-  -- set the field, matching the option's declared BOOL default of 1.
-  L.showState = mode ~= "micro" and cfg.showChip ~= false
+  -- ShowChip (owner request, Tanda 5): the no-data pill is opt-out, not
+  -- mandatory. The ROW is reserved either way (Tanda 8 F9): `Off` now hides
+  -- only the informational chips and never WARN or CRIT, so the space has to
+  -- exist whatever the option says, or a warning badge would land on top of
+  -- the name. What the option costs is one text row in the layouts that stack
+  -- it - horizontal zones and the bar; on the square and vertical dials the
+  -- badge rides ON the dial and was never part of the budget.
+  L.showState = mode ~= "micro"
   L.showMarkers = (cfg.showMinMax or 1) > 1 and mode ~= "micro"
   L.showMinMaxText = (cfg.showMinMax or 1) > 2 and mode == "large"
   -- a full ring starts and ends at the same point: two scale labels would sit
@@ -629,12 +633,22 @@ local function dialLayout(widget, cfg, L, w, h)
     -- is also correct here - the slack belongs to the name instead.
     L.minMaxBox = box(dial.x, stackTop + T.px(T.space.xs), dial.w, minMaxH)
     if L.sweep >= 360 then
-      -- A CLOSED ring has no gap at the bottom to hang the name in, so it
-      -- goes inside, tight under the value - and there is no slack here to
-      -- distribute. Placed explicitly and kept OUT of the stack: letting the
-      -- band run to the ring's bottom edge pushes the name onto the ring
-      -- itself (G-10, "the name stays inside the ring at 360 degrees").
+      -- A CLOSED ring has no open wedge to hang the name in, so it goes
+      -- INSIDE. It used to be pinned tight under the value - 2 px below it,
+      -- with 18 px of the ring's interior left empty underneath (F3). The
+      -- reason given was G-10, "the name stays inside the ring": letting the
+      -- band run to the ring's bottom EDGE does push the name onto the arc.
+      --
+      -- But the ring's outer edge was never the right bound. The name has to
+      -- clear the arc's INNER edge, cy + clearR, which is what chordAt already
+      -- measures against - so bounding the band there distributes the slack
+      -- AND satisfies G-10 by construction rather than by staying away from
+      -- the problem. clipToChord then keeps a long source name inside the
+      -- circle at its new, lower depth, where the chord is narrower.
       L.nameBox = box(dial.x, stackTop + T.px(T.space.xs), dial.w, nameH)
+      local ringInner = L.cy + L.radius - floor(L.trackThickness / 2)
+      stackTextRows(stackTop, ringInner - T.px(T.space.xs), { L.nameBox }, h)
+      clipToChord(L, L.nameBox)
       L.showMinMaxText = false
     else
       -- The name hangs in the ring's OPEN WEDGE, below the arc's ends, so
@@ -683,7 +697,28 @@ local function dialLayout(widget, cfg, L, w, h)
     clipToChord(L, L.minMaxBox)
   end
 
-  -- min / max text share the min-max row
+  -- min / max text share the min-max row, LEFT and RIGHT aligned inside their
+  -- halves. That is what makes them a PAIR - so the row must be no wider than
+  -- the pair needs (F4).
+  --
+  -- It used to inherit the full width of whatever contained it. In a 480x272
+  -- zone that is the whole 202 px text column: "min 31" flush left, "max 78"
+  -- flush right, 202 px of nothing between them, with the source name starting
+  -- under "min". Three labels scattered along a line read as three unrelated
+  -- labels, not as one caption belonging to the value above.
+  --
+  -- Capped to what the two strings need plus one comfortable gap, and then
+  -- aligned the way the rest of the column is - so the group hangs together
+  -- and still never grows past the space it was given.
+  local mmNeed = T.textWidth("min " .. F.widestSample(widget), L.minMaxFont) * 2
+    + T.px(T.space.lg)
+  local mmW = min(L.minMaxBox.w, max(mmNeed, T.px(24)))
+  if mmW < L.minMaxBox.w then
+    if align == CENTER then
+      L.minMaxBox.x = L.minMaxBox.x + floor((L.minMaxBox.w - mmW) / 2)
+    end
+    L.minMaxBox.w = mmW
+  end
   local halfW = floor(L.minMaxBox.w / 2)
   L.minTextBox = box(L.minMaxBox.x, L.minMaxBox.y, halfW, minMaxH)
   L.maxTextBox = box(L.minMaxBox.x + halfW, L.minMaxBox.y, halfW, minMaxH)
@@ -834,7 +869,8 @@ local function barLayout(widget, cfg, L, w, h)
   local pad = (h < T.px(46)) and T.px(T.space.xs) or T.px(T.space.sm)
   L.showUnit = true
   L.showName = h >= T.px(46)
-  L.showState = w >= T.px(120) and cfg.showChip ~= false
+  -- the row is reserved whatever ShowChip says: see the dial branch (F9)
+  L.showState = w >= T.px(120)
   L.showMarkers = (cfg.showMinMax or 1) > 1
   L.showMinMaxText = false
   L.showScale = false
@@ -996,6 +1032,12 @@ function M.signature(L, cfg)
     L.showMinMaxText and 1 or 0, L.showScale and 1 or 0,
     cfg.colorMode, cfg.sweep or 1, L.valueFont, L.radius or 0,
     L.w, L.h,
+    -- ShowChip no longer moves anything (F9 reserves the row either way), so
+    -- it does not belong here structurally - but the badge's VISIBILITY is
+    -- decided in updateChip, which only runs when the state STRING changes.
+    -- Without this, toggling the option while a NO LINK badge was on screen
+    -- left it there until the link state next moved.
+    (cfg.showChip == false) and 0 or 1,
   }, ":")
 end
 

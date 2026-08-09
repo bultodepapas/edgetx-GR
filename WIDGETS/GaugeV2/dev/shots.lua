@@ -13,7 +13,7 @@
 
 local args = { ... }
 local widgetDir, outDir
-local only, theme, listOnly = nil, "dark", false
+local only, theme, listOnly = nil, "stock", false
 do
   local i = 1
   while i <= #args do
@@ -73,6 +73,12 @@ local function write(path, text)
   f:write(text)
   f:close()
 end
+
+-- Let the widget SEE the theme it is being rendered in: theme.labelOn reads
+-- the theme's text roles through lcd.getColor to pick the badge ink, so the
+-- mock's colour table has to be the palette's before any scene is built (see
+-- dev/gallery.lua for the measured consequence of not doing this).
+mock.setThemeColors(svgkit.themeColors(theme))
 
 local written, warned, failed = 0, {}, {}
 -- Every file this run produced. dev/shots/ is gitignored and accumulates

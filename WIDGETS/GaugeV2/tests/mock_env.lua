@@ -211,9 +211,105 @@ local lcd = {
     end
     return math.floor(#tostring(text) * (h * 0.55)), h
   end,
-  RGB = function(r, g, b) return 0x100000 + r * 0x10000 + g * 0x100 + b end,
+  -- The REAL encoding, not a convenient one (Tanda 8 F7). colors.h:
+  --   RGB(r,g,b)      -> RGB565
+  --   COLOR2FLAGS(c)  -> c << 16
+  --   RGB2FLAGS       -> COLOR2FLAGS(RGB(r,g,b)) | RGB_FLAG   (RGB_FLAG 0x8000)
+  -- The 0x100000 + r<<16 + g<<8 + b packing this used to return was a mock
+  -- invention: it round-trips 8 bits per channel, so nothing measured through
+  -- it ever saw the 5/6/5 quantisation the radio actually stores, and
+  -- lcd.getColor could not be modelled at all.
+  RGB = function(r, g, b)
+    local c = ((r & 0xF8) << 8) + ((g & 0xFC) << 3) + ((b & 0xF8) >> 3)
+    return (c << 16) | 0x8000
+  end,
   drawText = function() end,
 }
+
+-- ---- colour table (gui/colorlcd/colors.cpp defaultColors) ----------------
+--
+-- The stock EdgeTX palette, byte for byte, so anything that reasons about
+-- colour in a test reasons about what the radio draws. This is the harness
+-- half of F7: dev/svgkit.lua used to invent a palette, and so did this file.
+local COLOR_INDEX = {
+  THEME_PRIMARY1 = 0, THEME_PRIMARY2 = 1, THEME_PRIMARY3 = 2,
+  THEME_SECONDARY1 = 3, THEME_SECONDARY2 = 4, THEME_SECONDARY3 = 5,
+  THEME_FOCUS = 6, THEME_EDIT = 7, THEME_ACTIVE = 8, THEME_WARNING = 9,
+  THEME_DISABLED = 10, THEME_QM_BG = 11, THEME_QM_FG = 12, CUSTOM_COLOR = 13,
+  BLACK = 14, WHITE = 15, LIGHTWHITE = 16, LIGHTGREY = 17, GREY = 18,
+  DARKGREY = 19, RED = 20, DARKRED = 21, LIGHTRED = 22, GREEN = 23,
+  DARKGREEN = 24, BRIGHTGREEN = 25, BLUE = 26, DARKBLUE = 27, CYAN = 28,
+  YELLOW = 29, LIGHTBROWN = 30, DARKBROWN = 31, ORANGE = 32, MAGENTA = 33,
+}
+M.COLOR_INDEX = COLOR_INDEX
+local THEME_COLOR_COUNT = 14
+
+-- index -> { r, g, b }, in enum order. Note the firmware's own table has its
+-- GREY / DARKGREY comments swapped relative to LcdColorIndex; the ENUM order
+-- is what COLOR(index) indexes with, so that is what is mirrored here.
+local COLOR_RGB = {
+  [0] = { 0, 0, 0 }, { 255, 255, 255 }, { 12, 63, 102 }, { 18, 94, 153 },
+  { 182, 224, 242 }, { 228, 238, 242 }, { 20, 161, 229 }, { 0, 153, 9 },
+  { 255, 222, 0 }, { 224, 0, 0 }, { 140, 140, 140 }, { 0, 0, 0 },
+  { 255, 255, 255 }, { 170, 85, 0 },
+  { 0, 0, 0 }, { 255, 255, 255 }, { 0xEA, 0xEA, 0xEA }, { 0xC0, 0xC0, 0xC0 },
+  { 0x40, 0x40, 0x40 }, { 0x60, 0x60, 0x60 }, { 0xFF, 0, 0 }, { 0xA0, 0, 0 },
+  { 0xFF, 0x99, 0x99 }, { 0, 0xFF, 0 }, { 0, 0xA0, 0 }, { 0, 0xB4, 0x3C },
+  { 0, 0, 0xFF }, { 0, 0, 0xA0 }, { 0, 0xFF, 0xFF }, { 0xFF, 0xFF, 0 },
+  { 0x9F, 0x60, 0x30 }, { 0x50, 0x30, 0x10 }, { 0xFF, 0x80, 0 },
+  { 0xFF, 0, 0xFF },
+}
+M.COLOR_RGB = COLOR_RGB
+
+-- Pristine copy: setThemeColors restores from here, so a tool that renders two
+-- themes in one process cannot leak the first one's palette into the second.
+local STOCK_RGB = {}
+for i, c in pairs(COLOR_RGB) do STOCK_RGB[i] = { c[1], c[2], c[3] } end
+
+-- Point the THEME roles at a different theme's colours, exactly as loading a
+-- theme file does on the radio (lcdColorTable is mutable; the fixed colours
+-- above index 13 are not). `byFlag` maps a COLOR_THEME_* flag to { r, g, b };
+-- anything absent falls back to stock.
+--
+-- This exists because the widget now READS its theme (theme.labelOn picks a
+-- badge ink by measuring the fill against the theme's two text roles). A tool
+-- that renders a dark theme while lcd.getColor still answers with the stock
+-- table would show an ink the radio would never choose - the same class of
+-- lie as the invented palette itself (Tanda 8 F7).
+function M.setThemeColors(byFlag)
+  for i, c in pairs(STOCK_RGB) do COLOR_RGB[i] = { c[1], c[2], c[3] } end
+  if not byFlag then return end
+  for flag, rgb in pairs(byFlag) do
+    local index = (flag >> 16) & 0xFF
+    if index < THEME_COLOR_COUNT then
+      COLOR_RGB[index] = { rgb[1], rgb[2], rgb[3] }
+    end
+  end
+end
+
+local function rgb565(r, g, b)
+  return ((r & 0xF8) << 8) + ((g & 0xFC) << 3) + ((b & 0xF8) >> 3)
+end
+
+-- lcd.getColor(flags): api_colorlcd.cpp:968, guard included.
+--
+--   if ((flags & RGB_FLAG) || (COLOR_VAL(flags) & 0xFF) < THEME_COLOR_COUNT)
+--
+-- so it resolves RGB flags and the fourteen THEME indices - and returns NIL
+-- for every FIXED literal (RED, GREEN, WHITE, ...), whose index is >= 14.
+-- That asymmetry is the firmware's, and it is modelled rather than smoothed
+-- over: theme.lua's labelOn() has to cope with a nil for exactly this reason.
+lcd.getColor = function(flags)
+  if type(flags) ~= "number" then return nil end
+  if (flags & 0x8000) ~= 0 then
+    return (flags & 0xFFFF0000) | 0x8000
+  end
+  local index = (flags >> 16) & 0xFF
+  if index >= THEME_COLOR_COUNT then return nil end
+  local c = COLOR_RGB[index]
+  if not c then return nil end
+  return (rgb565(c[1], c[2], c[3]) << 16) | 0x8000
+end
 
 -- ---- simulated radio state ----------------------------------------------
 
@@ -332,23 +428,20 @@ local function install(env)
   env.lvgl = lvgl
   env.lcd = lcd
 
-  -- colours (api_colorlcd.cpp COLOR2FLAGS values; only identity matters here)
-  env.RED = 0x2000
-  env.GREEN = 0x4000
-  env.WHITE = 0x5000
-  env.BLACK = 0x5001
-  env.YELLOW = 0x5002
-  env.COLOR_THEME_PRIMARY1 = 0x1001
-  env.COLOR_THEME_PRIMARY2 = 0x1002
-  env.COLOR_THEME_PRIMARY3 = 0x1003
-  env.COLOR_THEME_SECONDARY1 = 0x2001
-  env.COLOR_THEME_SECONDARY2 = 0x2002
-  env.COLOR_THEME_SECONDARY3 = 0x2003
-  env.COLOR_THEME_FOCUS = 0x3001
-  env.COLOR_THEME_EDIT = 0x3002
-  env.COLOR_THEME_ACTIVE = 0x3003
-  env.COLOR_THEME_WARNING = 0x4001
-  env.COLOR_THEME_DISABLED = 0x5001
+  -- Colours: the REAL Lua values, COLOR2FLAGS(index) = index << 16
+  -- (api_colorlcd.cpp:1418 LROT_NUMENTRY). Identity used to be all that
+  -- mattered, and the invented values collided - BLACK and
+  -- COLOR_THEME_DISABLED were both 0x5001, so a test could not have told the
+  -- two apart. They also made lcd.getColor unmodellable, which is how the
+  -- widget came to believe no API could read a theme colour (Tanda 8 §1).
+  --
+  -- Note COLOR_THEME_PRIMARY1 == 0: any `if flag then` test on a colour is a
+  -- latent bug, and now the harness can catch it.
+  for name, index in pairs(COLOR_INDEX) do
+    local key = (string.sub(name, 1, 6) == "THEME_")
+      and ("COLOR_" .. name) or name
+    env[key] = index << 16
+  end
 
   -- font flags (etcxcst): font index << 8
   env.STDSIZE = 0x000

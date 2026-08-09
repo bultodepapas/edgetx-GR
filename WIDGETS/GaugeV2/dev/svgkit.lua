@@ -41,45 +41,95 @@ end
 -- run, so a palette captured at require time would key everything on nil.
 local palettes = nil
 
+-- THE PALETTES ARE REAL (Tanda 8 F7). They used to be invented.
+--
+-- The old "dark" and "light" tables were a designer's colour scheme: a green
+-- COLOR_THEME_ACTIVE, an amber COLOR_THEME_WARNING, grey SECONDARY roles, a
+-- near-black background. EdgeTX's actual stock theme has a YELLOW ACTIVE, a
+-- RED WARNING, BLUE SECONDARY roles and a near-WHITE background. So every
+-- design review this repo has ever run - Tanda 5's, Tanda 7's before/after,
+-- and the first draft of the Tanda 8 plan - judged colours the radio never
+-- draws, and the stock case, which is LIGHT, was never once reviewed.
+--
+-- That is how the normal state shipped at 1.13:1 through four review rounds.
+--
+-- `stock` is gui/colorlcd/colors.cpp defaultColors, byte for byte. `dark` is
+-- a representative community dark theme built on the roles' published meaning
+-- (github.com/EdgeTX/themes/blob/main/structure.md) - not a re-skin, because
+-- the point of a second palette is to test that the widget follows a theme it
+-- was not designed against.
 local function buildPalettes()
   return {
+    -- ---- EdgeTX stock, compiled into every radio -------------------------
+    stock = {
+      name = "stock",
+      bg = "#c8d8de", panel = "#e4eef2", ink = "#000000", dim = "#125e99",
+      rule = "#b6e0f2", accent = "#125e99",
+      [COLOR_THEME_PRIMARY1] = "#000000", [COLOR_THEME_PRIMARY2] = "#ffffff",
+      [COLOR_THEME_PRIMARY3] = "#0c3f66", [COLOR_THEME_SECONDARY1] = "#125e99",
+      [COLOR_THEME_SECONDARY2] = "#b6e0f2", [COLOR_THEME_SECONDARY3] = "#e4eef2",
+      [COLOR_THEME_FOCUS] = "#14a1e5", [COLOR_THEME_EDIT] = "#009909",
+      [COLOR_THEME_ACTIVE] = "#ffde00", [COLOR_THEME_WARNING] = "#e00000",
+      [COLOR_THEME_DISABLED] = "#8c8c8c",
+      [RED] = "#ff0000", [WHITE] = "#ffffff", [BLACK] = "#000000",
+    },
+    -- ---- a real dark theme ------------------------------------------------
+    -- PRIMARY1 is the theme's ink, so a dark theme inverts it to near-white;
+    -- PRIMARY2 inverts with it (they are the "ink on background" / "ink on
+    -- chrome" pair). The needle and the value are PRIMARY1, so this palette is
+    -- what proves both stay legible on a theme nobody designed them against.
     dark = {
       name = "dark",
-      bg = "#12161c", panel = "#171c24", ink = "#e8ecf1", dim = "#8fa0b3",
-      rule = "#273140", accent = "#2f81f7",
-      [COLOR_THEME_PRIMARY1] = "#e8ecf1", [COLOR_THEME_PRIMARY2] = "#9fb2c6",
-      [COLOR_THEME_PRIMARY3] = "#5b6b7c", [COLOR_THEME_SECONDARY1] = "#8fa0b3",
-      [COLOR_THEME_SECONDARY2] = "#48586a", [COLOR_THEME_SECONDARY3] = "#1c2430",
-      [COLOR_THEME_FOCUS] = "#2f81f7", [COLOR_THEME_EDIT] = "#f0883e",
-      [COLOR_THEME_ACTIVE] = "#3fb950", [COLOR_THEME_WARNING] = "#e3b341",
-      [COLOR_THEME_DISABLED] = "#6b7684",
-      [RED] = "#f85149", [WHITE] = "#ffffff", [BLACK] = "#000000",
-    },
-    -- EdgeTX's light theme inverts the PRIMARY ramp: PRIMARY1 becomes the dark
-    -- ink colour. The needle is PRIMARY1 (theme.lua), so this palette is what
-    -- proves the "needle always contrasts" rule holds in BOTH themes and not
-    -- just against the dark background it was designed on.
-    light = {
-      name = "light",
-      bg = "#eef1f5", panel = "#f7f9fb", ink = "#12161c", dim = "#5b6b7c",
-      rule = "#c9d1da", accent = "#0969da",
-      [COLOR_THEME_PRIMARY1] = "#12161c", [COLOR_THEME_PRIMARY2] = "#3d4b5c",
-      [COLOR_THEME_PRIMARY3] = "#8fa0b3", [COLOR_THEME_SECONDARY1] = "#5b6b7c",
-      [COLOR_THEME_SECONDARY2] = "#c3ccd6", [COLOR_THEME_SECONDARY3] = "#ffffff",
-      [COLOR_THEME_FOCUS] = "#0969da", [COLOR_THEME_EDIT] = "#bc4c00",
-      [COLOR_THEME_ACTIVE] = "#1a7f37", [COLOR_THEME_WARNING] = "#9a6700",
-      [COLOR_THEME_DISABLED] = "#9aa4b0",
-      [RED] = "#cf222e", [WHITE] = "#ffffff", [BLACK] = "#000000",
+      bg = "#1a1a1a", panel = "#303030", ink = "#ffffff", dim = "#9fb4c8",
+      rule = "#4a4a4a", accent = "#4aa3df",
+      [COLOR_THEME_PRIMARY1] = "#ffffff", [COLOR_THEME_PRIMARY2] = "#000000",
+      [COLOR_THEME_PRIMARY3] = "#c8dcea", [COLOR_THEME_SECONDARY1] = "#9fb4c8",
+      [COLOR_THEME_SECONDARY2] = "#26424f", [COLOR_THEME_SECONDARY3] = "#303030",
+      [COLOR_THEME_FOCUS] = "#14a1e5", [COLOR_THEME_EDIT] = "#00b40c",
+      [COLOR_THEME_ACTIVE] = "#ffde00", [COLOR_THEME_WARNING] = "#e00000",
+      [COLOR_THEME_DISABLED] = "#6e6e6e",
+      [RED] = "#ff0000", [WHITE] = "#ffffff", [BLACK] = "#000000",
     },
   }
 end
 
+-- `stock` is the default: it is what a radio out of the box draws, and the
+-- case that went unreviewed for four rounds precisely because it was not.
 function M.palette(name)
   if not palettes then palettes = buildPalettes() end
-  return palettes[name or "dark"] or palettes.dark
+  return palettes[name or "stock"] or palettes.stock
 end
 
-function M.paletteNames() return { "dark", "light" } end
+function M.paletteNames() return { "stock", "dark" } end
+
+-- The palette's THEME roles as { r, g, b }, keyed by the COLOR_THEME_* flag -
+-- the form tests/mock_env.lua's setThemeColors wants.
+--
+-- A tool that renders a theme must also LET THE WIDGET SEE IT: theme.labelOn
+-- reads the theme's text roles through lcd.getColor to pick the badge ink, so
+-- rendering dark while the mock still answers stock paints an ink the radio
+-- would not have chosen (measured: white on the amber badge at 3.94:1, where
+-- the radio would have picked black at 5.32:1).
+local ROLE_FLAGS = nil
+function M.themeColors(name)
+  local pal = M.palette(name)
+  if not ROLE_FLAGS then
+    ROLE_FLAGS = { COLOR_THEME_PRIMARY1, COLOR_THEME_PRIMARY2,
+      COLOR_THEME_PRIMARY3, COLOR_THEME_SECONDARY1, COLOR_THEME_SECONDARY2,
+      COLOR_THEME_SECONDARY3, COLOR_THEME_FOCUS, COLOR_THEME_EDIT,
+      COLOR_THEME_ACTIVE, COLOR_THEME_WARNING, COLOR_THEME_DISABLED }
+  end
+  local out = {}
+  for _, flag in ipairs(ROLE_FLAGS) do
+    local hex = pal[flag]
+    if hex then
+      out[flag] = { tonumber(string.sub(hex, 2, 3), 16),
+                    tonumber(string.sub(hex, 4, 5), 16),
+                    tonumber(string.sub(hex, 6, 7), 16) }
+    end
+  end
+  return out
+end
 
 -- ------------------------------------------------------------------ escape --
 
@@ -164,13 +214,22 @@ end
 
 function Canvas:color(flags, fallback)
   if flags == nil then return fallback or "none" end
+  -- RGB flags first: an lcd.RGB() literal carries its own colour and must NOT
+  -- be looked up in the theme palette. It is checked before the table because
+  -- the widget's own status colours are now literals (theme.lua), and they are
+  -- the same on every theme by design.
+  --
+  -- The encoding is the firmware's: RGB565 in the high 16 bits, RGB_FLAG
+  -- (0x8000) in the low. The 5/6/5 quantisation is applied on the way out, so
+  -- the render shows the colour the PANEL shows rather than the 24-bit colour
+  -- the source asked for.
+  if (flags & 0x8000) ~= 0 then
+    local v = (flags >> 16) & 0xFFFF
+    local r, g, b = (v & 0xF800) >> 8, (v & 0x07E0) >> 3, (v & 0x001F) << 3
+    return fmt("#%02x%02x%02x", r | (r >> 5), g | (g >> 6), b | (b >> 5))
+  end
   local c = self.pal[flags]
   if c then return c end
-  -- lcd.RGB() results (Gradient mode) are packed literals, not theme roles.
-  if flags > 0x100000 then
-    local v = flags - 0x100000
-    return fmt("#%02x%02x%02x", (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff)
-  end
   return fallback or "#ff00ff"   -- magenta: an unmapped colour must be loud
 end
 

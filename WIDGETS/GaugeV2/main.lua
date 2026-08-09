@@ -65,13 +65,19 @@ local DEFS = {
     choices = { "Off", "Markers", "Markers + text" } },
 
   -- ---- appended: 2.12+ only (fifty slots) -------------------------------
-  -- Default green (COLOR_THEME_ACTIVE), not the theme primary: on 2.12+
-  -- this option is always populated (COLOR options have no "unedited"
-  -- sentinel the way choices do), so its default IS the normal-state
-  -- colour everyone sees until they pick their own - it must match
-  -- theme.lua's M.color.accent (owner request, Tanda 5).
+  -- On 2.12+ this option is always populated (COLOR options have no
+  -- "unedited" sentinel the way choices do), so its default IS the
+  -- normal-state colour everyone sees until they pick their own - it must
+  -- match theme.lua's M.color.accent or the option silently shadows the
+  -- fallback and 2.12+ radios never see it (pinned by a test).
+  --
+  -- It used to be COLOR_THEME_ACTIVE, a CHECKED-control background role that
+  -- is #ffde00 on the stock theme: 1.13:1 against the stock screen, i.e. an
+  -- invisible "all clear" (Tanda 8 F0). The literal here is duplicated from
+  -- theme.lua deliberately - main.lua stays data-only, because it is read at
+  -- boot for every widget on the card, used or not.
   { key = "Accent", label = "Accent colour", type = COLOR, field = "accent",
-    since = 212, default = COLOR_THEME_ACTIVE },
+    since = 212, default = lcd.RGB(0x20, 0x90, 0x58) },
   { key = "Label", label = "Name override", type = STRING, field = "label",
     since = 212, default = "" },
   { key = "Suffix", label = "Unit override", type = STRING, field = "suffix",

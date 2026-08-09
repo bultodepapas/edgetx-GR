@@ -341,22 +341,24 @@ test("P0-3: a descending scale still draws sections, rails and bar marks", funct
 end)
 
 test("threshold colouring reaches the objects", function()
+  local T = dofile(widgetDir .. "theme.lua")
   local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold" })
   mock.setValue(ID_RSSI, 70); refresh(w)
   assertEq(w.frame.colorKey, "normal")
   mock.setValue(ID_RSSI, 45); refresh(w, 2)
   assertEq(w.frame.colorKey, "warning")
-  assertEq(w.ui.valueArc.props.color, COLOR_THEME_WARNING)
+  assertEq(w.ui.valueArc.props.color, T.color.warn)
   mock.setValue(ID_RSSI, 10); refresh(w, 2)
   assertEq(w.frame.colorKey, "critical")
-  assertEq(w.ui.valueLabel.props.color, RED)
+  assertEq(w.ui.valueLabel.props.color, T.color.crit)
 end)
 
 test("the normal state defaults to green, not the accent colour", function()
+  local T = dofile(widgetDir .. "theme.lua")
   local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold" })
   mock.setValue(ID_RSSI, 70); refresh(w)
   assertEq(w.frame.colorKey, "normal")
-  assertEq(w.ui.valueArc.props.color, COLOR_THEME_ACTIVE,
+  assertEq(w.ui.valueArc.props.color, T.color.accent,
     "normal state is green by default (owner request, Tanda 5)")
 
   local w2 = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold",
@@ -364,6 +366,205 @@ test("the normal state defaults to green, not the accent colour", function()
   mock.setValue(ID_RSSI, 70); refresh(w2)
   assertEq(w2.ui.valueArc.props.color, COLOR_THEME_FOCUS,
     "an explicit Accent still overrides the green default")
+end)
+
+-- ---------------------------------------------------------------- Tanda 8 --
+
+test("F0: the status colours are not UI-background roles", function()
+  -- A pin on the ROLE CHOICE, which is what this repo controls - not on a
+  -- ratio, which depends on the user's theme. COLOR_THEME_ACTIVE is the
+  -- background of a CHECKED control; on the stock theme it is #ffde00, 1.13:1
+  -- against the screen background, and it used to be the "all clear" colour.
+  local T = dofile(widgetDir .. "theme.lua")
+  for _, role in ipairs({ COLOR_THEME_ACTIVE, COLOR_THEME_SECONDARY2,
+                          COLOR_THEME_SECONDARY3, COLOR_THEME_EDIT }) do
+    for _, key in ipairs({ "accent", "warn", "crit" }) do
+      assertTrue(T.color[key] ~= role,
+        key .. " must not be a UI-background role")
+    end
+  end
+  -- and they must be resolvable: labelOn cannot pick an ink for a colour the
+  -- firmware will not decode (lcd.getColor returns nil for fixed literals).
+  for _, key in ipairs({ "accent", "warn", "crit" }) do
+    local r = T.rgbOf(T.color[key])
+    assertTrue(r ~= nil, key .. " must decode to an RGB value")
+  end
+end)
+
+test("F0: every fixed colour clears 3:1 on a light AND a dark background",
+function()
+  -- The rule a fixed colour has to satisfy and a theme ROLE does not: a role
+  -- travels with the theme whose author chose it, a literal does not, so it
+  -- must clear the WCAG 1.4.11 non-text floor against every background it can
+  -- land on. Stock EdgeTX is #e4eef2; the dark reference is #303030.
+  local T = dofile(widgetDir .. "theme.lua")
+  local function ratio(a, b)
+    local hi, lo = math.max(a, b), math.min(a, b)
+    return (hi + 0.05) / (lo + 0.05)
+  end
+  -- RGB565 is what the panel stores, so measure what it will actually show.
+  local function q(r, g, b)
+    r, g, b = (r >> 3) << 3, (g >> 2) << 2, (b >> 3) << 3
+    return r | (r >> 5), g | (g >> 6), b | (b >> 5)
+  end
+  local light = T.luminance(0xe4, 0xee, 0xf2)
+  local dark = T.luminance(0x30, 0x30, 0x30)
+  for _, key in ipairs({ "accent", "warn", "crit" }) do
+    local l = T.luminance(q(T.rgbOf(T.color[key])))
+    assertTrue(ratio(l, light) >= 3.0,
+      key .. " fails 3:1 on the stock light background")
+    assertTrue(ratio(l, dark) >= 3.0,
+      key .. " fails 3:1 on a dark theme background")
+  end
+  -- The gradient ramp is held inside the same window by construction: every
+  -- quantised step, not just its endpoints.
+  for step = 0, 20 do
+    local l = T.luminance(q(T.rgbOf(T.gradientColor(step / 20))))
+    assertTrue(ratio(l, light) >= 3.0 and ratio(l, dark) >= 3.0,
+      "gradient step " .. step .. " leaves the legible luminance window")
+  end
+end)
+
+test("F0: main.lua's Accent default matches theme.lua's accent", function()
+  -- theme.lua's own contract: on 2.12+ the COLOR option is always populated,
+  -- so a mismatched default silently shadows the fallback and those radios
+  -- never see it.
+  local mod = dofile(widgetDir .. "main.lua")
+  local accent
+  for _, d in ipairs(mod.defs) do if d.key == "Accent" then accent = d end end
+  local T = dofile(widgetDir .. "theme.lua")
+  assertEq(accent.default, T.color.accent, "Accent default tracks the theme")
+end)
+
+test("S3: the status colour never reaches the DATA text", function()
+  -- The channel split (Tanda 8 §3): the arc carries the state, the value
+  -- carries the number. Critical is the one exception, and muted recedes.
+  local T = dofile(widgetDir .. "theme.lua")
+  for _, mode in ipairs({ "Threshold", "Rail", "Sections", "Gradient",
+                          "Static" }) do
+    local w = newWidget(nil, { Source = ID_RSSI, ColorMode = mode })
+    mock.setValue(ID_RSSI, 70); refresh(w, 2)
+    assertEq(w.ui.valueLabel.props.color, T.color.value,
+      mode .. ": a normal value must use the theme ink role")
+    mock.setValue(ID_RSSI, 45); refresh(w, 2)
+    assertEq(w.ui.valueLabel.props.color, T.color.value,
+      mode .. ": a WARNING value must stay on the theme ink role")
+    mock.setValue(ID_RSSI, 10); refresh(w, 2)
+    assertEq(w.ui.valueLabel.props.color, T.color.crit,
+      mode .. ": critical is the one state that tints the value")
+  end
+end)
+
+test("F8: the state chip is a filled badge, not an outline", function()
+  -- The pill's FILL carries the status colour and its label takes an ink role
+  -- chosen against that fill. It used to be the other way round: a
+  -- SECONDARY2 fill (1.19:1 against the stock screen - invisible) with CRIT
+  -- printed on it at 2.91:1, under the floor.
+  local T = dofile(widgetDir .. "theme.lua")
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold" })
+  local R = w.mods.renderer
+  mock.setValue(ID_RSSI, 10); refresh(w, 2)
+  assertEq(R.stateText(w), "CRIT")
+  assertEq(w.ui.chip.props.color, T.color.crit, "the fill IS the status colour")
+  assertTrue(w.ui.chip.props.color ~= COLOR_THEME_SECONDARY2,
+             "and never a label-background role")
+  local ink = w.ui.stateLabel.props.color
+  assertTrue(ink == T.color.inkDark or ink == T.color.inkLite,
+             "the label takes a theme ink role, not the status colour")
+
+  -- and the badge follows the STATE, not the frame's colour key: in Gradient
+  -- mode the key is "grad0", which used to leave CRIT on an all-clear fill.
+  local g = newWidget(nil, { Source = ID_RSSI, ColorMode = "Gradient" })
+  mock.setValue(ID_RSSI, 10); refresh(g, 2)
+  assertEq(R.stateText(g), "CRIT")
+  assertEq(g.ui.chip.props.color, T.color.crit,
+    "a CRIT badge is red in Gradient mode too")
+  local s = newWidget(nil, { Source = ID_RSSI, ColorMode = "Static" })
+  mock.setValue(ID_RSSI, 45); refresh(s, 2)
+  assertEq(R.stateText(s), "WARN")
+  assertEq(s.ui.chip.props.color, T.color.warn,
+    "Static mode pins the ARC, never the badge")
+end)
+
+test("F8: labelOn picks the ink that actually contrasts with the fill",
+function()
+  local T = dofile(widgetDir .. "theme.lua")
+  local function ratio(a, b)
+    local hi, lo = math.max(a, b), math.min(a, b)
+    return (hi + 0.05) / (lo + 0.05)
+  end
+  for _, fill in ipairs({ T.color.accent, T.color.warn, T.color.crit,
+                          T.color.muted }) do
+    local ink = T.labelOn(fill)
+    local lf = T.luminance(T.rgbOf(fill))
+    local li = T.luminance(T.rgbOf(ink))
+    assertTrue(ratio(lf, li) >= 4.5,
+      "badge label must clear 4.5:1 against its own fill")
+  end
+  -- A fill the firmware will not decode must not crash or return nil.
+  assertTrue(T.labelOn(RED) ~= nil, "an undecodable fill still yields an ink")
+end)
+
+test("F9: ShowChip=Off keeps the badge for WARN and CRIT", function()
+  -- Colour is the ONLY channel separating normal from warning, and a
+  -- deuteranope cannot separate this widget's warning from its critical by
+  -- hue at all (measured distance 25.6, well inside the ~60 confusion
+  -- threshold). The option may hide the informational pills; it may not hide
+  -- a safety signal.
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold",
+                             ShowChip = false })
+  local R = w.mods.renderer
+  mock.setValue(ID_RSSI, 70); refresh(w, 2)
+  assertEq(R.stateText(w), "", "the normal state never had a chip to hide")
+  assertTrue(not w.ui.chip.visible, "and none is shown")
+
+  mock.setValue(ID_RSSI, 45); refresh(w, 2)
+  assertEq(R.stateText(w), "WARN")
+  assertTrue(w.ui.chip.visible, "WARN survives ShowChip = Off")
+
+  mock.setValue(ID_RSSI, 10); refresh(w, 2)
+  assertEq(R.stateText(w), "CRIT")
+  assertTrue(w.ui.chip.visible, "so does CRIT")
+
+  -- what the option DOES still buy: the informational pills go away
+  mock.sim.rssi = 0
+  mock.setValue(ID_RSSI, nil); refresh(w, 3)
+  assertEq(R.stateText(w), "NO LINK")
+  assertTrue(not w.ui.chip.visible, "NO LINK is still suppressed")
+  -- ...pill AND text. A hidden pill with a visible label leaves the words
+  -- floating bare on the dial (found by looking at the render, not by any
+  -- assertion here - nothing else in the suite covered it).
+  assertTrue(not w.ui.stateLabel.visible, "and its text goes with it")
+  assertTrue(not w.ui.chipEdge.visible, "and its outline")
+end)
+
+test("F9: the badge text never outlives its pill", function()
+  -- The general form of the bug above: chip, outline and label are one
+  -- object, so their visibility may never disagree - in ANY state, with the
+  -- option on or off, on the dial or the bar.
+  for _, style in ipairs({ "Needle", "Bar" }) do
+    for _, chip in ipairs({ true, false }) do
+      local w = newWidget({ x = 0, y = 0, w = 300, h = 160 },
+        { Source = ID_RSSI, Style = style, ShowChip = chip })
+      for _, v in ipairs({ 78, 45, 10 }) do
+        mock.setValue(ID_RSSI, v); refresh(w, 2)
+        if w.ui.chip then
+          assertEq(w.ui.stateLabel.visible, w.ui.chip.visible,
+            string.format("%s chip=%s value=%d: label and pill disagree",
+                          style, tostring(chip), v))
+          assertEq(w.ui.chipEdge.visible, w.ui.chip.visible,
+            "outline and pill disagree")
+        end
+      end
+      mock.sim.rssi = 0
+      mock.setValue(ID_RSSI, nil); refresh(w, 3)
+      if w.ui.chip then
+        assertEq(w.ui.stateLabel.visible, w.ui.chip.visible,
+          "muted: label and pill disagree")
+      end
+      mock.sim.rssi = 100
+    end
+  end
 end)
 
 test("the needle keeps a fixed colour across every state", function()
@@ -901,7 +1102,12 @@ test("P-B: the state chip gains padding, vertical centring and an edge", functio
   assertEq(edge.y, w.ui.chip.props.y - 1, "edge hugs the pill top")
   assertEq(edge.w, w.ui.chip.props.w + 2, "edge hugs the pill right")
   assertEq(edge.h, w.ui.chip.props.h + 2, "edge hugs the pill bottom")
-  assertEq(edge.color, COLOR_THEME_SECONDARY1, "edge in the lighter label role")
+  -- The outline takes the badge's own ink, not the label role (Tanda 8 F8):
+  -- over a coloured fill, a chrome-coloured hairline is a third colour that
+  -- belongs to neither the badge nor the state.
+  local T8 = dofile(widgetDir .. "theme.lua")
+  assertEq(edge.color, T8.labelOn(w.ui.chip.props.color),
+    "edge matches the badge ink")
   assertTrue(objIndex(w.ui.chipEdge) < objIndex(w.ui.chip)
     and objIndex(w.ui.chip) < objIndex(w.ui.stateLabel),
     "paint order: edge, pill, text")
@@ -919,14 +1125,18 @@ test("P-B: the bar chip gets the same padding, centring and edge", function()
   assertEq(w.ui.chip.props.y, L.stateBox.y - off, "bar pill is centred")
 end)
 
-test("ShowChip=Off hides the state pill even when critical", function()
+test("ShowChip=Off still builds the pill, and hides only the quiet ones",
+function()
+  -- REPLACES "ShowChip=Off hides the state pill even when critical", which
+  -- pinned the behaviour Tanda 8 F9 exists to change: the option used to
+  -- suppress WARN and CRIT as well, leaving hue as the only state signal for
+  -- a population ~8 % of whom cannot read it.
   local w = newWidget(nil, { Source = ID_RSSI, ShowChip = false })
   mock.setValue(ID_RSSI, 5)
   refresh(w)
   assertEq(w.data.state, "critical")
-  assertEq(w.ui.chip, nil, "chip never built when ShowChip is off")
-  assertEq(w.ui.chipEdge, nil)
-  assertEq(w.ui.stateLabel, nil)
+  assertTrue(w.ui.chip ~= nil, "the pill is always built; visibility decides")
+  assertTrue(w.ui.chip.visible, "CRIT is a safety signal, not decoration")
 end)
 
 test("ShowChip defaults to on", function()
@@ -1165,7 +1375,12 @@ test("G-3: an elapsed timer says WARN, not CRIT in warning colour", function()
   refresh(w)
   assertEq(w.data.state, "critical", "the raw state is critical (below scale min)")
   assertEq(w.frame.stateStr, "WARN", "the chip says what the arc paints")
-  assertEq(w.ui.stateLabel.props.color, COLOR_THEME_WARNING)
+  -- and the badge is painted amber: the status colour is now the pill's FILL,
+  -- not its text (Tanda 8 F8), so this is where the "what the arc paints"
+  -- contract is checked.
+  local T = dofile(widgetDir .. "theme.lua")
+  assertEq(w.ui.chip.props.color, T.color.warn)
+  assertEq(w.ui.stateLabel.props.color, T.labelOn(T.color.warn))
   assertEq(w.ui.chip.visible, true, "the chip is shown for the warning")
 end)
 
