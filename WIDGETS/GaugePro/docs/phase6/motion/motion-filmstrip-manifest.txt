@@ -1,0 +1,105 @@
+stock|Refined / semantic colour transition|0|warning|valid|refined|0|0
+stock|Refined / semantic colour transition|50|warning|valid|refined|0|0
+stock|Refined / semantic colour transition|100|warning|valid|refined|0|0
+stock|Refined / semantic colour transition|150|warning|valid|refined|0|0
+stock|Refined / semantic colour transition|200|warning|valid|refined|0|0
+stock|Expressive / rearmable one-shot head|0|normal|valid|expressive|2|0
+stock|Expressive / rearmable one-shot head|50|normal|valid|expressive|2|0
+stock|Expressive / rearmable one-shot head|100|normal|valid|expressive|2|0
+stock|Expressive / rearmable one-shot head|200|normal|valid|expressive|1|0
+stock|Expressive / rearmable one-shot head|300|normal|valid|expressive|0|0
+stock|Refined Blocks / segment activation settle|0|normal|valid|refined|0|2
+stock|Refined Blocks / segment activation settle|50|normal|valid|refined|0|2
+stock|Refined Blocks / segment activation settle|100|normal|valid|refined|0|1
+stock|Refined Blocks / segment activation settle|160|normal|valid|refined|0|0
+stock|Refined Blocks / segment activation settle|220|normal|valid|refined|0|0
+stock|Essential / truthful dropout fade|0|muted|unavailable|essential|0|0
+stock|Essential / truthful dropout fade|50|muted|unavailable|essential|0|0
+stock|Essential / truthful dropout fade|100|muted|unavailable|essential|0|0
+stock|Essential / truthful dropout fade|150|muted|unavailable|essential|0|0
+stock|Essential / truthful dropout fade|200|muted|unavailable|essential|0|0
+stock|Refined / immediate CRIT and calm 1 Hz breath|0|critical|valid|refined|0|0
+stock|Refined / immediate CRIT and calm 1 Hz breath|250|critical|valid|refined|0|0
+stock|Refined / immediate CRIT and calm 1 Hz breath|500|critical|valid|refined|0|0
+stock|Refined / immediate CRIT and calm 1 Hz breath|750|critical|valid|refined|0|0
+stock|Refined / immediate CRIT and calm 1 Hz breath|1000|critical|valid|refined|0|0
+stock|Vertical Steps / the same motion grammar|0|normal|valid|refined|0|2
+stock|Vertical Steps / the same motion grammar|50|normal|valid|refined|0|2
+stock|Vertical Steps / the same motion grammar|100|normal|valid|refined|0|1
+stock|Vertical Steps / the same motion grammar|160|normal|valid|refined|0|0
+stock|Vertical Steps / the same motion grammar|220|normal|valid|refined|0|0
+stock|Micro / Expressive automatically reduces to Refined|0|normal|valid|refined|0|0
+stock|Micro / Expressive automatically reduces to Refined|50|normal|valid|refined|0|0
+stock|Micro / Expressive automatically reduces to Refined|100|normal|valid|refined|0|0
+stock|Micro / Expressive automatically reduces to Refined|200|normal|valid|refined|0|0
+stock|Micro / Expressive automatically reduces to Refined|300|normal|valid|refined|0|0
+dark|Refined / semantic colour transition|0|warning|valid|refined|0|0
+dark|Refined / semantic colour transition|50|warning|valid|refined|0|0
+dark|Refined / semantic colour transition|100|warning|valid|refined|0|0
+dark|Refined / semantic colour transition|150|warning|valid|refined|0|0
+dark|Refined / semantic colour transition|200|warning|valid|refined|0|0
+dark|Expressive / rearmable one-shot head|0|normal|valid|expressive|2|0
+dark|Expressive / rearmable one-shot head|50|normal|valid|expressive|2|0
+dark|Expressive / rearmable one-shot head|100|normal|valid|expressive|2|0
+dark|Expressive / rearmable one-shot head|200|normal|valid|expressive|1|0
+dark|Expressive / rearmable one-shot head|300|normal|valid|expressive|0|0
+dark|Refined Blocks / segment activation settle|0|normal|valid|refined|0|2
+dark|Refined Blocks / segment activation settle|50|normal|valid|refined|0|2
+dark|Refined Blocks / segment activation settle|100|normal|valid|refined|0|1
+dark|Refined Blocks / segment activation settle|160|normal|valid|refined|0|0
+dark|Refined Blocks / segment activation settle|220|normal|valid|refined|0|0
+dark|Essential / truthful dropout fade|0|muted|unavailable|essential|0|0
+dark|Essential / truthful dropout fade|50|muted|unavailable|essential|0|0
+dark|Essential / truthful dropout fade|100|muted|unavailable|essential|0|0
+dark|Essential / truthful dropout fade|150|muted|unavailable|essential|0|0
+dark|Essential / truthful dropout fade|200|muted|unavailable|essential|0|0
+dark|Refined / immediate CRIT and calm 1 Hz breath|0|critical|valid|refined|0|0
+dark|Refined / immediate CRIT and calm 1 Hz breath|250|critical|valid|refined|0|0
+dark|Refined / immediate CRIT and calm 1 Hz breath|500|critical|valid|refined|0|0
+dark|Refined / immediate CRIT and calm 1 Hz breath|750|critical|valid|refined|0|0
+dark|Refined / immediate CRIT and calm 1 Hz breath|1000|critical|valid|refined|0|0
+dark|Vertical Steps / the same motion grammar|0|normal|valid|refined|0|2
+dark|Vertical Steps / the same motion grammar|50|normal|valid|refined|0|2
+dark|Vertical Steps / the same motion grammar|100|normal|valid|refined|0|1
+dark|Vertical Steps / the same motion grammar|160|normal|valid|refined|0|0
+dark|Vertical Steps / the same motion grammar|220|normal|valid|refined|0|0
+dark|Micro / Expressive automatically reduces to Refined|0|normal|valid|refined|0|0
+dark|Micro / Expressive automatically reduces to Refined|50|normal|valid|refined|0|0
+dark|Micro / Expressive automatically reduces to Refined|100|normal|valid|refined|0|0
+dark|Micro / Expressive automatically reduces to Refined|200|normal|valid|refined|0|0
+dark|Micro / Expressive automatically reduces to Refined|300|normal|valid|refined|0|0
+highcontrast|Refined / semantic colour transition|0|warning|valid|refined|0|0
+highcontrast|Refined / semantic colour transition|50|warning|valid|refined|0|0
+highcontrast|Refined / semantic colour transition|100|warning|valid|refined|0|0
+highcontrast|Refined / semantic colour transition|150|warning|valid|refined|0|0
+highcontrast|Refined / semantic colour transition|200|warning|valid|refined|0|0
+highcontrast|Expressive / rearmable one-shot head|0|normal|valid|expressive|2|0
+highcontrast|Expressive / rearmable one-shot head|50|normal|valid|expressive|2|0
+highcontrast|Expressive / rearmable one-shot head|100|normal|valid|expressive|2|0
+highcontrast|Expressive / rearmable one-shot head|200|normal|valid|expressive|1|0
+highcontrast|Expressive / rearmable one-shot head|300|normal|valid|expressive|0|0
+highcontrast|Refined Blocks / segment activation settle|0|normal|valid|refined|0|2
+highcontrast|Refined Blocks / segment activation settle|50|normal|valid|refined|0|2
+highcontrast|Refined Blocks / segment activation settle|100|normal|valid|refined|0|1
+highcontrast|Refined Blocks / segment activation settle|160|normal|valid|refined|0|0
+highcontrast|Refined Blocks / segment activation settle|220|normal|valid|refined|0|0
+highcontrast|Essential / truthful dropout fade|0|muted|unavailable|essential|0|0
+highcontrast|Essential / truthful dropout fade|50|muted|unavailable|essential|0|0
+highcontrast|Essential / truthful dropout fade|100|muted|unavailable|essential|0|0
+highcontrast|Essential / truthful dropout fade|150|muted|unavailable|essential|0|0
+highcontrast|Essential / truthful dropout fade|200|muted|unavailable|essential|0|0
+highcontrast|Refined / immediate CRIT and calm 1 Hz breath|0|critical|valid|refined|0|0
+highcontrast|Refined / immediate CRIT and calm 1 Hz breath|250|critical|valid|refined|0|0
+highcontrast|Refined / immediate CRIT and calm 1 Hz breath|500|critical|valid|refined|0|0
+highcontrast|Refined / immediate CRIT and calm 1 Hz breath|750|critical|valid|refined|0|0
+highcontrast|Refined / immediate CRIT and calm 1 Hz breath|1000|critical|valid|refined|0|0
+highcontrast|Vertical Steps / the same motion grammar|0|normal|valid|refined|0|2
+highcontrast|Vertical Steps / the same motion grammar|50|normal|valid|refined|0|2
+highcontrast|Vertical Steps / the same motion grammar|100|normal|valid|refined|0|1
+highcontrast|Vertical Steps / the same motion grammar|160|normal|valid|refined|0|0
+highcontrast|Vertical Steps / the same motion grammar|220|normal|valid|refined|0|0
+highcontrast|Micro / Expressive automatically reduces to Refined|0|normal|valid|refined|0|0
+highcontrast|Micro / Expressive automatically reduces to Refined|50|normal|valid|refined|0|0
+highcontrast|Micro / Expressive automatically reduces to Refined|100|normal|valid|refined|0|0
+highcontrast|Micro / Expressive automatically reduces to Refined|200|normal|valid|refined|0|0
+highcontrast|Micro / Expressive automatically reduces to Refined|300|normal|valid|refined|0|0

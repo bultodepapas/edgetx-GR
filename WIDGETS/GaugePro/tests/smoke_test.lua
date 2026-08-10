@@ -253,7 +253,7 @@ test("Phase 1: Custom Three drives exact normal warning critical colors", functi
   local cyan = lcd.RGB(10, 180, 230)
   local w = newWidget({ x = 0, y = 0, w = 300, h = 70 }, {
     Source = ID_RSSI, Style = "Bar", Palette = "Custom 3",
-    Accent = purple, WarnClr = yellow, CritClr = cyan,
+    Accent = purple, WarnClr = yellow, CritClr = cyan, Motion = "Off",
   })
   mock.setValue(ID_RSSI, 70); refresh(w)
   assertEq(w.ui.fill.props.color, purple, "normal anchor")
@@ -694,7 +694,7 @@ end)
 test("Phase 2: a zero-position head hides and restores across data loss", function()
   local w = newWidget({ x = 0, y = 0, w = 300, h = 70 }, {
     Source = ID_STICK, Style = "Bar", Scale = "Manual",
-    Min = 0, Max = 100, Damping = 0,
+    Min = 0, Max = 100, Damping = 0, Motion = "Off",
   })
   mock.setValue(ID_STICK, 0); refresh(w)
   assertEq(w.ui.fill.visible, false, "zero has no false one-pixel fill")
@@ -940,7 +940,7 @@ test("Phase 3: Off Auto Strong contrast remain structural and color-exact", func
       Source = ID_RSSI, Style = "Bar", Palette = "Custom 3",
       Accent = grey, WarnClr = grey, CritClr = grey,
       Surface = "Custom colors", TrackClr = grey, PanelClr = grey,
-      Contrast = mode, Damping = 0,
+      Contrast = mode, Damping = 0, Motion = "Off",
     })
     refresh(w)
     return w
@@ -1156,7 +1156,7 @@ function()
     assertTrue(w.ui.pulseTargets[1] == w.ui.head,
       face .. " pulses only the exact position head")
 
-    mock.setValue(ID_STICK, nil); refresh(w)
+    mock.setValue(ID_STICK, nil); refresh(w, 5)
     assertEq(w.ui.head.visible, false, face .. " head leaves with the data")
     for _, cell in ipairs(w.ui.faceCells) do
       assertEq(cell.fraction, 0, face .. " clears active segments on dropout")
@@ -1168,6 +1168,216 @@ function()
       face .. " restores the active reading")
     assertEq(mock.objectCount(), count, face .. " recovery retains the tree")
   end
+end)
+
+-- ---- Phase 6 motion and micro-interactions -------------------------------
+
+test("Phase 6: all motion profiles switch in place and micro Expressive reduces",
+function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", Motion = "Off", Damping = 0,
+  })
+  refresh(w)
+  local objects = mock.objectCount()
+  local ui, retainedMotion = w.ui, w.motionState
+  local choices = {
+    { 3, "essential" }, { 4, "refined" }, { 5, "expressive" },
+    { 2, "off" },
+  }
+  local opts = w.options
+  for _, choice in ipairs(choices) do
+    opts = withOption(opts, "Motion", choice[1])
+    w.app.update(w, opts)
+    assertEq(w.layoutRebuilt, false, choice[2] .. " is non-structural")
+    refresh(w)
+    assertEq(w.barVisual.effectiveMotion, choice[2])
+    assertTrue(w.ui == ui, choice[2] .. " retains the LVGL tree")
+    assertTrue(w.motionState == retainedMotion,
+      choice[2] .. " retains the motion state table")
+    assertEq(mock.objectCount(), objects, choice[2] .. " creates no object")
+  end
+
+  local micro = newWidget({ x = 0, y = 0, w = 60, h = 40 }, {
+    Source = ID_RSSI, Style = "Bar", Motion = "Expressive", Damping = 0,
+  })
+  refresh(micro)
+  assertEq(micro.barVisual.profile.family, "micro")
+  assertEq(micro.barVisual.motion, "expressive", "authored choice is preserved")
+  assertEq(micro.barVisual.effectiveMotion, "refined")
+  assertEq(micro.barVisual.motionReduced, true)
+end)
+
+test("Phase 6: a non-structural source reset preserves face motion geometry",
+function()
+  local w, mod, opts = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_STICK, Style = "Bar", BarFace = "Blocks", Segments = "10",
+    Scale = "Manual", Min = 0, Max = 100, Warn = 55, Crit = 35,
+    Motion = "Refined", Damping = 0,
+  })
+  mock.setValue(ID_STICK, 60); refresh(w)
+  local ui, retainedMotion = w.ui, w.motionState
+  assertEq(w.motionState.settleAllowed, true)
+
+  opts = withOption(opts, "Source", ID_AIL)
+  mod.update(w, opts)
+  refresh(w)
+  assertTrue(w.ui == ui, "same presentation source edit keeps the LVGL tree")
+  assertTrue(w.motionState == retainedMotion, "source reset retains state table")
+  assertEq(w.motionState.settleAllowed, true,
+    "non-structural reset keeps built face geometry")
+
+  mock.setValue(ID_AIL, 90); refresh(w)
+  assertTrue(w.barRenderState.settleLevel > 0,
+    "segment settle remains active after the source edit")
+end)
+
+test("Phase 6: Refined badge is raw while color tween is bounded and exact",
+function()
+  local purple = lcd.RGB(112, 24, 184)
+  local yellow = lcd.RGB(248, 216, 24)
+  local cyan = lcd.RGB(16, 184, 232)
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", Palette = "Custom 3",
+    Accent = purple, WarnClr = yellow, CritClr = cyan,
+    Motion = "Refined", Damping = 0,
+  })
+  mock.setValue(ID_RSSI, 70); refresh(w)
+  assertEq(w.ui.fill.props.color, purple)
+
+  mock.setValue(ID_RSSI, 45); refresh(w)
+  assertEq(w.barRenderState.state, "warning", "raw state changes this frame")
+  assertEq(w.ui.chip.props.color, yellow, "WARN badge is immediate")
+  assertEq(w.ui.fill.props.color, purple, "fill begins at the prior endpoint")
+  assertEq(w.barRenderState.colorTransition, true)
+
+  refresh(w)
+  assertTrue(w.ui.fill.props.color ~= purple and w.ui.fill.props.color ~= yellow,
+    "the first quantized intermediate is visible")
+  refresh(w, 3)
+  assertEq(w.ui.fill.props.color, yellow, "warning endpoint exact by 200 ms")
+  assertEq(w.barRenderState.colorTransition, false)
+
+  mock.setValue(ID_RSSI, 20); refresh(w)
+  assertEq(w.barRenderState.state, "critical")
+  assertEq(w.ui.fill.props.color, cyan, "critical entry never waits for tween")
+  assertEq(w.ui.chip.props.color, cyan, "CRIT badge uses exact authored color")
+end)
+
+test("Phase 6: Motion Off keeps damping but removes optional effects", function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", Motion = "Off", Damping = 4,
+  })
+  mock.setValue(ID_RSSI, 90); refresh(w)
+  mock.setValue(ID_RSSI, 20); refresh(w)
+  assertEq(w.barRenderState.state, "critical", "raw alarm state is immediate")
+  assertTrue(w.barRenderState.smoothNormalized > w.barRenderState.rawNormalized,
+    "position still obeys Gauge damping")
+  assertEq(w.barRenderState.pulseMode, "off")
+  refresh(w, 20)
+  assertTrue(not w.frame.pulseActive and not w.frame.pulse,
+    "Off never starts a critical pulse")
+  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.full)
+end)
+
+test("Phase 6: Essential dropout fades last truth then removes geometry",
+function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", Motion = "Essential", Damping = 0,
+  })
+  mock.setValue(ID_RSSI, 72); refresh(w)
+  local objects = mock.objectCount()
+  local headPos = w.frame.headPos
+  mock.setValue(ID_RSSI, nil); refresh(w)
+  assertEq(w.barRenderState.valid, false, "raw availability is already false")
+  assertEq(w.barRenderState.visualValid, true, "last geometry exists for fade")
+  assertEq(w.frame.headPos, headPos, "fade cannot invent another position")
+  assertEq(w.ui.head.visible, true)
+  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.full)
+
+  refresh(w, 2)
+  assertTrue(w.ui.fill.props.opacity < w.mods.theme.opacity.full
+    and w.ui.fill.props.opacity > w.mods.theme.opacity.muted,
+    "fade midpoint is bounded")
+  refresh(w, 2)
+  assertEq(w.barRenderState.visualValid, false)
+  assertEq(w.ui.head.visible, false)
+  assertEq(w.ui.fill.visible, false)
+  assertEq(mock.objectCount(), objects, "fade is retained-object only")
+end)
+
+test("Phase 6: Refined critical pulse is a calm quantized one-second breath",
+function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", Motion = "Refined", Damping = 0,
+  })
+  mock.setValue(ID_RSSI, 70); refresh(w)
+  mock.setValue(ID_RSSI, 20); refresh(w)
+  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.full)
+  refresh(w, 5)
+  local mid = w.ui.fill.props.opacity
+  assertTrue(mid < w.mods.theme.opacity.full
+    and mid > w.mods.theme.opacity.pulse, "quarter-cycle midpoint")
+  refresh(w, 5)
+  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.pulse,
+    "half-cycle trough")
+  refresh(w, 10)
+  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.full,
+    "one-second cycle returns exactly to full")
+  assertEq(w.frame.pulseActive, true)
+end)
+
+test("Phase 6: Blocks and Steps settle activation; dense faces cap the effect",
+function()
+  for _, face in ipairs{ "Blocks", "Steps" } do
+    local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+      Source = ID_STICK, Style = "Bar", BarFace = face, Segments = "10",
+      Scale = "Manual", Min = 0, Max = 100, Warn = 55, Crit = 35,
+      Motion = "Refined", Damping = 0,
+    })
+    mock.setValue(ID_STICK, 20); refresh(w)
+    local base = w.ui.head.props.thickness
+    mock.setValue(ID_STICK, 90); refresh(w)
+    assertEq(w.motionState.settleAllowed, true, face)
+    assertTrue(w.barRenderState.settleLevel > 0, face .. " settle starts")
+    assertTrue(w.ui.head.props.thickness > base,
+      face .. " exact head emphasizes the activated segment")
+    refresh(w, 4)
+    assertEq(w.barRenderState.settleLevel, 0, face .. " settle ends")
+    assertEq(w.ui.head.props.thickness, base, face .. " head returns exactly")
+  end
+
+  for _, face in ipairs{ "Hex", "Ticks" } do
+    local w = newWidget({ x = 0, y = 0, w = 480, h = 120 }, {
+      Source = ID_STICK, Style = "Bar", BarFace = face,
+      Segments = (face == "Hex") and "10" or "24",
+      Scale = "Manual", Min = 0, Max = 100,
+      Motion = "Refined", Damping = 0,
+    })
+    mock.setValue(ID_STICK, 20); refresh(w)
+    local base = w.ui.head.props.thickness
+    mock.setValue(ID_STICK, 90); refresh(w)
+    assertEq(w.motionState.settleAllowed, false,
+      face .. " respects the multipart/density budget cap")
+    assertEq(w.ui.head.props.thickness, base)
+  end
+end)
+
+test("Phase 6: hidden time lands at endpoints without replay", function()
+  local purple = lcd.RGB(112, 24, 184)
+  local yellow = lcd.RGB(248, 216, 24)
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", Palette = "Custom 3",
+    Accent = purple, WarnClr = yellow, Motion = "Expressive", Damping = 0,
+  })
+  mock.setValue(ID_RSSI, 70); refresh(w)
+  mock.advance(1000) -- no refresh while hidden
+  mock.setValue(ID_RSSI, 45)
+  w.mod.refresh(w)
+  assertEq(w.barRenderState.motionPaused, true)
+  assertEq(w.barRenderState.motionActive, false)
+  assertEq(w.barRenderState.headBoost, 0)
+  assertEq(w.ui.fill.props.color, yellow, "resume lands on exact endpoint")
+  assertEq(w.ui.chip.props.color, yellow, "raw WARN was never paused")
 end)
 
 test("Phase 4: HTX theme changes recolor every face without rebuilding",
@@ -1289,7 +1499,7 @@ end)
 
 test("P2-3: the module table is shared between instances", function()
   -- main.lua is evaluated once per radio and its upvalues are shared; every
-  -- instance used to load app.lua + all modules itself (15 loadScript calls
+  -- instance used to load app.lua + all modules itself (16 loadScript calls
   -- each). The app and its module table are now memoized (AUDIT.md P2-3).
   setupRadio()
   local realLoad = loadScript

@@ -249,8 +249,8 @@ end
 -- app.lua is loaded once per RADIO, not once per widget instance: main.lua
 -- itself is evaluated once and its upvalues are shared by every instance
 -- (luaLoadWidgetCallback), so a memoized app - whose own module table is
--- likewise shared, see app.lua - cuts 15 loadScript calls per instance
--- (AUDIT.md P2-3: four gauges on one screen would otherwise load 60 chunks).
+-- likewise shared, see app.lua - cuts 16 loadScript calls per instance
+-- (AUDIT.md P2-3: four gauges on one screen would otherwise load 64 chunks).
 local sharedApp
 
 local function create(zone, opts, path)

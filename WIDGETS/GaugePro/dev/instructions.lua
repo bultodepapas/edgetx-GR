@@ -18,7 +18,7 @@
 -- Usage: lua5.3 dev/instructions.lua <widget-dir>
 --
 -- Phase 0: establishes the number (acceptance: produces numbers).
--- Phase 5: becomes the acceptance criterion for the optimisation work.
+-- Phases 5-6: enforced acceptance criterion for geometry and temporal work.
 -- 100 fires = the kill limit; report the headroom below it.
 local widgetDir = arg[1] or "./"
 if string.sub(widgetDir, -1) ~= "/" then widgetDir = widgetDir .. "/" end

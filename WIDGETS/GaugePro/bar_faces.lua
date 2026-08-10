@@ -683,7 +683,7 @@ end
 
 local function continuousUpdate(widget, objects, state)
   local frame = widget.frame
-  if not state.valid then
+  if not state.visualValid then
     if frame.fillShown then
       frame.fillShown = false
       if objects.gradientSlices then
@@ -779,7 +779,7 @@ local function continuousPalette(widget, objects, palette, state)
                   or rail.baseOpacity)
     end
   end
-  local fill = R.resolveColor(widget, state.colorKey, palette)
+  local fill = state.visualColor or R.resolveColor(widget, state.colorKey, palette)
   if objects.gradientSlices then
     if state.paletteChanged then
       local sliceCount = #objects.gradientSlices
@@ -827,6 +827,7 @@ local function continuousPalette(widget, objects, palette, state)
   R.setProp(widget, objects.head, "opacity", state.opacity)
   local headThickness = widget.layout.markThickness
     + ((assist == "strong") and T.px(2) or assisted and T.px(1) or 0)
+    + (((state.headBoost or 0) > 0) and T.px(state.headBoost) or 0)
   if objects.headKind == "line" then
     R.setProp(widget, objects.head, "thickness", headThickness)
   end
@@ -1024,13 +1025,14 @@ end
 
 local function segmentedPalette(widget, objects, palette, state)
   local paletteChanged = objects.segmentPaletteSig ~= palette.signature
-  local colorChanged = objects.segmentColorKey ~= state.colorKey
+  local fill = state.visualColor or R.resolveColor(widget, state.colorKey, palette)
+  local colorChanged = objects.segmentColor ~= fill
   objects.segmentPaletteSig = palette.signature
   objects.segmentColorKey = state.colorKey
+  objects.segmentColor = fill
   if objects.panel and paletteChanged then
     R.setProp(widget, objects.panel, "color", palette.panel)
   end
-  local fill = R.resolveColor(widget, state.colorKey, palette)
   local stateColored = widget.config.colorMode ~= R.COLOR_GRADIENT
     and widget.config.colorMode ~= R.COLOR_SECTIONS
   for i = 1, #objects.faceCells do
@@ -1054,6 +1056,8 @@ local function segmentedPalette(widget, objects, palette, state)
   local headThickness = widget.layout.markThickness
     + ((palette.assist == "strong") and T.px(2)
        or assisted and T.px(1) or 0)
+    + (((state.headBoost or 0) > 0) and T.px(state.headBoost) or 0)
+    + (((state.settleLevel or 0) > 0) and T.px(state.settleLevel) or 0)
   if objects.headKind == "line" then
     R.setProp(widget, objects.head, "thickness", headThickness)
   end
@@ -1204,7 +1208,7 @@ local function segmentedUpdate(widget, objects, state)
   local cells, frame = objects.faceCells, widget.frame
   local opacityChanged = frame.segmentOpacity ~= state.opacity
   frame.segmentOpacity = state.opacity
-  if not state.valid then
+  if not state.visualValid then
     for i = 1, #cells do
       setCellFraction(cells[i], 0, state.opacity)
     end
@@ -1534,6 +1538,7 @@ local function dualPalette(widget, objects, palette, state)
   local thickness = widget.layout.markThickness
     + ((palette.assist == "strong") and T.px(2)
        or assisted and T.px(1) or 0)
+    + (((state.headBoost or 0) > 0) and T.px(state.headBoost) or 0)
   if objects.headKind == "line" then
     R.setProp(widget, objects.head, "thickness", thickness)
   end
@@ -1643,9 +1648,14 @@ end
 function M.buildRenderState(widget)
   local state = {
     valid = false, availability = "unset", state = "muted",
+    visualValid = false,
     rawValue = nil, smoothValue = nil, rawNormalized = 0,
     smoothNormalized = 0, minNormalized = nil, maxNormalized = nil,
-    colorKey = "muted", opacity = T.opacity.muted, thresholds = {},
+    colorKey = "muted", visualColor = nil,
+    rawOpacity = T.opacity.muted, opacity = T.opacity.muted,
+    pulseMode = "off", motionActive = false, motionPaused = false,
+    settleEnabled = false, settleIndex = nil, settleLevel = 0, headBoost = 0,
+    thresholds = {},
   }
   for i = 1, #widget.ranges do
     local range = widget.ranges[i]
@@ -1667,10 +1677,12 @@ function M.updateRenderState(widget)
   state.availability = data.availability
   state.state = R.stateKey(widget)
   state.colorKey = R.colorKey(widget)
-  state.opacity = (state.colorKey == "muted") and T.opacity.muted
-                  or T.opacity.full
+  state.rawOpacity = (state.colorKey == "muted") and T.opacity.muted
+                     or T.opacity.full
+  state.opacity = state.rawOpacity
   state.rawValue = data.displayValue
   state.valid = data.availability == "valid" and data.displayValue ~= nil
+  state.visualValid = state.valid
   if not state.valid then
     widget.smooth.value = nil
     state.smoothValue = nil

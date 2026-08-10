@@ -144,7 +144,7 @@ Gauge Pro already has a disciplined lifecycle. The bar work must extend it rathe
 | Lifecycle stage | Existing implementation | Contract for the bar redesign |
 |---|---|---|
 | Radio startup | main.lua declares options and registers the widget; it does not load the implementation | Keep main.lua data-only. Do not load palette tables, face code, or preview assets at radio startup |
-| First instance | main.lua memoizes app.lua; app.lua loads 12 modules once per widget path and shares them across instances | Add the minimum new modules to the existing shared module table |
+| First instance | main.lua memoizes app.lua; app.lua loads 15 modules once per widget path and shares them across instances | Add the minimum new modules to the existing shared module table |
 | create | app.create allocates per-instance source, data, history, smoothing, alert, UI, and frame state | Add bar-style state inside the widget table; never store instance state in shared modules |
 | update | options are parsed, source metadata is resolved, effective ranges/precision/text are derived, layout is calculated, and structural changes rebuild LVGL | Resolve visual preset, palette mode, face, axis, and responsive geometry here |
 | refresh | reset switch, telemetry, one deferred reconfiguration latch, alerts, and renderer update run in that order | Keep telemetry and alerts authoritative; visual motion runs only after raw state is known |
@@ -300,7 +300,7 @@ These are not reasons to redesign unrelated subsystems, but they must be handled
 
 - tests/mock_env.lua currently assigns the same 48-pixel height to the 0x600 and 0x700 font flags. Responsive typography tests cannot distinguish the real XXL/LXL candidates until the mock reflects the firmware order.
 - telemetry.cleanName removes every leading byte above 127, which can damage a legitimate UTF-8 source name. New label-placement tests should include non-ASCII names after this is bounded to the actual firmware quirk.
-- dev/sync-sd.ps1 has a hard-coded runtime module list. It must include bar_style.lua and bar_faces.lua.
+- dev/sync-sd.ps1 has a hard-coded runtime module list. It must include bar_style.lua, bar_faces.lua, and motion.lua.
 - dev/sync-sd.ps1 does not clear stale compiled .luac files, so a radio can continue running old code after a source deployment.
 - dev/scenes.lua still contains notes saying some battery/accent/history defects are broken even though the expanded test suite now proves them fixed. Stale captions must be removed before the new gallery is treated as review evidence.
 - Scale low/high, warning, and critical are integer VALUE options because of the firmware widget-option type. Bar v2 must document this limitation and must not reinterpret those frozen slots as fixed-point values.
@@ -1034,6 +1034,7 @@ Global gates:
 | bar.lua | reliable horizontal two-rectangle renderer | become the bar orchestrator: common surface, labels, chip, history, threshold annotations, face dispatch, palette/motion application |
 | bar_faces.lua — new | not present | build and update Continuous, Blocks, Hex, Ticks, Steps, and Dual Rail bodies through one retained interface |
 | smoothing.lua | frame-rate-independent geometry damping already used by dial and bar | reuse unchanged where possible; Motion does not add a second speed control |
+| motion.lua — new | not present | own retained visual transition state, profile reduction, bounded colour/fade steps, segment settle, expressive one-shot emphasis, and hidden-resume landing; never own telemetry truth |
 | tests and dev tools | strong mock, regression, SVG, gallery, collision, census, instruction, and allocation probes | add option tail, face cross-product, palette/theme switch, axis/origin, atlas, motion, object, instruction, and allocation coverage |
 
 The existing presets.lua and the new bar_style.lua intentionally have different jobs:
@@ -1588,6 +1589,15 @@ collision audit is clean.
 
 ### Phase 6 — Motion and micro-interactions
 
+**Status: COMPLETE (2026-08-10).** All four profiles now run through one
+retained scalar motion state. Raw telemetry/state/badges remain immediate;
+only bounded presentation changes are temporal. Expressive reduces to Refined
+in micro/short zones and uses a rearmable one-shot instead of permanent
+shimmer. The 70 pure tests, 200 lifecycle tests, 48-case face/orientation/
+profile resource matrix, 105-frame theme filmstrip, complete 222-scene
+three-theme gallery, collision audit and firmware CPU/allocation gates are
+recorded in [`PHASE6_REPORT.md`](PHASE6_REPORT.md).
+
 #### 6.1 Motion profiles
 
 - implement Off, Essential, Refined, and Expressive;
@@ -1610,6 +1620,12 @@ collision audit is clean.
 - eliminate allocation growth.
 
 **Exit gate:** Refined motion makes change easier to understand and every face remains below 10% of the instruction budget.
+
+**Gate result: PASS.** The heaviest ordinary production face measures
+1,994/20,000 instructions, every temporal transition remains below 6,000,
+the heaviest structural callback is 9,200, and the dedicated motion matrix
+holds at 32–33 B/frame with fixed retained table/object identity. All 666
+static theme scenes and 105 temporal evidence frames render without warnings.
 
 ### Phase 7 — Complete validation
 

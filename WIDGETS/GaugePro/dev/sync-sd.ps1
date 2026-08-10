@@ -24,7 +24,7 @@ if (-not $target.EndsWith($expectedSuffix,
 $runtimeRequired = @(
   "main.lua", "app.lua", "options.lua", "theme.lua", "geometry.lua",
   "ranges.lua", "presets.lua", "format.lua", "smoothing.lua",
-  "telemetry.lua", "layout.lua", "renderer.lua", "bar_style.lua",
+  "motion.lua", "telemetry.lua", "layout.lua", "renderer.lua", "bar_style.lua",
   "bar_faces.lua", "bar.lua", "alerts.lua"
 )
 

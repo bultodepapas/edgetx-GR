@@ -14,12 +14,12 @@
 
 local M = {}
 
-local floor, max = math.floor, math.max
+local abs, floor, max = math.abs, math.floor, math.max
 
-local T, G, F, R, Faces  -- shared helpers + retained face registry
+local T, G, F, R, Faces, Motion  -- shared helpers + retained face registry
 
-function M.setup(theme, geometry, format, renderer, faces)
-  T, G, F, R, Faces = theme, geometry, format, renderer, faces
+function M.setup(theme, geometry, format, renderer, faces, motion)
+  T, G, F, R, Faces, Motion = theme, geometry, format, renderer, faces, motion
   -- Source-edit text path: shared with the dial (Tanda 6 F-15). The bar has
   -- no scale labels, so the shared helper's guarded fields no-op here. The
   -- alias is assigned HERE - R is nil until setup runs.
@@ -250,6 +250,7 @@ function M.build(widget)
     prevAvail = "unset", pulse = false, pulseAt = 0,
   }
   Faces.buildRenderState(widget)
+  Motion.build(widget)
   ui.built = true
 end
 
@@ -319,14 +320,61 @@ function M.update(widget)
   local key = state.colorKey
   local palette = widget.barPalette
   local paletteSig = palette and palette.signature
+  local motion = widget.motionState
   local paletteChanged = paletteSig ~= frame.paletteSig
+  local colorContextChanged = key ~= frame.colorKey
+    or widget.accent ~= frame.accentKey or paletteChanged
+  local expressiveTrigger = motion.expressive and motion.headArmed
+    and abs(state.rawNormalized - motion.rawNormalized) >= 0.08
+  local needsMotion = not motion.initialized or motion.requiresFrameMotion
+    or state.valid ~= motion.rawValid or state.state ~= motion.rawState
+    or widget.barVisual ~= motion.visualContract or paletteChanged
+    or expressiveTrigger
+  local targetColor = motion.targetColor
+  local motionPaintChanged
+  if needsMotion or colorContextChanged then
+    targetColor = R.resolveColor(widget, key, palette)
+  end
+  if needsMotion then
+    local beforeColor = state.visualColor
+    local beforeOpacity = state.opacity
+    local beforeHead = state.headBoost
+    local beforeSettle = state.settleLevel
+    local wasTemporal = motion.colorActive or motion.fadeActive
+      or motion.headActive
+    Motion.update(widget, state, targetColor, paletteSig)
+    motionPaintChanged = wasTemporal
+      or state.visualColor ~= beforeColor or state.opacity ~= beforeOpacity
+      or state.headBoost ~= beforeHead or state.settleLevel ~= beforeSettle
+  else
+    -- Hot retained path: all raw-state work and position damping already ran.
+    -- A stable semantic frame needs only the continuity timestamp and the
+    -- last truthful geometry used if a dropout begins on the next frame.
+    motion.lastAt = getTime()
+    if state.valid then
+      motion.lastNormalized = state.smoothNormalized
+      motion.lastValue = state.smoothValue
+      if motion.expressive
+         and abs(state.rawNormalized - motion.rawNormalized) < 0.02 then
+        motion.headArmed = true
+      end
+      motion.rawNormalized = state.rawNormalized
+    end
+    if colorContextChanged then
+      motion.targetColor, motion.visualColor = targetColor, targetColor
+      state.visualColor = targetColor
+    end
+    state.motionPaused = false
+  end
   state.paletteChanged = paletteChanged
   -- the accent is an input to the colour: see renderer.update (Tanda 6 F-5)
-  if key ~= frame.colorKey or widget.accent ~= frame.accentKey
-     or paletteChanged then
+  if colorContextChanged or motionPaintChanged then
     frame.colorKey = key
     frame.accentKey = widget.accent
     frame.paletteSig = paletteSig
+    frame.visualColor = state.visualColor
+    frame.motionOpacity = state.opacity
+    frame.headBoost = state.headBoost
     widget.barFace.applyPalette(widget, ui, palette, state)
     if ui.marks then
       -- threshold marks were painted at build time; the normal-boundary
@@ -347,7 +395,7 @@ function M.update(widget)
       for i = 1, #ui.endMarks do
         R.setProp(widget, ui.endMarks[i], "color", palette.label)
         R.setProp(widget, ui.endMarks[i], "opacity",
-                  (state.colorKey == "muted") and T.opacity.muted
+                  (state.colorKey == "muted") and state.opacity
                     or T.opacity.railBand)
       end
     end
@@ -362,7 +410,11 @@ function M.update(widget)
     -- the badge's fill and ink belong to R.updateChip: see renderer.applyColors
   end
 
-  R.applyStateInk(widget, palette)
+  -- `state.state` is already the raw semantic key. Avoid asking the shared
+  -- renderer to derive it a second time on every high-rate bar frame.
+  if state.state ~= frame.stateKey or paletteChanged then
+    R.applyStateInk(widget, palette)
+  end
 
   local str = (widget.data.availability == "unset") and F.NO_VALUE
     or F.display(widget, widget.data.displayValue)
@@ -372,8 +424,13 @@ function M.update(widget)
     R.anchorUnit(widget, str)
   end
   if ui.stateLabel then
-    local s = R.stateText(widget)
-    if s ~= frame.stateStr then
+    -- State text can change only with semantic state or availability; value
+    -- motion inside one band must not re-run the label classifier.
+    if state.state ~= frame.chipState
+       or state.availability ~= frame.chipAvailability then
+      frame.chipState = state.state
+      frame.chipAvailability = state.availability
+      local s = R.stateText(widget)
       frame.stateStr = s
       R.setProp(widget, ui.stateLabel, "text", s)
       R.updateChip(widget, s, palette)
@@ -388,7 +445,10 @@ function M.update(widget)
 
   widget.barFace.update(widget, ui, state)
   updateHistory(widget)
-  R.updatePulse(widget, key, ui.pulseTargets or ui.fill)
+  if key == "critical" or frame.pulseActive then
+    R.updatePulse(widget, key, ui.pulseTargets or ui.fill, state.pulseMode,
+                  state.opacity, state.motionPaused)
+  end
 
   R.flush(widget)
   frame.prevAvail = widget.data.availability

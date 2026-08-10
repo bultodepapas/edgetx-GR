@@ -1,4 +1,4 @@
--- GaugePro per-frame allocation probe (Tanda 6 F-11 plus Bar v2 Phases 3-5).
+-- GaugePro per-frame allocation probe (Tanda 6 F-11 plus Bar v2 Phases 3-6).
 --
 -- Reproduces the review's methodology: "basura generada por frame, con la
 -- instrumentación del harness desactivada". Two things make the number

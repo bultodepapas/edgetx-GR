@@ -109,18 +109,19 @@ settings shifted.
 | **Surface** | Choice | Auto | Transparent / Theme panel / Custom colors. Panels ground the complete instrument behind rail and text; micro zones downgrade to transparent. |
 | **Panel colour** | Color | theme `SECONDARY3` | Exact custom panel color. Gauge Pro preserves it and chooses the better existing theme ink on top instead of recoloring it. |
 | **Contrast assist** | Choice | Auto | Off / Strong. Auto measures contrast, ordinary color distance and simulated color-vision separation, then strengthens casing/head structure only when needed. Strong keeps the strongest local ground and marks. Neither mode replaces authored colors. |
-| **Motion** | Choice | Auto | Off / Essential / Refined / Expressive. The append-only slot and preset resolution ship in Phase 5; the temporal profiles themselves are the explicit Phase 6 scope. Gauge damping remains the only active speed control until then. |
+| **Motion** | Choice | Auto | Off / Essential / Refined / Expressive. Refined is the normal default. Motion chooses bounded visual feedback; Gauge damping remains the single position-speed control. See 4.11. |
 | **Position head** | Choice | Auto | None / Cap / Dot / Line / Needle. Every choice has materially different retained geometry and moves on the exact shared data axis. |
 | **Scale marks** | Choice | Auto | Off / Thresholds / Ends / Full. Marks are a shared overlay, independent of the selected face. |
 | **Value position** | Choice | Auto | Above / Inside / End / Off. Vertical Inside/End use a side information lane rather than printing through ticks or the rail. |
 | **Name position** | Choice | Auto | Above / Below / Inside / Off. Tall Below layouts stack the name and safety badge as separate rows; long overrides remain single-line in the audited zone matrix. |
 
-Phase 1 froze slots 25–39 before every face was drawn. Phases 2–5 now ship the
+Phase 1 froze slots 25–39 before every face was drawn. Phases 2–6 now ship the
 Continuous Precision Rail, thickness/end geometry, panel surfaces, complete
 bar history, live HTX theme re-resolution, structural contrast assistance and
 the retained spatial Gradient plus Blocks, true Hex, Fine Ticks and Signal
 Steps, orientation-neutral horizontal/vertical axes, signed zero origin,
-asymmetric Dual Rail and presentation controls in slots 40–44. No resolver
+asymmetric Dual Rail, presentation controls in slots 40–44, and retained
+motion profiles. No resolver
 mutates the stored option table; slots 45–50 remain reserved.
 
 Notes:
@@ -449,6 +450,35 @@ The last known value is cleared when the source or the ranges change, so a new
 source never shows old data. After reconnection the needle snaps to the
 current value instead of sweeping up from zero.
 
+### 4.11 Bar motion profiles
+
+Motion explains a change; it never decides what the telemetry means. The raw
+sample drives the number, WARN/CRIT classification, badge, alerts and
+thresholds in the same refresh. Gauge damping remains the only control for how
+quickly bar position geometry follows that raw sample, and `0` still snaps.
+
+- **Off** removes colour tweening, dropout fade, settle, expressive emphasis
+  and bar pulse. Gauge damping still works.
+- **Essential** keeps immediate semantic state, adds a 180 ms fade of the last
+  truthful geometry on data loss, and uses the established two-state 1 Hz
+  critical pulse.
+- **Refined** is the normal default. Warning/recovery colour crosses four
+  fixed steps over 180 ms and lands on the exact resolved theme/custom colour.
+  Critical entry bypasses the tween. Blocks and Steps up to 12 segments get a
+  short exact-head settle; true Hex, Fine Ticks and compact families omit it
+  to protect their object/instruction budgets. Critical uses a calm
+  full/mid/trough/mid one-second breath.
+- **Expressive** adds a 220 ms positional-head emphasis after one material
+  move. It is a rearmable one-shot: oscillating telemetry cannot turn it into
+  permanent shimmer, and one calm sample rearms the next useful explanation.
+  Micro and short families automatically execute Refined while preserving the
+  user's saved Expressive choice.
+
+Optional motion does not replay after more than 500 ms without a visible
+refresh; the next frame lands at the current truthful endpoint. Every temporal
+field is retained as a bounded scalar—no per-frame object creation, transition
+table or unbounded colour cache.
+
 ## 5. Technical reference
 
 ### 5.1 Architecture
@@ -464,6 +494,7 @@ current value instead of sweeping up from zero.
 | `presets.lua` | Known-sensor profiles, cell detection, discharge curves. Pure Lua. |
 | `format.lua` | Value/timer formatting and the widest-sample measurement. Pure Lua. |
 | `smoothing.lua` | Frame-rate independent gauge-geometry damping. |
+| `motion.lua` | Retained bar motion profiles, bounded colour/fade/settle/head state, hidden-resume landing and responsive effect caps. |
 | `telemetry.lua` | Source metadata cache, value reading, cell aggregation, availability model, history. |
 | `layout.lua` | Mode/orientation/style classification, dial and bar geometry, typography, regions. |
 | `renderer.lua` | Retained LVGL dial tree; per-frame property-only updates. |
@@ -473,6 +504,8 @@ current value instead of sweeping up from zero.
 | `alerts.lua` | Transition alerts with startup delay, switch gate and rate limiting. |
 | `dev/preview.lua` | Renders the real object tree to SVG for off-radio design review. |
 | `dev/collage.lua` | The official option sheet committed under `docs/` (7.1). |
+| `dev/motion_sequences.lua` | Enforced 48-case temporal CPU/allocation/identity gate. |
+| `dev/motion_filmstrip.lua` | Deterministic real-object-tree filmstrips for all three HTX theme fixtures. |
 | `dev/api_spike.lua` | LVGL API feasibility widget for Companion/hardware. |
 | `dev/RESEARCH.md` | Research notes behind the design decisions. |
 | `tests/` | Headless suites (see 7). |
@@ -501,7 +534,7 @@ Registration is `{ name, options, translate, create, update, refresh,
 useLvgl = true }`. `destroy` is **not** a widget callback — the firmware never
 calls it (`widgets.cpp` reads exactly those keys).
 
-- **`create(zone, options, path)`** — loads `app.lua`, which loads the twelve
+- **`create(zone, options, path)`** — loads `app.lua`, which loads the fifteen
   modules and builds the state tables.
 - **`update(widget, options)`** — on every option or size change: parse
   options into a typed config, resolve the source, apply the scale (preset or
@@ -515,7 +548,8 @@ calls it (`widgets.cpp` reads exactly those keys).
   callbacks below their radio CPU budgets; the old complete tree remains
   visible until the build frame.
 - **`refresh(widget, event, touch)`** — per frame: check the reset switch,
-  read telemetry, run alerts, then write only the properties that changed.
+  read telemetry, run alerts, derive bounded bar presentation from the already
+  authoritative raw state, then write only the properties that changed.
 - **`background()` is intentionally absent.** The firmware only calls it while
   the widget is **off-screen**, so history and data maintenance live in
   `refresh()`.
@@ -526,6 +560,10 @@ calls it (`widgets.cpp` reads exactly those keys).
 actually changed, guarded by a per-object cache. Retained per-object dirty
 tables and one shared face paint table are cleared and reused, so moving a
 dense face does not create a table per segment or per property write.
+
+`motion.lua` follows the same retained rule: one fixed scalar table per bar,
+precomputed/quantized transition colours and no per-frame object creation.
+Alerts and semantic state never read the visual transition state.
 
 Dial object tree (worst audited case at 200×200 — needle, Sections, scale
 labels, markers+text, chip shown): **33 visible objects**; the tests assert
@@ -664,7 +702,7 @@ Verified against `radio/src/lua` in this fork:
 
 Every `main.lua` under `/WIDGETS/` is executed at radio startup for every
 model, whether the widget is placed or not. `main.lua` therefore contains
-option data and a guard, and nothing else; the twelve modules load on first
+option data and a guard, and nothing else; the fifteen modules load on first
 use, inside `create()`. The option-array builder and label translator live
 INLINE in `main.lua` for the same reason (one file read per widget at boot);
 options.lua's copies were deleted in Tanda 6 (F-14/6.1) after verifying both
@@ -706,17 +744,22 @@ every power-on is a critical alarm — the lesson from `ePowerbar`.
 
 `factor = 1 − exp(−dt / tau)` with `tau = damping × 40 ms`, `dt` clamped to
 1–1000 ms and measured in **milliseconds** (`getTime() × 10`). The digital
-value updates instantly; only the needle glides. Damping 0 disables the
-filter — right for RSSI, wrong for a noisy current sensor.
+value and safety state update instantly; only dial/bar position geometry
+glides. Damping 0 disables the filter — right for RSSI, wrong for a noisy
+current sensor. Motion profiles never add a second speed slider.
 
 ## 7. Testing
 
 Headless suites run with stock Lua 5.3 (the version EdgeTX embeds):
 
 ```sh
-lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (60 tests)
-lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle     (168 tests)
+lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (70 tests)
+lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle     (200 tests)
 lua5.3 dev/collide.lua      <widget-dir>/   # geometric collision audit
+lua5.3 dev/instructions.lua <widget-dir>/   # firmware callback budgets
+lua5.3 dev/measure_frames.lua <widget-dir>/ # stopped-GC allocations
+lua5.3 dev/motion_sequences.lua <widget-dir>/
+lua5.3 dev/motion_filmstrip.lua <widget-dir>/ docs/phase6/motion/
 lua5.3 dev/collage.lua      <widget-dir>/ docs/   # the official option sheet
 lua5.3 dev/preview.lua      <widget-dir>/   # writes dev/preview.html
 ```

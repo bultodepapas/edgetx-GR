@@ -19,10 +19,12 @@ local options = load("options")
 local format = load("format")
 local smoothing = load("smoothing")
 local theme = load("theme")
+local motion = load("motion")
 local barStyle = load("bar_style")
 local barFaces = load("bar_faces")
 local renderer = load("renderer")
 barStyle.setup(theme, presets)
+motion.setup(theme)
 renderer.setup(theme, geometry, format)
 barFaces.setup(theme, geometry, renderer)
 
@@ -840,6 +842,208 @@ test("smoothing uses a millisecond time base", function()
   smoothing.step(widget, 0)
   assertTrue(widget.smooth.value < 1, "converged, got " ..
              tostring(widget.smooth.value))
+end)
+
+-- ---- Phase 6 motion ------------------------------------------------------
+
+local function motionWidget(profile, family, face, count)
+  return {
+    barVisual = {
+      motion = profile or "refined",
+      profile = { family = family or "standard" },
+      segments = count or 10,
+    },
+    barFaceName = face or "continuous",
+    layout = { axis = { originT = 0 } },
+  }
+end
+
+local function motionState(valid, key, normalized)
+  return {
+    valid = valid,
+    visualValid = valid,
+    availability = valid and "valid" or "stale",
+    state = key or (valid and "normal" or "muted"),
+    colorKey = key or (valid and "normal" or "muted"),
+    rawOpacity = valid and theme.opacity.full or theme.opacity.muted,
+    opacity = valid and theme.opacity.full or theme.opacity.muted,
+    rawNormalized = normalized or 0,
+    smoothNormalized = normalized or 0,
+    smoothValue = normalized or 0,
+  }
+end
+
+test("Phase 6 profiles are explicit and Expressive reduces in micro zones", function()
+  for _, name in ipairs{ "off", "essential", "refined", "expressive" } do
+    assertEq(type(motion.PROFILES[name]), "table", name)
+  end
+  local w = motionWidget("expressive", "standard")
+  local profile, reduced = motion.effectiveProfile(w)
+  assertEq(profile, "expressive")
+  assertEq(reduced, false)
+  w.barVisual.profile.family = "micro"
+  profile, reduced = motion.effectiveProfile(w)
+  assertEq(profile, "refined")
+  assertEq(reduced, true)
+end)
+
+test("Phase 6 Off makes every optional effect immediate", function()
+  local normal, warning = lcd.RGB(20, 140, 70), lcd.RGB(230, 170, 20)
+  local w = motionWidget("off")
+  motion.build(w)
+  mock.sim.ticks = 0
+  local s = motionState(true, "normal", 0.2)
+  motion.update(w, s, normal, "palette-a")
+  mock.advance(50)
+  s.state, s.colorKey = "warning", "warning"
+  s.rawNormalized, s.smoothNormalized = 0.7, 0.45
+  motion.update(w, s, warning, "palette-a")
+  assertEq(s.visualColor, warning)
+  assertEq(s.visualValid, true)
+  assertEq(s.pulseMode, "off")
+  assertEq(s.settleLevel, 0)
+  assertEq(s.headBoost, 0)
+  assertEq(s.motionActive, false)
+end)
+
+test("Phase 6 Refined color transition is raw-state immediate and bounded", function()
+  local normal, warning, critical = lcd.RGB(20, 140, 70),
+    lcd.RGB(230, 170, 20), lcd.RGB(248, 20, 20)
+  local w = motionWidget("refined")
+  motion.build(w)
+  mock.sim.ticks = 0
+  local s = motionState(true, "normal", 0.7)
+  motion.update(w, s, normal, "palette-a")
+
+  s.state, s.colorKey = "warning", "warning"
+  motion.update(w, s, warning, "palette-a")
+  assertEq(s.state, "warning", "raw state is never delayed")
+  assertEq(s.visualColor, normal, "transition begins at the prior visual color")
+  assertEq(s.motionActive, true)
+  mock.advance(50)
+  motion.update(w, s, warning, "palette-a")
+  assertEq(s.visualColor, theme.mixColor(normal, warning, 0.25))
+  mock.advance(150)
+  motion.update(w, s, warning, "palette-a")
+  assertEq(s.visualColor, warning, "endpoint is exact by 200 ms")
+  assertEq(s.colorTransition, false)
+
+  -- Degrading into CRITICAL bypasses interpolation: alarm truth wins.
+  s.state, s.colorKey = "critical", "critical"
+  motion.update(w, s, critical, "palette-a")
+  assertEq(s.visualColor, critical)
+  assertEq(s.colorTransition, false)
+end)
+
+test("Phase 6 Essential fades the last truthful geometry on dropout", function()
+  local normal, muted = lcd.RGB(20, 140, 70), lcd.RGB(90, 90, 90)
+  local w = motionWidget("essential")
+  motion.build(w)
+  mock.sim.ticks = 0
+  local s = motionState(true, "normal", 0.73)
+  motion.update(w, s, normal, "palette-a")
+
+  mock.advance(50)
+  s.valid, s.visualValid = false, false
+  s.availability, s.state, s.colorKey = "stale", "muted", "muted"
+  s.rawOpacity, s.opacity = theme.opacity.muted, theme.opacity.muted
+  s.rawNormalized, s.smoothNormalized, s.smoothValue = 0, 0, nil
+  motion.update(w, s, muted, "palette-a")
+  assertEq(s.visualValid, true, "the last sample remains only for the fade")
+  assertNear(s.smoothNormalized, 0.73, 0.0001)
+  assertEq(s.opacity, theme.opacity.full)
+  assertEq(s.state, "muted", "availability truth is already raw")
+
+  mock.advance(100)
+  motion.update(w, s, muted, "palette-a")
+  assertTrue(s.opacity < theme.opacity.full and s.opacity > theme.opacity.muted)
+  mock.advance(100)
+  motion.update(w, s, muted, "palette-a")
+  assertEq(s.visualValid, false)
+  assertEq(s.opacity, theme.opacity.muted)
+  assertEq(s.visualColor, muted)
+end)
+
+test("Phase 6 hidden time settles effects instead of replaying them", function()
+  local normal, warning = lcd.RGB(20, 140, 70), lcd.RGB(230, 170, 20)
+  local w = motionWidget("expressive")
+  motion.build(w)
+  mock.sim.ticks = 0
+  local s = motionState(true, "normal", 0.2)
+  motion.update(w, s, normal, "palette-a")
+  mock.advance(1000)
+  s.state, s.colorKey = "warning", "warning"
+  s.rawNormalized, s.smoothNormalized = 0.8, 0.8
+  motion.update(w, s, warning, "palette-a")
+  assertEq(s.motionPaused, true)
+  assertEq(s.visualColor, warning)
+  assertEq(s.motionActive, false)
+  assertEq(s.headBoost, 0)
+end)
+
+test("Phase 6 segment settle is bounded and allocation-stable", function()
+  local normal = lcd.RGB(20, 140, 70)
+  local w = motionWidget("refined", "standard", "blocks", 10)
+  motion.build(w)
+  local retained = w.motionState
+  mock.sim.ticks = 0
+  local s = motionState(true, "normal", 0.1)
+  motion.update(w, s, normal, "palette-a")
+  mock.advance(50)
+  s.rawNormalized, s.smoothNormalized = 0.6, 0.25
+  motion.update(w, s, normal, "palette-a")
+  assertEq(s.settleIndex, 3)
+  assertTrue(s.settleLevel > 0)
+  mock.advance(200)
+  motion.update(w, s, normal, "palette-a")
+  assertEq(s.settleLevel, 0)
+  for i = 1, 100 do
+    mock.advance(20)
+    motion.update(w, s, normal, "palette-a")
+  end
+  assertTrue(w.motionState == retained, "motion state table is retained")
+end)
+
+test("Phase 6 Expressive adds bounded head emphasis only at useful sizes", function()
+  local normal = lcd.RGB(20, 140, 70)
+  local w = motionWidget("expressive", "standard")
+  motion.build(w)
+  mock.sim.ticks = 0
+  local s = motionState(true, "normal", 0.1)
+  motion.update(w, s, normal, "palette-a")
+  mock.advance(50)
+  s.rawNormalized, s.smoothNormalized = 0.8, 0.35
+  motion.update(w, s, normal, "palette-a")
+  assertEq(s.motionProfile, "expressive")
+  assertTrue(s.headBoost > 0)
+  mock.advance(250)
+  motion.update(w, s, normal, "palette-a")
+  assertEq(s.headBoost, 0)
+
+  -- A continuously noisy source cannot turn the one-shot into permanent
+  -- shimmer. One calm sample rearms the next meaningful movement.
+  mock.advance(50)
+  s.rawNormalized, s.smoothNormalized = 0.1, 0.1
+  motion.update(w, s, normal, "palette-a")
+  assertEq(s.headBoost, 0, "disarmed material movement does not retrigger")
+  mock.advance(50)
+  motion.update(w, s, normal, "palette-a")
+  assertEq(w.motionState.headArmed, true, "a calm sample rearms emphasis")
+  mock.advance(50)
+  s.rawNormalized, s.smoothNormalized = 0.9, 0.9
+  motion.update(w, s, normal, "palette-a")
+  assertTrue(s.headBoost > 0, "the next meaningful movement may explain itself")
+
+  local micro = motionWidget("expressive", "micro")
+  motion.build(micro)
+  s = motionState(true, "normal", 0.1)
+  motion.update(micro, s, normal, "palette-a")
+  mock.advance(50)
+  s.rawNormalized, s.smoothNormalized = 0.8, 0.35
+  motion.update(micro, s, normal, "palette-a")
+  assertEq(s.motionProfile, "refined")
+  assertEq(s.motionReduced, true)
+  assertEq(s.headBoost, 0)
 end)
 
 print(string.format("-- %d passed, %d failed", passed, failed))

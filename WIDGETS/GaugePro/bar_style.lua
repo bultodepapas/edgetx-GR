@@ -378,6 +378,13 @@ function M.resolve(widget, cfg)
     profile = profile,
     downgrades = {},
   }
+  visual.effectiveMotion = visual.motion
+  visual.motionReduced = false
+  if visual.motion == "expressive"
+     and (profile.family == "micro" or profile.family == "short") then
+    visual.effectiveMotion = "refined"
+    visual.motionReduced = true
+  end
   visual.face = visual.requestedFace
   if visual.direction == "auto" then visual.direction = autoDirection(profile) end
 

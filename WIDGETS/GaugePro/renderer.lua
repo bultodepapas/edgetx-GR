@@ -948,26 +948,73 @@ local function pulseOpacity(widget, obj, value)
   end
 end
 
-function M.updatePulse(widget, key, obj)
+function M.updatePulse(widget, key, obj, mode, baseOpacity, resetPhase)
   local frame = widget.frame
   if key ~= "critical" then
-    if frame.pulse then
+    if frame.pulseActive or frame.pulse then
+      -- Restore the opacity the NEW key calls for, not always full: losing
+      -- the link while the pulse is in its trough must leave the gauge dim.
+      baseOpacity = baseOpacity
+        or ((key == "muted") and T.opacity.muted or T.opacity.full)
+      pulseOpacity(widget, obj, baseOpacity)
       frame.pulse = false
-      -- Restore the opacity the NEW key calls for, not the full one: losing
-      -- the link while the pulse is in its trough must leave the gauge dim
-      -- (muted 120), not stuck at 255 until the next colour change
-      -- (AUDIT.md P1-1).
-      pulseOpacity(widget, obj,
-                   (key == "muted") and T.opacity.muted or T.opacity.full)
+      frame.pulseActive = false
+      frame.pulsePhase = nil
     end
     return
   end
+  mode = mode or "essential" -- nil preserves the approved dial behavior
+  baseOpacity = baseOpacity or T.opacity.full
+  if mode == "off" then
+    if frame.pulseActive or frame.pulse then
+      pulseOpacity(widget, obj, baseOpacity)
+      frame.pulse = false
+      frame.pulseActive = false
+      frame.pulsePhase = nil
+    end
+    frame.pulseMode = mode
+    return
+  end
   local now = getTime()
-  if now - frame.pulseAt >= 50 then  -- 50 * 10 ms
+  if resetPhase or not frame.pulseActive or frame.pulseMode ~= mode then
     frame.pulseAt = now
-    frame.pulse = not frame.pulse
-    pulseOpacity(widget, obj,
-                 frame.pulse and T.opacity.pulse or T.opacity.full)
+    frame.pulse = false
+    frame.pulseActive = true
+    frame.pulsePhase = 0
+    frame.pulseMode = mode
+    pulseOpacity(widget, obj, baseOpacity)
+    return
+  end
+
+  if mode == "essential" then
+    if now - frame.pulseAt >= 50 then  -- two writes -> one calm 1 Hz cycle
+      frame.pulseAt = now
+      frame.pulse = not frame.pulse
+      pulseOpacity(widget, obj,
+                   frame.pulse and T.opacity.pulse or baseOpacity)
+    end
+    return
+  end
+
+  -- Refined/Expressive: the same one-second period, quantized into a calm
+  -- full -> mid -> trough -> mid breath. Four writes per second is bounded,
+  -- avoids high-frequency shimmer, and is still allocation-free.
+  local elapsed = now - frame.pulseAt
+  if elapsed >= 100 then
+    frame.pulseAt = now - (elapsed % 100)
+    elapsed = elapsed % 100
+  end
+  local phase = floor(elapsed / 25)
+  if phase ~= frame.pulsePhase then
+    frame.pulsePhase = phase
+    frame.pulse = phase ~= 0
+    local opacity = baseOpacity
+    if phase == 2 then
+      opacity = T.opacity.pulse
+    elseif phase == 1 or phase == 3 then
+      opacity = floor((baseOpacity + T.opacity.pulse) / 2 + 0.5)
+    end
+    pulseOpacity(widget, obj, opacity)
   end
 end
 

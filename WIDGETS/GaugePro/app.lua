@@ -22,7 +22,7 @@ local M = {}
 
 local MODULES = {
   "theme", "geometry", "format", "options", "ranges", "presets",
-  "smoothing", "telemetry", "layout", "renderer", "bar_style",
+  "smoothing", "motion", "telemetry", "layout", "renderer", "bar_style",
   "bar_faces", "bar", "alerts",
 }
 
@@ -33,7 +33,7 @@ local BATTERY_OFF = 1
 -- (all per-widget state lives in the `widget` table), the setup() calls are
 -- idempotent, and theme's metric caches are exactly what should be shared
 -- across instances. main.lua also memoizes app.lua itself, so one screen
--- with four gauges loads 15 chunks once instead of 60 (AUDIT.md P2-3).
+-- with four gauges loads 16 chunks once instead of 64 (AUDIT.md P2-3).
 -- Keyed by path so two differently-located copies of the widget stay
 -- independent.
 local MODS_BY_PATH = {}
@@ -57,10 +57,11 @@ local function loadModules(path)
   end
   mods.layout.setup(mods.theme, mods.geometry, mods.format)
   mods.renderer.setup(mods.theme, mods.geometry, mods.format)
+  mods.motion.setup(mods.theme)
   mods.bar_style.setup(mods.theme, mods.presets)
   mods.bar_faces.setup(mods.theme, mods.geometry, mods.renderer)
   mods.bar.setup(mods.theme, mods.geometry, mods.format, mods.renderer,
-                 mods.bar_faces)
+                 mods.bar_faces, mods.motion)
   return mods
 end
 
@@ -217,6 +218,7 @@ local function configure(widget, deferRebuild)
     widget.historySig = historySig
     m.telemetry.resetHistory(widget)
     m.smoothing.reset(widget)
+    if widget.motionState then m.motion.reset(widget) end
   end
 
   local L = m.layout.calculate(widget, cfg)
@@ -293,6 +295,7 @@ function M.update(widget, options)
     widget.cellsApplied = nil   -- let the NEW source's cell count re-latch
     m.telemetry.resetHistory(widget)
     m.smoothing.reset(widget)
+    if widget.motionState then m.motion.reset(widget) end
     m.alerts.reset(widget)
   end
 

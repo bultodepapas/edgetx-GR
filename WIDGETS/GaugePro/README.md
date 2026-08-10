@@ -41,6 +41,13 @@ Nothing in those images is a mock-up: every tile is the widget's own LVGL
 object tree, built by the real code from the real option values and emitted as
 SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
 
+Phase 6's ordered motion evidence is
+[`docs/phase6/motion/motion-filmstrip-stock.png`](docs/phase6/motion/motion-filmstrip-stock.png),
+with matching [dark](docs/phase6/motion/motion-filmstrip-dark.png) and
+[high-contrast](docs/phase6/motion/motion-filmstrip-highcontrast.png) sheets.
+They are deterministic frames from the same production object tree, not an
+animation mock-up.
+
 ## Features
 
 - Any numeric source: telemetry sensors, timers, sticks, channels, gvars, TX
@@ -78,6 +85,11 @@ SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
   badge ink and gradient caches re-resolve in place without rebuilding
 - Contrast assist Off / Auto / Strong: CVD-aware analysis strengthens casing,
   head and threshold structure while never modifying a saved custom color
+- Four bounded Motion profiles: Off, Essential, Refined (default) and
+  Expressive. Raw WARN/CRIT and badges are immediate; Refined adds a short
+  exact-endpoint colour transition, truthful dropout fade, segment settle and
+  a calm four-phase critical breath. Expressive adds a rearmable one-shot head
+  emphasis and automatically reduces to Refined in micro/short zones
 - Colour modes: Static, Threshold, **Rail** (default), **Gradient**, Sections
 - Sweeps: 270°, 180°, 360°
 - Semantic states with **hysteresis** (no flicker on a threshold), a filled
@@ -130,6 +142,7 @@ widget on the card, used or not. Everything else loads on first use:
 | `options.lua` | the option wire format (integers, 1-based choices, capacity) |
 | `theme.lua` | design tokens and memoized text metrics |
 | `bar_style.lua` | appearance presets, Auto/override resolution, palettes and signatures |
+| `motion.lua` | retained motion profiles, bounded transitions, hidden-resume and responsive effect caps |
 | `bar_faces.lua` | retained face interface, Continuous, Blocks, Hex, Fine Ticks, Steps and Dual Rail; horizontal/vertical/zero spans, gradients, responsive fallbacks and object ceilings |
 | `geometry.lua`, `ranges.lua`, `presets.lua`, `format.lua`, `smoothing.lua` | pure Lua domain logic |
 | `telemetry.lua` | sources, values, availability, history |
@@ -142,9 +155,13 @@ widget on the card, used or not. Everything else loads on first use:
 Stock Lua 5.3, no radio needed:
 
 ```sh
-lua5.3 tests/run_tests.lua  ./          # pure modules         (63 tests)
-lua5.3 tests/smoke_test.lua ./          # lifecycle           (192 tests)
+lua5.3 tests/run_tests.lua  ./          # pure modules         (70 tests)
+lua5.3 tests/smoke_test.lua ./          # lifecycle           (200 tests)
 lua5.3 dev/collide.lua      ./          # geometric collision audit
+lua5.3 dev/instructions.lua ./          # firmware callback budgets
+lua5.3 dev/measure_frames.lua ./        # stopped-GC allocation probe
+lua5.3 dev/motion_sequences.lua ./      # 48 temporal resource cases
+lua5.3 dev/motion_filmstrip.lua ./ docs/phase6/motion/
 lua5.3 dev/gallery.lua      ./ --out /tmp/g   # visual contract sheet + manifest
 lua5.3 dev/collage.lua      ./ docs/    # the official option sheet (committed)
 ```
@@ -164,7 +181,7 @@ Three tools share one catalogue (`dev/scenes.lua`) and one emitter
 | `dev/shots.lua` | close-up | one SVG per scene |
 
 The gallery renders every scene in stock and dark palettes plus a deterministic manifest;
-the Phase 5 evidence also renders the explicit high-contrast palette
+the Phase 6 evidence also renders the explicit high-contrast palette
 of what each scene resolved to — layout mode, availability, colour key, scale,
 object census — and reports which widget options no scene ever varies. Use
 `--baseline <manifest>` for a field-level diff of what a change moved. See
