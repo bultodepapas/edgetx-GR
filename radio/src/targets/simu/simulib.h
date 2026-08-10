@@ -207,7 +207,15 @@ std::string simuFatfsGetRealPath(const std::string& p);
 //
 // Native builds implement the dump in simulib.cpp (non-WASM).  WASM builds get
 // a no-op stub (capture is provided by the host in that configuration).
+//
+// Arming also raises a force-redraw request (simuConsumeCaptureRedraw):
+// simuLcdNotify only fires on the LVGL flush callback, so a capture armed
+// against an already-static screen (no pending animation, no dirty region)
+// would otherwise wait forever for a frame that never comes. The LVGL task
+// loop (LvglWrapper::run(), simu+WIDGET_STUDIO only) consumes the request and
+// invalidates the active screen, guaranteeing the next flush happens.
 void simuCaptureArm(const char* path);
+bool simuConsumeCaptureRedraw();
 
 // ADC override: lets the harness force an input (stick/pot) value in ADC range
 // (0..4096).  Returns false when no override is set for `idx`, in which case

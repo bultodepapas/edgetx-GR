@@ -663,10 +663,20 @@ static void redraw()
 // loop.  Commands:
 //   exit                - quit the simulator
 //   capture <path>      - arm a one-shot PNG capture of the next frame
+//   key <code> <0|1>    - physical key up/down (EnumKeys code)
+//   touch <x> <y>       - touch-panel press/drag to (x, y)
+//   touchup             - touch-panel release
 //   reset               - full simu stop/start (used for hot reload)
 //   reload              - reload permanent Lua scripts
 static std::string pipe_path;
 static std::string pipe_pending;
+// Byte offset already consumed from the pipe file.  The file is append-only
+// on the driver side and is never truncated here: re-reading from offset 0
+// every poll would redispatch every command ever written (a stuck key, or a
+// "reset" firing every frame forever), and truncating the file to
+// acknowledge it would race the driver's next append with no locking on
+// either side. Tracking an offset needs neither.
+static std::streamoff pipe_read_offset = 0;
 
 static void dispatchPipeCommand(const std::string& line)
 {
@@ -686,6 +696,12 @@ static void dispatchPipeCommand(const std::string& line)
     int key = -1, state = 0;
     iss >> key >> state;
     if (key >= 0) simuSetKey((uint8_t)key, state != 0);
+  } else if (cmd == "touch") {
+    int x = -1, y = -1;
+    iss >> x >> y;
+    if (x >= 0 && y >= 0) simuTouchDown((int16_t)x, (int16_t)y);
+  } else if (cmd == "touchup") {
+    simuTouchUp();
   } else if (cmd == "reset") {
     simuStop();
     simuStart();
@@ -698,11 +714,23 @@ static void pollPipeCommands()
 {
   if (pipe_path.empty()) return;
 
-  std::ifstream f(pipe_path, std::ios::in);
+  std::ifstream f(pipe_path, std::ios::in | std::ios::binary);
   if (!f.is_open()) return;
 
+  f.seekg(0, std::ios::end);
+  std::streamoff size = f.tellg();
+  if (size < pipe_read_offset) {
+    // The driver recreated the file (e.g. a fresh run reusing the same
+    // path): resync from the start instead of reading a negative range.
+    pipe_read_offset = 0;
+    pipe_pending.clear();
+  }
+  if (size <= pipe_read_offset) return;
+
+  f.seekg(pipe_read_offset, std::ios::beg);
   std::stringstream ss;
   ss << f.rdbuf();
+  pipe_read_offset = size;
   f.close();
 
   std::string content = pipe_pending + ss.str();

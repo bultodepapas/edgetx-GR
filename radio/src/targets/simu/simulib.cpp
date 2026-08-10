@@ -268,6 +268,7 @@ uint32_t simuLcdGetDepth()
 
 static std::string capture_path;
 static bool capture_armed = false;
+static bool capture_redraw_pending = false;
 
 static bool reset_requested = false;
 
@@ -294,6 +295,14 @@ void simuCaptureArm(const char* path)
   }
   capture_path = path;
   capture_armed = true;
+  capture_redraw_pending = true;
+}
+
+bool simuConsumeCaptureRedraw()
+{
+  bool r = capture_redraw_pending;
+  capture_redraw_pending = false;
+  return r;
 }
 
 void simuSetAnalogValue(uint8_t idx, uint16_t value)
