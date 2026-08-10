@@ -5,6 +5,15 @@ if(NOT SIMU_TARGET)
   return()
 endif()
 
+# Widget Studio dev hooks (simu target only, never release firmware):
+#   - simu Lua module (api_simu.cpp), gated by WIDGET_STUDIO
+#   - deterministic PNG LCD capture (simuCaptureArm / simuLcdNotify)
+#   - analog override + --pipe steering channel (sdl_simu.cpp)
+option(WIDGET_STUDIO "Widget Studio dev hooks" OFF)
+if(WIDGET_STUDIO)
+  message(STATUS "Widget Studio dev hooks: ON (simu target only)")
+endif()
+
 if(MINGW)
   # struct packing breaks on MinGW w/out -mno-ms-bitfields:
   #   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=52991
@@ -56,6 +65,17 @@ get_property(SIMU_SRC_OPTIONS
 
 target_compile_options(simu_drivers PRIVATE ${SIMU_SRC_OPTIONS})
 set_property(TARGET simu_drivers PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+if(WIDGET_STUDIO)
+  # The simu Lua module lives in radiolib_native (lua/api_simu.cpp); it must
+  # see the capture/override helpers declared in targets/simu/simulib.h.
+  target_compile_definitions(radiolib_native PUBLIC WIDGET_STUDIO)
+  target_compile_definitions(simu_drivers PUBLIC WIDGET_STUDIO)
+  target_include_directories(radiolib_native PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  # stb_image_write for the PNG capture in simulib.cpp
+  set(STB_DIR ${RADIO_SRC_DIR}/thirdparty/stb)
+  target_include_directories(simu_drivers PRIVATE ${STB_DIR})
+endif()
 
 if(SIMU_AUX)
   target_compile_definitions(simu_drivers PRIVATE -DSIMU_COM_PORT=${SIMU_COM_PORT})

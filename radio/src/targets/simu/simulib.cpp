@@ -262,6 +262,102 @@ uint32_t simuLcdGetDepth()
 #endif
 }
 
+// ---------------------------------------------------------------------------
+// Widget Studio dev hooks (see simulib.h)
+// ---------------------------------------------------------------------------
+
+static std::string capture_path;
+static bool capture_armed = false;
+
+static bool reset_requested = false;
+
+void simuRequestReset()
+{
+  reset_requested = true;
+}
+
+bool simuConsumeResetRequest()
+{
+  bool r = reset_requested;
+  reset_requested = false;
+  return r;
+}
+
+static uint16_t analog_override[MAX_STICKS + MAX_POTS + MAX_VBAT + MAX_RTC_BAT];
+static bool analog_override_set[MAX_STICKS + MAX_POTS + MAX_VBAT + MAX_RTC_BAT];
+
+void simuCaptureArm(const char* path)
+{
+  if (path == nullptr) {
+    capture_armed = false;
+    return;
+  }
+  capture_path = path;
+  capture_armed = true;
+}
+
+void simuSetAnalogValue(uint8_t idx, uint16_t value)
+{
+  if (idx >= (MAX_STICKS + MAX_POTS + MAX_VBAT + MAX_RTC_BAT)) return;
+  analog_override[idx] = value;
+  analog_override_set[idx] = true;
+}
+
+bool simuGetAnalogOverride(uint8_t idx, uint16_t* value)
+{
+  if (idx >= (MAX_STICKS + MAX_POTS + MAX_VBAT + MAX_RTC_BAT) ||
+      !analog_override_set[idx])
+    return false;
+  if (value) *value = analog_override[idx];
+  return true;
+}
+
+#if defined(WIDGET_STUDIO) && !defined(__wasm__)
+
+#include <vector>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+static bool captureDump()
+{
+#if defined(COLORLCD)
+  const int w = LCD_W;
+  const int h = LCD_H;
+  std::vector<uint8_t> rgb(w * h * 3);
+  const pixel_t* src = simuLcdBuf;
+  for (int i = 0; i < w * h; i++) {
+    uint16_t p = src[i];
+    uint8_t r5 = (p >> 11) & 0x1F;
+    uint8_t g6 = (p >> 5) & 0x3F;
+    uint8_t b5 = p & 0x1F;
+    rgb[i * 3 + 0] = (r5 << 3) | (r5 >> 2);
+    rgb[i * 3 + 1] = (g6 << 2) | (g6 >> 4);
+    rgb[i * 3 + 2] = (b5 << 3) | (b5 >> 2);
+  }
+  return stbi_write_png(capture_path.c_str(), w, h, 3, rgb.data(), w * 3) != 0;
+#else
+  return false;
+#endif
+}
+
+// Native simu owns the frame-ready callback.  When a capture is armed, the
+// next frame is dumped to capture_path and the arm is consumed.
+void simuLcdNotify()
+{
+  if (capture_armed) {
+    capture_armed = false;
+    captureDump();
+  }
+}
+
+#elif !defined(__wasm__)
+// Without the studio hooks the native callback is a plain no-op (the WASM
+// build imports it from the host instead).
+void simuLcdNotify()
+{
+}
+#endif
+
 #if !defined(COLORLCD)
 void lcdSetRefVolt(uint8_t val)
 {

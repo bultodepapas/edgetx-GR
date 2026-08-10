@@ -28,7 +28,7 @@ set(SRC ${SRC}
 )
 
 if(GUI_DIR STREQUAL colorlcd)
-  set(SRC ${SRC} lua/api_colorlcd.cpp lua/api_colorlcd_lvgl.cpp lua/widgets.cpp)
+  set(SRC ${SRC} lua/api_colorlcd.cpp lua/api_colorlcd_lvgl.cpp lua/widgets.cpp lua/api_simu.cpp)
 else()
   set(SRC ${SRC} lua/api_stdlcd.cpp)
 endif()

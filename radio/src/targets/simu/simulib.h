@@ -197,3 +197,26 @@ std::string simuFatfsGetRealPath(const std::string& p);
   extern struct TouchState simTouchState;
   extern bool simTouchOccured;
 #endif
+
+// -- Widget Studio dev hooks (WIDGET_STUDIO, simu target only) --------------
+//
+// Deterministic LCD capture.  simuCaptureArm(path) arms a one-shot dump: the
+// NEXT frame-ready callback (simuLcdNotify) writes the current LCD framebuffer
+// to `path` as a PNG (RGB565 -> RGB888) and disarms.  `path` is a host path,
+// resolved through simuFatfsGetRealPath() when it starts with a FAT path.
+//
+// Native builds implement the dump in simulib.cpp (non-WASM).  WASM builds get
+// a no-op stub (capture is provided by the host in that configuration).
+void simuCaptureArm(const char* path);
+
+// ADC override: lets the harness force an input (stick/pot) value in ADC range
+// (0..4096).  Returns false when no override is set for `idx`, in which case
+// the normal input path is used.  `idx` is the combined input index used by
+// simuGetAnalog() (main inputs first, then flex inputs).
+void simuSetAnalogValue(uint8_t idx, uint16_t value);
+bool simuGetAnalogOverride(uint8_t idx, uint16_t* value);
+
+// Async full simulator reset (hot reload).  Requested from inside Lua (safe),
+// consumed by the native simu main loop between frames.
+void simuRequestReset();
+bool simuConsumeResetRequest();

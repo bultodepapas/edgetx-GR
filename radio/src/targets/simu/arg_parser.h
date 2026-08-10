@@ -8,6 +8,7 @@ private:
   int height = -1;
   std::string storage_path;
   std::string settings_path;
+  std::string pipe_path;
   bool help_requested = false;
   std::string program_name;
 
@@ -24,12 +25,14 @@ public:
   int getHeight() const;
   const std::string &getStoragePath() const;
   const std::string &getSettingsPath() const;
+  const std::string &getPipePath() const;
 
   // Check if option was provided
   bool hasWidth() const;
   bool hasHeight() const;
   bool hasStoragePath() const;
   bool hasSettingsPath() const;
+  bool hasPipePath() const;
 
 private:
   bool getNextArg(int argc, char *argv[], int &i, std::string &value,

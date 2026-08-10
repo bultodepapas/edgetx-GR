@@ -32,6 +32,7 @@
 #include <fstream>
 #include <filesystem>
 #include <regex>
+#include <sstream>
 #include <string>
 
 #include "hal/adc_driver.h"
@@ -655,6 +656,68 @@ static void redraw()
   }
 }
 
+#if defined(WIDGET_STUDIO) && !defined(__EMSCRIPTEN__)
+
+// Widget Studio steering channel.  The host driver appends newline-delimited
+// commands to the file given via --pipe; the simu consumes them from the main
+// loop.  Commands:
+//   exit                - quit the simulator
+//   capture <path>      - arm a one-shot PNG capture of the next frame
+//   reset               - full simu stop/start (used for hot reload)
+//   reload              - reload permanent Lua scripts
+static std::string pipe_path;
+static std::string pipe_pending;
+
+static void dispatchPipeCommand(const std::string& line)
+{
+  std::istringstream iss(line);
+  std::string cmd;
+  iss >> cmd;
+
+  if (cmd == "exit") {
+    SDL_Event ev;
+    ev.type = SDL_QUIT;
+    SDL_PushEvent(&ev);
+  } else if (cmd == "capture") {
+    std::string path;
+    iss >> path;
+    simuCaptureArm(path.c_str());
+  } else if (cmd == "reset") {
+    simuStop();
+    simuStart();
+  } else if (cmd == "reload") {
+    simuLuaReloadPermanentScripts();
+  }
+}
+
+static void pollPipeCommands()
+{
+  if (pipe_path.empty()) return;
+
+  std::ifstream f(pipe_path, std::ios::in);
+  if (!f.is_open()) return;
+
+  std::stringstream ss;
+  ss << f.rdbuf();
+  f.close();
+
+  std::string content = pipe_pending + ss.str();
+  pipe_pending.clear();
+
+  size_t pos;
+  while ((pos = content.find('\n')) != std::string::npos) {
+    std::string line = content.substr(0, pos);
+    content.erase(0, pos + 1);
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (!line.empty() && line[0] != '#') dispatchPipeCommand(line);
+  }
+
+  // Hold an incomplete tail until the driver writes the newline.
+  pipe_pending = content;
+}
+
+#endif  // WIDGET_STUDIO && !__EMSCRIPTEN__
+
 int default_input_mode()
 {
 #if defined(DEFAULT_MODE)
@@ -790,6 +853,12 @@ int main(int argc, char* argv[])
                     args.getSettingsPath().c_str());
   simuStart();
 
+#if defined(WIDGET_STUDIO) && !defined(__EMSCRIPTEN__)
+  if (args.hasPipePath()) {
+    pipe_path = args.getPipePath();
+  }
+#endif
+
   // Main loop
   SDL_SetEventFilter([](void*, SDL_Event* event){
     if (event->type == SDL_WINDOWEVENT &&
@@ -805,6 +874,13 @@ int main(int argc, char* argv[])
 #else
   do {
     Uint64 start_ts = SDL_GetPerformanceCounter();
+#if defined(WIDGET_STUDIO) && !defined(__EMSCRIPTEN__)
+    pollPipeCommands();
+    if (simuConsumeResetRequest()) {
+      simuStop();
+      simuStart();
+    }
+#endif
     if (!handleEvents()) break;
 
     Uint64 end_ts = SDL_GetPerformanceCounter();
@@ -839,6 +915,11 @@ int main(int argc, char* argv[])
 
 uint16_t simuGetAnalog(uint8_t idx)
 {
+  uint16_t override_val;
+  if (simuGetAnalogOverride(idx, &override_val)) {
+    return override_val;
+  }
+
   auto max_sticks = adcGetMaxInputs(ADC_INPUT_MAIN);
   if (idx < max_sticks) {
     switch(idx) {
@@ -873,4 +954,3 @@ uint16_t simuGetAnalog(uint8_t idx)
 }
 
 void simuTrace(const char* text) {}
-void simuLcdNotify() {}

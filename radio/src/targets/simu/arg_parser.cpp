@@ -24,6 +24,9 @@ bool ArgumentParser::parse(int argc, char *argv[]) {
     } else if (arg == "--settings") {
       if (!getNextArg(argc, argv, i, settings_path, "settings"))
         return false;
+    } else if (arg == "--pipe") {
+      if (!getNextArg(argc, argv, i, pipe_path, "pipe"))
+        return false;
     } else if (arg == "-h" || arg == "--help") {
       help_requested = true;
       return true;
@@ -38,7 +41,7 @@ bool ArgumentParser::parse(int argc, char *argv[]) {
 
 void ArgumentParser::printUsage() const {
   printf("usage: %s [--width width] [--height height] [--storage path] "
-         "[--settings path] [-h | --help]\n",
+         "[--settings path] [--pipe path] [-h | --help]\n",
          program_name.c_str());
 }
 
@@ -49,6 +52,8 @@ void ArgumentParser::printHelp() const {
   printf("  --height height    Set the height (integer)\n");
   printf("  --storage path     Set the storage path\n");
   printf("  --settings path    Set the settings path\n");
+  printf("  --pipe path        Read steering commands from a pipe file\n");
+  printf("                     (Widget Studio; one command per line)\n");
   printf("  -h, --help         Show this help message\n");
 }
 
@@ -66,6 +71,8 @@ const std::string &ArgumentParser::getSettingsPath() const {
   return settings_path;
 }
 
+const std::string &ArgumentParser::getPipePath() const { return pipe_path; }
+
 bool ArgumentParser::hasWidth() const { return width != -1; }
 
 bool ArgumentParser::hasHeight() const { return height != -1; }
@@ -73,6 +80,8 @@ bool ArgumentParser::hasHeight() const { return height != -1; }
 bool ArgumentParser::hasStoragePath() const { return !storage_path.empty(); }
 
 bool ArgumentParser::hasSettingsPath() const { return !settings_path.empty(); }
+
+bool ArgumentParser::hasPipePath() const { return !pipe_path.empty(); }
 
 bool ArgumentParser::getNextArg(int argc, char *argv[], int &i,
                                 std::string &value,
