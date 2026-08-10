@@ -1,8 +1,8 @@
 # EdgeTX Widget Studio — Visual Radio Emulator Plan
 
-**Document version:** 0.1
-**Status:** Senior-dev plan validated against the local repo (`bultodepapas/edgetx-GR`, branch `feat/gauge-v2`, EdgeTX 3.0)
-**Target:** A scriptable, pixel-accurate, computer-based visual emulator of the EdgeTX color-LCD radio, purpose-built for developing Lua/LVGL widgets (Gauge Pro is the reference workload) and other visual improvements.
+**Document version:** 0.2 (integrates the grilled decision record from the 0.1 review)
+**Status:** Senior-dev plan validated against the local repo (`bultodepapas/edgetx-GR`, branch `feat/gauge-v2`, EdgeTX 3.0) and the design-review interview
+**Target:** A scriptable, pixel-accurate, computer-based visual emulator of the EdgeTX color-LCD radio, purpose-built for developing Lua/LVGL widgets (Gauge Pro is the reference workload), for other visual improvements, and — at contract level, without a heavy platform — for other developers.
 **Date:** August 10, 2026
 
 ---
@@ -24,6 +24,8 @@ The goal of this plan is a third loop that has neither gap: **a visual, code-dri
 4. **hot-reloads** widget files so a code edit is visible in seconds;
 5. covers **multiple radio geometries** (320×240 … 800×480) from the single authoritative `hw_defs` source.
 
+Scope reading (from the design review): the tool is a **developer sibling of Companion Simulator** — automation for any visual work in the fork (widgets, themes, screens), not a widget-only proofing script. It is **generic by contract**: any widget that implements the standard registration contract runs through it without per-widget code. This is the "useful to other developers" property, priced so it never becomes a platform (no package manager, no plugin ecosystem, no binary distribution pipeline in scope).
+
 This is a planning deliverable. No implementation code is written yet.
 
 ---
@@ -34,18 +36,19 @@ Everything below was verified against the local tree or the linked upstream sour
 
 | # | Source | What it is | Verdict for this plan |
 |---|---|---|---|
-| 1 | `radio/src/targets/simu` (in-repo) | The **actual firmware compiled for a PC** (the `simu` target). Two outputs: native `simu` (SDL2 + Dear ImGui + ImGuiKnobs + stb) and `wasi-module` (`edgetx-<flavour>-simulator.wasm`, reactor model, WASI). CMake preset `simu` → `build/simu`. | **The engine.** Pixel-accurate by construction: it runs the same LVGL, the same Lua binding, the same themes/fonts the radio runs. |
-| 2 | `web/` (in-repo) | **EdgeTX Web Simulator** source: WASM + WASI threads, OPFS-backed synchronous filesystem, WebGL LCD renderer (RGB565 / 4-bit / 1-bit), radios generated from `radio/src/boards/hw_defs` via `node web/scripts/gen-radios-json.js`. This is the codebase behind the public browser simulator. | Secondary surface. Browser workspace for preview/share; constrained by COOP/COEP and `SharedArrayBuffer`. |
+| 1 | `radio/src/targets/simu` (in-repo) | The **actual firmware compiled for a PC** (the `simu` target). Two outputs: native `simu` (SDL2 + Dear ImGui + ImGuiKnobs + stb) and `wasi-module` (`edgetx-<flavour>-simulator.wasm`, reactor model, WASI). CMake preset `simu` → `build/simu`. Native build is a documented Windows path (`docs/building/windows.md`: `ninja -C native simulator`, SDL2 dependency). | **The engine.** Pixel-accurate by construction: it runs the same LVGL, the same Lua binding, the same themes/fonts the radio runs. |
+| 2 | `web/` (in-repo) | **EdgeTX Web Simulator** source: WASM + WASI threads, OPFS-backed synchronous filesystem, WebGL LCD renderer (RGB565 / 4-bit / 1-bit), radios generated from `radio/src/boards/hw_defs` via `node web/scripts/gen-radios-json.js`. | Secondary surface. Browser workspace for preview/share; constrained by COOP/COEP and `SharedArrayBuffer`. |
 | 3 | `companion/src/simulation/` (in-repo) | Companion's Qt simulator embedding (native + WASM via `simulatorinterface.cpp` / `wasmsimulatorinterface.cpp`), plus telemetry simulators (`telemetrysimu`). | Reference for how the simu is embedded and driven; not automatable as-is. |
 | 4 | `jurgelenas/edgetx-cli` (GitHub, GPL-3.0, Rust) | Community "package manager, **simulator**, and development environment for EdgeTX Lua applications": `dev simulator --radio … --headless --screenshot result.png --script test.lua` with a Lua scripting API (`key.press`, `touch.tap`, `switch()`, `analog()`, `channel.get`, `screenshot()`, `reload()`), live-sync into the simulator SD card. | **Proof the approach is viable and wanted.** We reuse its scripting surface as the reference design and its headless-screenshot trick as validation — but do not adopt the tool (Rust/GPL-3.0, own simu build pipeline, out-of-tree control). |
 | 5 | `WIDGETS/GaugePro/` tooling (in-repo) | High-fidelity pure-Lua harness: `tests/mock_env.lua` (LVGL binding mock with per-object property allow-lists, `pts` validation, real RGB565 math, real theme palette), `dev/scenes.lua` (scenario catalog), `dev/svgkit.lua` (SVG emitter), `dev/shots.lua`/`dev/gallery.lua` (rendering), Playwright rasterization, zone atlas (`PHASE0_ZONE_ATLAS.md`). | Keep unchanged for **unit-logic** tests and as the **scenario catalog source**. Its SVG output is the fast-feedback approximation; the new tool is the pixel-truth layer. |
-| 6 | `docs/building/windows.md`, `CMakePresets.json` | Native simu build on Windows is a supported path in this repo (preset `simu`, binary dir `build/simu`). | De-risks the primary platform for this developer. |
 
 Key upstream facts (verified in this repo):
 - `radio/src/targets/simu/simulib.h:169` — `WASM_IMPORT(simuLcdNotify)()` is the **frame-ready callback**; in the native `simu` it is currently a no-op (`sdl_simu.cpp:876`). This is the exact hook for deterministic screenshot capture.
 - `radio/src/targets/simu/display.cpp:101` `refreshDisplay()` copies the LCD framebuffer into an SDL texture each frame; the framebuffer itself is real firmware state (RGB565 for color LCD).
 - `simufatfs` maps a **host directory** as the SD card (`--storage`/`--settings` args in `arg_parser`), so "installing" a widget is a filesystem copy, and hot-reload is a file watch + reload signal.
 - **No sim-only Lua module exists in this fork** (no `LROT_BEGIN(simu…)` anywhere in `radio/src`). A `simu` Lua namespace guarded by `#if defined(SIMU)` must be added — this is the enabler for telemetry/switch/analog injection and for arming capture.
+- **No host→simu com channel exists either.** `arg_parser` supports only `--width/--height/--storage/--settings`; there is no `SIMU_AUX`/`SIMU_COM_PORT` in this fork. The driver's command channel must therefore be added (see §4.1).
+- `radio/src/targets/simu/simulib.cpp:701` — `simuSendTelemetry()` is already `WASM_EXPORT`ed for host-side telemetry injection (used by the WASM/web path). It does not cover sensor *registration*; the new Lua module will.
 - The Lua/LVGL widget contract is documented and verified in `WIDGETS/GaugePro/PLAN.md` §3.3: arc `endAngle`, line `pts` as function, label `text` as function, `lvgl.build/set`, `LCD_SCALE` (0.8 / 1.0 / 1.375), theme colors, the 200-instruction refresh budget, `MAX_WIDGET_OPTIONS 50`.
 
 ---
@@ -61,18 +64,23 @@ The stack, top to bottom:
 ```
  ┌────────────────────────────────────────────────────────────┐
  │ Host driver  tools/widget-studio/                          │
- │  ws build | ws run | ws gallery | ws diff | ws watch       │
- │  (Python; boots simu headless, drives scenarios,           │
- │   collects PNGs, pixel-diffs, HTML gallery, exit codes)    │
+ │  ws build | ws introspect | ws run | ws gallery |          │
+ │  ws diff | ws golden | ws watch                            │
+ │  (Python; boots simu headless, steers scenarios over pipe  │
+ │   or file queue, collects PNGs, pixel-diffs, gallery,      │
+ │   exit codes)                                              │
  └───────────────┬────────────────────────────────────────────┘
-                 │ host dir = SD card (simufatfs) + com port (SIMU_AUX)
+                 │ host dir = SD card (simufatfs)
+                 │ fast path: stdin/pipe channel (new)
+                 │ fallback: file-based command queue
  ┌───────────────▼────────────────────────────────────────────┐
  │ SD-card harness  SCRIPTS/TOOLS/WidgetStudio/*.lua          │
- │  reads studio.yml scenario manifest                        │
+ │  reads studio.yml (auto-generated if absent)               │
  │  runs each case: zone+options+sources+theme, arms capture, │
  │  advances frames, writes /SCREENSHOTS/<case>.png + report  │
  └───────────────┬────────────────────────────────────────────┘
-                 │ simu Lua module (new, #if SIMU): setTelemetry, setSwitch,
+                 │ simu Lua module (new, #if SIMU): setTelemetry
+                 │   (registers real sensors), setSwitch,
                  │   setAnalog, armCapture, reloadWidget, getTick
  ┌───────────────▼────────────────────────────────────────────┐
  │ Engine: native simu for a flavour (tx16s first)            │
@@ -90,10 +98,26 @@ The stack, top to bottom:
 | **Adopt `edgetx-cli`** | GPL-3.0 Rust tool with its own simu build pipeline. Two toolchains to maintain and an external dependency we cannot steer; its scripting API is a design reference, not a runtime dependency. |
 | **Only improve the SVG/mock loop** | It cannot become pixel-accurate without reimplementing LVGL layout/typography (see first row). It remains the fast logic layer, which is its correct role. |
 
-## 3.3 Scope decisions
+## 3.3 Decision record (design-review interview, Aug 10 2026)
 
-- **In scope:** native-simu capture + sim-only Lua module; `studio.yml` schema; the SD-card harness; the host driver (build/run/gallery/diff/watch); golden-image pipeline for color LCD; browser workspace (phase 5); Gauge Pro as the reference integration.
-- **Out of scope:** monochrome targets; changing the Lua/LVGL binding; touching release firmware (all new firmware-side code is `#if defined(SIMU)` and a CMake option, default OFF); editing `hw_defs`; the Companion Qt app.
+| # | Decision | Resolution |
+|---|---|---|
+| Q1 | Tool scope | **Full developer-simulator sibling** — widgets, themes, screens; automation for any visual work in the fork. |
+| Q2 | Primary surface | **Native `simu` primary**; in-repo `web/` simulator is the secondary/nice-to-have surface. |
+| Q3 | Firmware-change appetite | **Accept simu-target-only hooks** (`simu` Lua module + capture + steering), all behind `-DWIDGET_STUDIO=ON` (default OFF, `#if defined(SIMU)`). |
+| Q4 | Host→simu command channel | **Both**: stdin/pipe fast channel (primary) **and** file-based command queue (fallback). |
+| Q5 | Driver language | **Python 3** (repo precedent in `tools/`). |
+| Q6 | Golden/parity source | **Self-frozen goldens** (first honest simu PNGs) + **one-time Companion Simulator calibration**; hardware spot-check when available. |
+| Q7 | Coverage first | **tx16s @ 480×272 + 800×480** before breadth across radios. |
+| Q8 | Browser workspace | **Nice-to-have** (phase 5 stretch), not a shaping requirement. |
+| Q9 | Usable by others | **Generic-by-contract** (see §3.4); priced to avoid a platform (no package manager / plugin ecosystem / binary distribution pipeline). |
+| Q11 | Genericity packaging | **Contract-driven CLI + auto-generated `studio.yml` + documented schema + README quickstart + a second demo widget** proving it is not Gauge Pro-specific. |
+| Q12 | Telemetry fidelity | **Register real sensors** through the actual sensor registry, then set values — `getValue`/`getSourceValue`/`getFieldInfo` and table sources (`CELLS`, `-`/`+` siblings) behave exactly as on radio. |
+
+## 3.4 Scope decisions
+
+- **In scope:** native-simu capture + sim-only Lua module + steering channel; `studio.yml` schema and auto-generation; the SD-card harness; the Python driver (build/introspect/run/gallery/diff/golden/watch); golden-image pipeline for color LCD; genericity proof (contract-driven runner + demo widget); browser workspace (phase 5); Gauge Pro as the reference integration.
+- **Out of scope:** monochrome targets; changing the Lua/LVGL binding; touching release firmware (all new firmware-side code is `#if defined(SIMU)` and a CMake option, default OFF); editing `hw_defs`; the Companion Qt app; a plugin ecosystem; prebuilt binary distribution (kept as a documented *future* path only).
 - **Version target:** this fork (EdgeTX 3.0). Same compatibility guard philosophy as Gauge Pro: the harness only claims to work where the simu exists.
 
 ---
@@ -107,23 +131,25 @@ All of these are small, build-option-guarded, and cannot leak into radio firmwar
 | Addition | Location (proposed) | Behavior |
 |---|---|---|
 | `simuDumpLcd(const char* path)` | `radio/src/targets/simu/simulcd.cpp` | Writes the current LCD framebuffer as RGB565→RGB888 PNG (stb_image_write, already vendored under `thirdparty/stb`). |
-| Implement `simuLcdNotify()` (arm/disarm) | `radio/src/targets/simu/simulcd.cpp` + flag in `simulib.h` | When a capture is armed, the **next frame-ready callback** dumps the PNG and disarms. This makes screenshots deterministic instead of racing `refreshDisplay`. |
-| Lua module `simu` (`#if defined(SIMU)`) | `radio/src/lua/api_simu.cpp` (new) | `simu.setTelemetry(name/id, value)`, `simu.setSwitch(name, -1/0/1)`, `simu.setAnalog(name, 0–4096)`, `simu.armCapture(path)`, `simu.reloadWidget()`, `simu.getTick()`. Exposed to Lua only when built for the simu target; absent on hardware. |
-| CMake option | `radio/src/targets/simu/CMakeLists.txt` | `option(WIDGET_STUDIO "Widget Studio dev hooks" OFF)`; gates the module and capture code. |
+| Implement `simuLcdNotify()` (arm/disarm) | `radio/src/targets/simu/simulcd.cpp` + flag in `simulib.h` | When a capture is armed, the **next frame-ready callback** dumps the PNG and disarms. Deterministic screenshots instead of racing `refreshDisplay`. |
+| Lua module `simu` (`#if defined(SIMU)`) | `radio/src/lua/api_simu.cpp` (new) | `simu.setTelemetry(idOrName, value)` — **registers the sensor in the real sensor registry** (with name, unit, precision) and sets its value so `getValue`/`getSourceValue`/`getFieldInfo` and `CELLS` aggregation work exactly as on radio; `simu.setSwitch(name, -1/0/1)`; `simu.setAnalog(name, 0–4096)`; `simu.armCapture(path)`; `simu.reloadWidget()`; `simu.getTick()`. Exposed only when built for the simu target; absent on hardware. |
+| Host steering channel (primary: pipe) | `arg_parser` (+ a reader in the simu frame loop) | `--pipe <path>` (named pipe / stdin): the driver pushes commands (`scenario`, `reload`, `armCapture`, `exit`), consumed each frame. Simu-only, no change to the Lua binding. |
+| Host steering channel (fallback: file queue) | harness-side polling | If no pipe is available, the Lua harness polls a `commands` file on the SD tree. Both channels are implemented behind the same command vocabulary so the driver is agnostic. |
+| CMake option | `radio/src/targets/simu/CMakeLists.txt` | `option(WIDGET_STUDIO "Widget Studio dev hooks" OFF)` — gates the module, capture, and steering code. |
 
-The `simu` Lua module is the enabler that `edgetx-cli` scripts get through its own harness; putting it on the real firmware state (real telemetry table, real sensor registry) is what makes injection truthful.
+The `simu` Lua module is the enabler that `edgetx-cli` scripts get through its own harness; putting it on the real firmware state (real telemetry table, real sensor registry) is what makes injection truthful (Q12).
 
 ## 4.2 SD-card harness (`SCRIPTS/TOOLS/WidgetStudio/`)
 
 Pure Lua — works on the radio and in the simu, needs no firmware knowledge beyond the public Lua API.
 
 - `main.lua` — the tool entry: reads `studio.yml`, walks the scenario list, and for each case:
-  1. applies zone + options (via the widget's own registration contract — same mechanism the radio uses),
-  2. injects sources/telemetry through the `simu` module (if present; degrades gracefully otherwise),
+  1. applies zone + options (via the widget's own registration contract — same mechanism the radio uses; **any** standard-contract widget runs unchanged, satisfying Q9),
+  2. injects sources/telemetry through the `simu` module (sensor-registered values; degrades gracefully when the module is absent),
   3. switches theme (`lcd`/`theme` APIs),
   4. arms capture and advances a few frames,
   5. writes `/SCREENSHOTS/<case>.png` and appends `{case, zone, options, theme, tickCost}` to `/SCREENSHOTS/report.json`.
-- `studio.yml` (per widget, generated for Gauge Pro from `dev/scenes.lua` so the new loop and the SVG loop cannot disagree on coverage):
+- `studio.yml` — scenario manifest; **auto-generated by the driver when absent** (Q11): default zone matrix from the zone atlas, each of the widget's declared options at default/min/max, a small set of synthetic sources (voltage, temp, RSSI). Per-widget overrides (Gauge Pro generates its from `dev/scenes.lua` so the new loop and the SVG loop cannot disagree on coverage):
   ```yaml
   flavour: tx16s
   theme: [stock, dark, highcontrast]
@@ -147,15 +173,18 @@ Python 3 (repo already ships Python tooling in `tools/`; no new language toolcha
 | Command | Behavior |
 |---|---|
 | `ws build [--flavour tx16s]` | CMake preset `simu` + `-DWIDGET_STUDIO=ON`; local native build. |
-| `ws run [--flavour tx16s] [--only ne-pos50]` | Assembles a temp SD tree (widget + harness + generated `radio.yml`), boots `simu` with `SDL_VIDEODRIVER=dummy` and the com port (or a file-based command queue if `SIMU_AUX` is unavailable), drives scenarios, collects PNGs + `report.json`. |
+| `ws introspect --widget <dir>` | Reads the widget's registration contract and options; emits a default `studio.yml` (Q11 auto-generation). |
+| `ws run [--flavour tx16s] [--widget <dir>] [--only ne-pos50]` | Assembles a temp SD tree (widget + harness + generated `radio.yml` + `studio.yml`), boots `simu` with `SDL_VIDEODRIVER=dummy`, steers over the pipe (falling back to the file queue), collects PNGs + `report.json`. |
 | `ws gallery` | Renders an HTML gallery from the PNGs (mirrors Gauge Pro's existing gallery concept). |
 | `ws diff --golden dir` | Pixel-diff each PNG against the golden set (RGB565 channel thresholds; per-case tolerance). |
+| `ws golden` | (Re)baselines goldens after a reviewed change (Q6 self-freezing). |
 | `ws watch` | Watches the widget source dir; on change, copies into the SD tree, triggers `reloadWidget()`, re-arms capture → **live preview loop**. |
-| `ws golden` | (Re)baselines goldens after a reviewed change. |
+
+The same command vocabulary serves the pipe and the file queue, so the driver never needs to know which channel is live (Q4c).
 
 ## 4.4 Browser workspace (secondary, phase 5)
 
-Extend `web/` with a "Widget Studio" panel that installs a widget folder into OPFS (the filesystem proxy already supports sync file I/O), injects the same `WidgetStudio` harness, and exports canvas frames as PNG via the existing `LcdRenderer`. Shareable, no-install previews; same scenario catalog.
+Extend `web/` with a "Widget Studio" panel that installs a widget folder into OPFS (the filesystem proxy already supports sync file I/O), injects the same `WidgetStudio` harness, and exports canvas frames as PNG via the existing `LcdRenderer`. Shareable, no-install previews; same scenario catalog. Kept deliberately thin — it must never shape the core architecture (Q8).
 
 ---
 
@@ -166,51 +195,54 @@ Each phase ends with a hard gate. Nothing in a later phase starts before its gat
 | # | Phase | Scope | Gate |
 |---|---|---|---|
 | 0 | Plan + baseline | This document; confirm `simu` preset builds on Windows (`docs/building/windows.md`) | Document builds; risks updated |
-| 1 | Engine hooks spike | `simuDumpLcd`, `simuLcdNotify` arm/disarm, `simu` Lua module behind `WIDGET_STUDIO`; boot Gauge Pro inside simu SD tree; dump a PNG | PNG of a Gauge Pro instance on 480×272 matches Companion Simulator visually within tolerance |
-| 2 | Harness | `studio.yml` schema, `WidgetStudio/main.lua`, host `radio.yml` generator, scenario runner | Full Gauge Pro catalog (from `dev/scenes.lua`) rendered by real firmware; ≥ 95 % cases match the SVG loop's layout within tolerance; valid `report.json` |
-| 3 | Driver + goldens | `ws run/gallery/diff/golden`, 3 themes × 5 resolutions golden baseline, exit codes for CI | Gauge Pro acceptance scenarios (dark/stock/high-contrast) pass on 480×272 and 800×480; full catalog runtime under a budgeted CI time |
+| 1 | Engine hooks spike | `simuDumpLcd`, `simuLcdNotify` arm/disarm, `simu` Lua module, pipe channel, all behind `WIDGET_STUDIO`; boot Gauge Pro inside simu SD tree; dump a PNG | PNG of a Gauge Pro instance on 480×272 matches Companion Simulator visually within tolerance; pipe steering round-trips a command |
+| 2 | Harness + genericity core | `studio.yml` schema + `ws introspect` auto-generation, `WidgetStudio/main.lua`, host `radio.yml` generator, scenario runner, file-queue fallback | Full Gauge Pro catalog (from `dev/scenes.lua`) rendered by real firmware; ≥ 95 % cases match the SVG loop's layout within tolerance; **a second demo widget runs with zero per-widget code**; valid `report.json` |
+| 3 | Driver + goldens | `ws run/gallery/diff/golden`, 3 themes × 2 resolutions golden baseline, exit codes for CI | Gauge Pro acceptance scenarios (dark/stock/high-contrast) pass on 480×272 and 800×480; full catalog runtime under a budgeted CI time |
 | 4 | Hot reload | `ws watch` live-preview loop | Edit `geometry.lua` → fresh screenshot visible in < 2 s, unattended |
 | 5 | Browser workspace | `web/` Widget Studio panel (OPFS install + canvas PNG export) | Same catalog renders and exports in Chrome via the web simulator |
-| 6 | Harden + docs | Capture timing under load, error taxonomy, README, Gauge Pro CI wiring | Full pipeline green in CI; docs referenceable |
+| 6 | Harden + docs | Capture timing under load, error taxonomy, README quickstart (schema + demo widget), Gauge Pro CI wiring | Full pipeline green in CI; a new developer can run `ws run --widget <any-dir>` from the README |
 
 # 6. Test matrix and acceptance criteria
 
 Adapted from Gauge Pro's existing matrix so the new loop inherits its rigor:
 
-- **Resolutions:** 320×240, 320×480, 480×272, 480×320, 800×480 (flavour-dependent).
+- **Resolutions (phase 3):** 480×272 and 800×480 on tx16s; broader matrix after phase 3.
 - **Layouts:** smallest widget cell → fullscreen, from the zone atlas.
-- **Sources:** stick, channel, timer, TX battery, RSSI, voltage, temp, `CELLS` table aggregation, invalid source, disconnected telemetry source.
+- **Sources:** stick, channel, timer, TX battery, RSSI, voltage, temp, `CELLS` table aggregation (sensor-registered, Q12), invalid source, disconnected telemetry source.
 - **Values:** below/at/above min and max, warn/critical boundaries, min==max, inverted config, negatives, decimals.
 - **Dynamic:** rapid/noisy/step values, source change, range change, telemetry loss/recovery, resize, theme switch.
 - **Performance:** four simultaneous Gauge Pro instances; per-case tick cost in `report.json`; refresh-budget compliance (200 instructions) measured through the simu.
+- **Genericity:** the demo widget exercises each option type the contract supports; `ws introspect` output for it needs no hand-editing to run.
 
 Acceptance criteria:
 
 1. `ws run` reproduces every scenario in the catalog as a PNG with no manual steps.
 2. Pixel parity with Companion Simulator within documented per-channel tolerance on the reference cases.
-3. The `simu` Lua module is absent from release firmware builds (`WIDGET_STUDIO=OFF` default; no symbol reachable without it).
+3. The `simu` Lua module and steering hooks are absent from release firmware builds (`WIDGET_STUDIO=OFF` default; no symbol reachable without it).
 4. Hot reload round-trip < 2 s for a file edit.
 5. Golden diffs are the authoritative "did it change" signal; baselines change only by explicit `ws golden` after review.
 6. CI-compatible exit codes (0 = all cases within tolerance; nonzero with a diff report otherwise).
+7. Any standard-contract widget runs via `ws run --widget <dir>` with only an auto-generated `studio.yml`.
 
 # 7. Risks and mitigations
 
 | Risk | Severity | Mitigation |
 |---|---|---|
 | Screenshot races the frame (dumps stale buffer) | High | Arm/disarm on `simuLcdNotify()` (the frame-ready callback), not a wall-clock delay; dump on notify. |
+| Steering channel becomes the slow/undocumented part | Medium | Two implementations behind one command vocabulary (Q4c); pipe is the fast path, file queue is a tested fallback; both verified in phase 1/2. |
 | Native simu on Windows toolchain friction (SDL2/ImGui fetch) | Medium | Phase-1 gate is explicitly a Windows build check; fallback is the WASM module + a Node runner reusing the same harness (web path). |
 | Runtime model/screen editing exceeds what Lua can do | Medium | Host generates a static `radio.yml` per flavour from `hw_defs`; harness never edits the model, only options + sources + theme. |
-| Telemetry injection diverges from real sensor semantics | Medium | `simu.setTelemetry` writes the real telemetry table through the real sensor registry; verify against `getValue`/`getSourceValue` behavior documented in Gauge Pro's `telemetry.lua`. |
+| Genericity claims exceed the demo coverage (Q9/Q11 creep) | Medium | The contract-driven runner + one demo widget is the hard ceiling for this plan; anything beyond (packaging, binary distribution) is a documented future path, not a phase. |
+| Telemetry injection diverges from real sensor semantics | Medium | `simu.setTelemetry` registers real sensors and writes the real telemetry table (Q12); verify against `getValue`/`getSourceValue` behavior documented in Gauge Pro's `telemetry.lua`. |
 | The sim-only Lua module expands into "firmware feature" scope | Medium | Strict `#if defined(SIMU)` + `WIDGET_STUDIO` option, OFF by default; module surface frozen in phase 1 and reviewed. |
 | Golden-image maintenance burden | Low | Tolerance policy + explicit rebaseline command + gallery diffs for human review. |
 
 # 8. Open questions
 
-1. Is `SIMU_AUX`/`SIMU_COM_PORT` usable on Windows in this fork for host→simu steering, or must the driver use a file-based command queue on the SD tree? (Phase-1 spike answers.)
-2. Is Companion Simulator the correct golden source, or should goldens be captured from hardware once available (parity across the three sources)?
-3. Does the web simulator's OPFS support multi-file folder upload for a widget tree, or does phase 5 need a zip/install UX?
-4. Should the `simu` Lua module also expose sensor *names* (register synthetic sensors) so catalog scenarios like `CELLS` aggregation can be exercised without a real model?
+1. Is Companion Simulator the correct one-time calibration source, or should the calibration pair also include the web simulator's LCD renderer (three-way parity once)? (Phase 3 decision.)
+2. Does the web simulator's OPFS support multi-file folder upload for a widget tree, or does phase 5 need a zip/install UX? (Phase 5 spike.)
+3. Which sensor unit/precision metadata should the auto-generated synthetic sources carry so `getFieldInfo`-driven widgets (like Gauge Pro's presets) see realistic data? (Phase 2 spike.)
 
 # 9. Immediate next step
 
-Phase 1 spike on branch `feat/gauge-v2` (or a `feat/widget-studio` sibling): build the `simu` preset on Windows with `-DWIDGET_STUDIO=ON`, add `simuDumpLcd` + the armed `simuLcdNotify` hook + the minimal `simu` Lua module, install `WIDGETS/GaugePro` into a simu SD tree, and produce the first PNG. That single artifact validates every downstream assumption (capture determinism, injection surface, build path) before the harness and driver are built.
+Phase 1 spike on `feat/gauge-v2` (or a `feat/widget-studio` sibling): build the `simu` preset on Windows with `-DWIDGET_STUDIO=ON`, add `simuDumpLcd` + the armed `simuLcdNotify` hook + the minimal `simu` Lua module + the pipe channel, install `WIDGETS/GaugePro` into a simu SD tree, and produce the first PNG over a piped command. That single artifact validates every downstream assumption (capture determinism, sensor injection, steering, build path) before the harness and driver are built.
