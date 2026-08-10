@@ -98,23 +98,25 @@ settings shifted.
 | **Bar face** | Choice | Auto | Continuous / Blocks / Hex / Ticks / Steps / Dual Rail. Phase 1 freezes and resolves the contract; non-Continuous drawing lands in Phase 4 and currently uses an explicit Continuous fallback. |
 | **Bar direction** | Choice | Auto | Horizontal / Vertical. Auto resolves tall zones vertically; vertical drawing lands in Phase 5. |
 | **Bar origin** | Choice | Auto | Scale low / Zero. Zero-origin drawing lands in Phase 5. |
-| **Bar thickness** | Choice | Auto | Thin / Medium / Thick / Maximum; inherits from the preset. Geometry lands with the Phase 2 flagship bar. |
-| **Bar ends** | Choice | Auto | Round / Square / Chamfer; inherits from the preset. Geometry lands with the Phase 2 flagship bar. |
+| **Bar thickness** | Choice | Auto | Thin / Medium / Thick / Maximum; inherits from the preset and is live on the Continuous Precision Rail. Large zones scale the physical rail up while short zones remain inside the proven degradation slot. |
+| **Bar ends** | Choice | Auto | Round / Square / Chamfer; inherits from the preset. Chamfer uses real retained triangle tips, not a rounded approximation. |
 | **Bar segments** | Choice | Auto | 6 / 8 / 10 / 12 / 16 / 24. Responsive and object ceilings may lower it; Hex is already capped at 10 by its 40-object budget. |
 | **Segment gap** | Choice | Auto | Tight / Normal / Wide. Used by segmented faces. |
 | **Palette** | Choice | Auto | Classic / Theme adaptive / Custom 3 / Custom 2. This is live on the current Continuous bar. |
 | **Warning colour** | Color | `#c86000` | Exact Custom Three warning anchor. |
 | **Critical colour** | Color | `#ff0000` | Exact Custom Three critical anchor and Custom Two endpoint. |
 | **Track colour** | Color | theme `SECONDARY1` | Used when Surface = Custom colors; updates retained objects without rebuilding. |
-| **Surface** | Choice | Auto | Transparent / Theme panel / Custom colors. Custom track is live; panel drawing lands in Phase 3. |
-| **Panel colour** | Color | theme `SECONDARY3` | Exact custom panel color, consumed when the panel layer lands in Phase 3. |
-| **Contrast assist** | Choice | Auto | Off / Strong. Phase 1 measures contrast and color distance without replacing authored colors; structural assistance lands in Phase 3. |
+| **Surface** | Choice | Auto | Transparent / Theme panel / Custom colors. Panels ground the complete instrument behind rail and text; micro zones downgrade to transparent. |
+| **Panel colour** | Color | theme `SECONDARY3` | Exact custom panel color. Gauge Pro preserves it and chooses the better existing theme ink on top instead of recoloring it. |
+| **Contrast assist** | Choice | Auto | Off / Strong. Auto measures contrast, ordinary color distance and simulated color-vision separation, then strengthens casing/head structure only when needed. Strong keeps the strongest local ground and marks. Neither mode replaces authored colors. |
 
-The Phase 1 milestone intentionally freezes slots 25–39 before every face is
-drawn. Palette customization is functional now. Geometry/face choices resolve
-deterministically, participate in signatures, report responsive downgrades,
-and fall back to the production Continuous face until their scheduled drawing
-phase; they never mutate the stored option table.
+Phase 1 froze slots 25–39 before every face was drawn. Phases 2–3 now ship the
+Continuous Precision Rail, thickness/end geometry, panel surfaces, complete
+bar history, live HTX theme re-resolution, structural contrast assistance and
+the retained spatial Gradient. Future face, orientation and origin choices still resolve
+deterministically, participate in signatures, report responsive downgrades and
+fall back to Continuous until their scheduled phases; no resolver mutates the
+stored option table.
 
 Notes:
 
@@ -270,7 +272,9 @@ never silently substitutes a user's color.
 - **Needle** — always draw the needle.
 - **Arc** — never draw the needle; the progress arc alone shows the value.
 - **Bar** — linear instrument: rounded track, threshold marks, fill, peak
-  mark, value + unit, name and state.
+  ghost, independent min/max marks, exact position head, value + unit, name
+  and state. Thin/medium/thick/maximum and round/square/chamfer are real
+  geometry choices.
 
 ### 4.5 Colour modes
 
@@ -287,8 +291,14 @@ data text, which always takes the theme's ink role (4.3) — critical excepted.
   **thresholds** (red at critical, green once inside the normal band). It ramps
   between the same three fixed colours as every other mode and holds the whole
   ramp at constant luminance, so every step clears 3 : 1 on both reference
-  backgrounds (worst case 3.02 : 1). Hue varies; brightness does not.
-- **Sections** — the track is drawn as three arcs coloured by band.
+  backgrounds (worst case 3.02 : 1). Hue varies; brightness does not. On the
+  Continuous bar this is a spatial scale of 8–24 retained, gapless slices,
+  calibrated by physical length and remaining 38-object budget. Classic uses
+  the calibrated ramp; theme/custom ramps preserve exact anchors and use
+  gamma-aware intermediate colors. The current partial slice and head remain
+  exact, and threshold marks remain explicit above the gradient.
+- **Sections** — the dial track is drawn as three arcs; the bar keeps all three
+  bands permanently visible in a dedicated lower reference channel.
 
 In every mode, when the data stops being live all the coloured elements — arc,
 rail bands, section bands and the bar's threshold marks — drop to the same
@@ -434,7 +444,7 @@ current value instead of sweeping up from zero.
 | `layout.lua` | Mode/orientation/style classification, dial and bar geometry, typography, regions. |
 | `renderer.lua` | Retained LVGL dial tree; per-frame property-only updates. |
 | `bar_style.lua` | Appearance presets, Auto inheritance, runtime palettes, compact variants and signatures. |
-| `bar_faces.lua` | Retained face interface, normalized render state, object ceilings and Continuous fallback. |
+| `bar_faces.lua` | Retained face interface, normalized render state, the Continuous Precision Rail, object ceilings and future-face fallback. |
 | `bar.lua` | Linear orchestrator: shared thresholds/history/labels/badges plus face dispatch. |
 | `alerts.lua` | Transition alerts with startup delay, switch gate and rate limiting. |
 | `dev/preview.lua` | Renders the real object tree to SVG for off-radio design review. |
@@ -487,8 +497,13 @@ calls it (`widgets.cpp` reads exactly those keys).
 actually changed, guarded by a per-object cache, and writes through a single
 reused table so `refresh()` allocates nothing.
 
-Dial object tree (worst case at 200×200 — needle, Sections, scale labels,
-markers+text, chip shown): **35 visible objects**; the tests assert ≤ 40.
+Dial object tree (worst audited case at 200×200 — needle, Sections, scale
+labels, markers+text, chip shown): **33 visible objects**; the tests assert
+≤ 40. The solid bar is **16 visible / 19 retained objects** in its normal
+default scene and **20** for Sections + markers + critical badge. The spatial
+Gradient is capped from the actual layout anatomy: both the canonical 300×70
+scene and the 480×120 panel/chamfer/markers stress scene are exactly **38
+retained objects**, never 40 hidden behind a smaller visible census.
 The counts are reproducible: `lua5.3 dev/census.lua ./`.
 
 | Object | Kind | Count | Created when |
@@ -664,8 +679,8 @@ filter — right for RSSI, wrong for a noisy current sensor.
 Headless suites run with stock Lua 5.3 (the version EdgeTX embeds):
 
 ```sh
-lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (38 tests)
-lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle     (137 tests)
+lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (60 tests)
+lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle     (168 tests)
 lua5.3 dev/collide.lua      <widget-dir>/   # geometric collision audit
 lua5.3 dev/collage.lua      <widget-dir>/ docs/   # the official option sheet
 lua5.3 dev/preview.lua      <widget-dir>/   # writes dev/preview.html
@@ -685,15 +700,19 @@ name lengths, 1-based
 defaults, the 2.11 ten-slot build and the 2.12 full build), all colour modes
 and styles reaching the objects, preset/override precedence, all four bar
 palettes, exact custom anchors, bounded color caches, face contracts and
-ceilings, cell aggregation modes, pack detection,
+ceilings, live theme polling/cache invalidation, spatial gradient continuity,
+partial-span truth, contrast Off/Auto/Strong and simulated protanopia,
+deuteranopia and tritanopia, all six bar families, thickness/end/surface variants, exact
+head/history positions, cell aggregation modes, pack detection,
 battery percent, timer vs temperature disambiguation, every availability
 state, needle hide/snap on reconnect, hysteresis on a noisy ramp, alerts and
-their startup delay, the reset switch, a golden layout matrix over eight zone
-shapes (every object inside the zone, object count ≤ 40), and a 200-frame
+their startup delay, the reset switch, the 17-layout firmware atlas plus the
+golden zone matrix (every object inside the zone, object count ≤ 40), and a 200-frame
 flight that must produce zero object churn.
 
 `dev/preview.lua` renders the actual object tree — same coordinates, angles,
-fonts and theme roles — as SVG in both dark and light palettes. It is the
+fonts and theme roles — as SVG. The production gallery covers stock, dark and
+high-contrast fixtures. It is the
 fastest way to review a visual change, and it is how the layout, chip sizing
 and gradient mapping in this version were checked.
 
@@ -704,7 +723,8 @@ self-contained SVG plus a machine-readable manifest. It is pure Lua — no
 browser, no Python, no image library — so it runs anywhere the test suites do.
 
 ```
-lua5.3 dev/gallery.lua .                       # dark + light sheets, manifest
+lua5.3 dev/gallery.lua .                       # stock + dark sheets, manifest
+lua5.3 dev/gallery.lua . --theme highcontrast  # maximum-separation fixture
 lua5.3 dev/gallery.lua . --only bateria        # one section
 lua5.3 dev/gallery.lua . --tag pre-tanda6      # keep a named snapshot
 lua5.3 dev/gallery.lua . --baseline dev/shots/gallery/manifest-pre-tanda6.lua
@@ -722,7 +742,8 @@ lua5.3 dev/gallery.lua . --png                 # also rasterise, if a
 | `dev/collage.lua` | The **official** sheet in `docs/` — the one the README embeds. |
 
 `dev/collage.lua` is the only one of these whose output is **committed**
-(`docs/gauge-pro-options.png` and its dark twin, plus both SVGs). It is
+(`docs/gauge-pro-options.png`, its dark and high-contrast twins, plus all three
+SVGs). It is
 deliberately a different sheet from the gallery rather than a flag on it: the
 gallery is a working instrument — object censuses, overflow boxes, warning
 dots, a coverage audit, written in the owner's language — and exists to fail a
@@ -751,8 +772,10 @@ Three things make it a verification tool rather than a picture:
   cannot appear in a still frame (alerts, haptics, the reset switch) are
   listed as `n/a` with the reason, so the gap list stays honest. Append option
   25 without a scene for it and the sheet says so.
-- **Both palettes**, because every colour the widget uses is a theme role.
-  The light pass is the only check that the fixed needle colour
+- **Three visual fixtures**: stock light, representative dark and explicit
+  high contrast, because theme roles, fixed safety colours and authored custom
+  colours must coexist on every supported ground. The light pass is the only
+  check that the fixed needle colour
   (`COLOR_THEME_PRIMARY1`) still contrasts against every band when the theme
   inverts the ramp.
 

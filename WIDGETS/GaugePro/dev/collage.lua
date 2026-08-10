@@ -79,8 +79,9 @@ local EN_SECTION = {
     "Classic keeps universal severity; Theme follows HTX; Custom Three and"
     .. " Custom Two preserve the pilot's chosen colors." },
   ["barra"]   = { "Bar style",
-    "The bar signals state exactly as the dial does: same badge, same"
-    .. " pulse, same threshold marks." },
+    "Phase 2 Precision Rail adds an exact head, three history readings, real"
+    .. " thickness/end geometry and grounded surfaces without losing the"
+    .. " dial's safety semantics." },
   ["zonas"]   = { "Zone matrix",
     "The same configuration in every zone size an EdgeTX layout can hand"
     .. " out. No text may overflow or cross the ring." },

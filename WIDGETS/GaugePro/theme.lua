@@ -33,7 +33,7 @@
 
 local M = {}
 
-local floor, max = math.floor, math.max
+local floor, min, max = math.floor, math.min, math.max
 
 -- Font flags: the firmware's etcxcst constants are the font index << 8
 -- (radio/src/gui/colorlcd/fonts.h FONT_INDEX). Ordered small -> large.
@@ -368,6 +368,50 @@ end
 local function inverseChannel(c)
   if c <= 0.0031308 then return c * 12.92 * 255 end
   return (1.055 * (c ^ (1 / 2.4)) - 0.055) * 255
+end
+
+-- Full dichromacy matrices from Machado et al. They are used only while a
+-- palette is resolved (configure/theme change), never in the frame loop.
+-- Measuring the simulated separation lets Auto add a redundant outline/head
+-- when two authored severity colours collapse for a pilot with a common
+-- colour-vision deficiency. The authored colours themselves remain untouched.
+local CVD = {
+  protanopia = {
+    0.152286, 1.052583, -0.204868,
+    0.114503, 0.786281, 0.099216,
+    -0.003882, -0.048116, 1.051998,
+  },
+  deuteranopia = {
+    0.367322, 0.860646, -0.227968,
+    0.280085, 0.672501, 0.047413,
+    -0.011820, 0.042940, 0.968881,
+  },
+  tritanopia = {
+    1.255528, -0.076749, -0.178779,
+    -0.078411, 0.930809, 0.147602,
+    0.004733, 0.691367, 0.303900,
+  },
+}
+
+local function cvdRgb(color, matrix)
+  local r, g, b = rgbOf(color)
+  if not r then return nil end
+  r, g, b = channel(r), channel(g), channel(b)
+  local rr = matrix[1] * r + matrix[2] * g + matrix[3] * b
+  local gg = matrix[4] * r + matrix[5] * g + matrix[6] * b
+  local bb = matrix[7] * r + matrix[8] * g + matrix[9] * b
+  rr, gg, bb = max(0, min(1, rr)), max(0, min(1, gg)), max(0, min(1, bb))
+  return inverseChannel(rr), inverseChannel(gg), inverseChannel(bb)
+end
+
+function M.colorVisionDistance(a, b, mode)
+  local matrix = CVD[mode]
+  if not matrix then return M.colorDistance(a, b) end
+  local ar, ag, ab = cvdRgb(a, matrix)
+  local br, bg, bb = cvdRgb(b, matrix)
+  if not ar or not br then return nil end
+  local dr, dg, db = ar - br, ag - bg, ab - bb
+  return math.sqrt(dr * dr + dg * dg + db * db)
 end
 
 -- Gamma-aware interpolation in linear-light space. Endpoints are returned

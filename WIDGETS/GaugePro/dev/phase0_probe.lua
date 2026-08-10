@@ -83,15 +83,29 @@ print("[decision] portable spatial gradients use bounded, gapless rectangles")
 
 -- -------------------------------------------------------------- baseline --
 
-buildBar({ ColorMode = "Sections",
+local baselineWidget = buildBar({ ColorMode = "Sections",
   ShowMinMax = "Markers + text" })
 local currentVisible = countVisible()
-local sharedReserve = currentVisible - 2 -- replace today's track + fill
+local faceSeen, faceVisible = {}, 0
+local function faceObject(obj)
+  if obj and obj.visible and not faceSeen[obj] then
+    faceSeen[obj] = true
+    faceVisible = faceVisible + 1
+  end
+end
+local ui = baselineWidget.ui
+for _, key in ipairs{
+  "panel", "casing", "track", "fill", "fillCap", "head",
+} do faceObject(ui[key]) end
+for _, key in ipairs{ "casingCaps", "trackCaps", "rails" } do
+  for _, obj in ipairs(ui[key] or {}) do faceObject(obj) end
+end
+local sharedReserve = currentVisible - faceVisible
 assertTrue(sharedReserve > 0 and sharedReserve < 20,
   "unexpected current shared-object reserve")
 print(string.format("[baseline] worst current 300x70 bar: %d visible objects;"
-  .. " shared reserve after replacing track/fill: %d",
-  currentVisible, sharedReserve))
+  .. " face %d, shared reserve %d",
+  currentVisible, faceVisible, sharedReserve))
 
 -- ------------------------------------------------------------- gradients --
 
@@ -236,26 +250,27 @@ print("[theme] live ink-role switch invalidates cached badge contrast: PASS")
 print("[wallpaper] decision: badges are self-grounded; Auto text/marks"
   .. " require a controlled theme panel")
 
--- ------------------------------------------------------------- known gap --
+-- ------------------------------------------------------ Phase 2 correctness --
 
 local descending = buildBar({ Scale = "Manual", Min = 100, Max = 0,
   Warn = 55, Crit = 35, ShowMinMax = "Markers + text" })
 assertTrue(descending.ui.ghost and descending.ui.minMark,
   "descending history fixtures were not constructed")
-assertTrue(descending.ui.maxMark == nil,
-  "Phase 2 known gap unexpectedly disappeared; replace this probe with a regression")
+assertTrue(descending.ui.maxMark ~= nil,
+  "Phase 2 max marker was not constructed")
 assertTrue(descending.frame.ghostX == descending.frame.minX,
-  "descending failure is no longer reproduced as documented")
+  "descending ghost must share the far-sweep minimum")
+assertTrue(descending.frame.maxX ~= descending.frame.minX,
+  "descending extrema collapsed onto one marker")
 print("")
-print(string.format("[known gap] descending scale: ghostX=%d, minX=%d,"
-  .. " max marker absent -> REPRODUCED",
-  descending.frame.ghostX, descending.frame.minX))
-print("[scope] independent min/max markers remain Phase 2 correctness work")
+print(string.format("[Phase 2] descending scale: ghostX=%d, minX=%d,"
+  .. " maxX=%d -> PASS",
+  descending.frame.ghostX, descending.frame.minX, descending.frame.maxX))
 
 -- ------------------------------------------------------------ face budgets --
 
 local budgets = {
-  { "Continuous", 4, 24, "track + active + head + highlight" },
+  { "Continuous", 10, 24, "panel + chamfer track + active + head" },
   { "Gradient", 24, 38, "maximum portable slice pool" },
   { "Blocks", 16, 38, "bounded block pool" },
   { "Hex", maxHex * 3, 40, tostring(maxHex) .. " true hex cells" },

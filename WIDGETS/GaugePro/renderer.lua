@@ -906,6 +906,14 @@ end
 -- greyscale and colour-blind viewing. Two property writes per second.
 -- Shared with the bar (Tanda 6 F-15): `obj` is the pulse target - the value
 -- arc for the dial, the fill for the bar.
+local function pulseOpacity(widget, obj, value)
+  if obj and obj[1] then
+    for i = 1, #obj do setProp(widget, obj[i], "opacity", value) end
+  else
+    setProp(widget, obj, "opacity", value)
+  end
+end
+
 function M.updatePulse(widget, key, obj)
   local frame = widget.frame
   if key ~= "critical" then
@@ -915,8 +923,8 @@ function M.updatePulse(widget, key, obj)
       -- the link while the pulse is in its trough must leave the gauge dim
       -- (muted 120), not stuck at 255 until the next colour change
       -- (AUDIT.md P1-1).
-      setProp(widget, obj, "opacity",
-              (key == "muted") and T.opacity.muted or T.opacity.full)
+      pulseOpacity(widget, obj,
+                   (key == "muted") and T.opacity.muted or T.opacity.full)
     end
     return
   end
@@ -924,8 +932,8 @@ function M.updatePulse(widget, key, obj)
   if now - frame.pulseAt >= 50 then  -- 50 * 10 ms
     frame.pulseAt = now
     frame.pulse = not frame.pulse
-    setProp(widget, obj, "opacity",
-            frame.pulse and T.opacity.pulse or T.opacity.full)
+    pulseOpacity(widget, obj,
+                 frame.pulse and T.opacity.pulse or T.opacity.full)
   end
 end
 

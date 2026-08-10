@@ -6,7 +6,8 @@
 ---- # rotary dial cannot work: very wide/short zones, or Style = Bar.       #
 ---- # A 40 px dial in a 200x50 slot is decoration, not an instrument.       #
 ---- #                                                                       #
----- # Only rectangles and lines, so it stays cheap (about ten objects).     #
+---- # Retained rectangles, lines and chamfer triangles stay under the       #
+---- # Continuous face's measured object/instruction ceilings.               #
 ---- #                                                                       #
 ---- # License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html               #
 ---- #########################################################################
@@ -28,7 +29,8 @@ end
 local function markX(widget, value)
   local L, cfg = widget.layout, widget.config
   local t = G.normalize(value, cfg.min, cfg.max)
-  return L.bar.x + floor(L.bar.w * t + 0.5)
+  local axis = L.barAxis or L.bar
+  return axis.x + floor(axis.w * t + 0.5)
 end
 
 local function vline(x, y, h, thickness, color)
@@ -46,11 +48,14 @@ end
 -- NEVER route these through R.setProp: its cache compares tables by identity
 -- and would drop every write after the first (5.1/5.2 TRAP 2).
 -- The static threshold marks keep plain vline() above - they never move.
-local function movingMark(ui, key, x, y1, y2, thickness, color)
+local function movingMark(ui, key, x, y1, y2, thickness, color, opacity)
   local pts = { { x, y1 }, { x, y2 } }
   ui[key .. "Pts"] = pts
   ui[key .. "Set"] = { pts = pts }
-  ui[key] = lvgl.line{ pts = pts, thickness = thickness, color = color }
+  ui[key] = lvgl.line{
+    pts = pts, thickness = thickness, color = color,
+    opacity = opacity or T.opacity.full,
+  }
   lvgl.hide(ui[key])
 end
 
@@ -89,7 +94,8 @@ function M.build(widget)
       local r = widget.ranges[i]
       local t = G.normalize(r.to, cfg.min, cfg.max)
       if t > 0 and t < 1 then
-        local m = vline(markX(widget, r.to), b.y, b.h,
+        local body = L.barOuter or b
+        local m = vline(markX(widget, r.to), body.y, body.h,
           L.markThickness,
           T.stateColor(r.role, widget.accent, widget.barPalette))
         -- role rides on the object so an accent edit can recolor the
@@ -106,17 +112,28 @@ function M.build(widget)
   -- px(4) is not 2 * px(2) at LCD_SCALE 0.8, so the old line stuck out 2 px
   -- above and only 1 px below on a 320 px screen.
   local over = L.markOverhang
-  local markTop, markBottom = b.y - over, b.y + b.h + over
+  local body = L.barOuter or b
+  local markTop, markBottom = body.y - over, body.y + body.h + over
+  local markMid = body.y + floor(body.h / 2)
   if L.showGhost then
     movingMark(ui, "ghost", b.x, markTop, markBottom, L.markThickness,
                (widget.barPalette and widget.barPalette.history)
-                 or T.color.history)
+                 or T.color.history, T.opacity.ghost)
   end
   if L.showMarkers then
-    movingMark(ui, "minMark", b.x, markTop, markBottom, L.markThickness,
+    -- Min and max are independent authored readings. Split their ticks around
+    -- the rail centre so coincident extrema remain distinguishable without
+    -- inventing a color meaning.
+    movingMark(ui, "minMark", b.x, markTop, markMid, L.markThickness,
+               (widget.barPalette and widget.barPalette.history)
+                 or T.color.history)
+    movingMark(ui, "maxMark", b.x, markMid, markBottom, L.markThickness,
                (widget.barPalette and widget.barPalette.history)
                  or T.color.history)
   end
+
+  assert(face.buildOverlay(widget, b, visual) ~= false,
+         "GaugePro: bar face overlay build failed")
 
   -- DATA text takes the theme's ink role, not the status colour (Tanda 8
   -- §3.2) - see renderer.valueColor.
@@ -163,12 +180,16 @@ function M.build(widget)
     lvgl.hide(ui.stateLabel)
   end
 
+  local initialPaletteSig = palette and palette.signature
+  if ui.gradientSlices then initialPaletteSig = nil end
   widget.frame = {
     props = {},
     dirty = {},
-    fillW = -1, ghostX = -1, minX = -1,
+    fillW = -1, fillShown = false, headX = -1, headShown = false,
+    gradientWhole = -1,
+    ghostX = -1, minX = -1, maxX = -1,
     needleShown = true, markersShown = false, chipShown = false,
-    colorKey = "", accentKey = nil, paletteSig = palette and palette.signature,
+    colorKey = "", accentKey = nil, paletteSig = initialPaletteSig,
     valueStr = "", stateStr = "",
     minStr = "", maxStr = "",
     prevAvail = "unset", pulse = false, pulseAt = 0,
@@ -216,6 +237,18 @@ local function updateHistory(widget)
       lvgl.hide(ui.minMark)
     end
   end
+  if ui.maxMark then
+    if h.max then
+      local x = markX(widget, h.max)
+      if x ~= frame.maxX then
+        frame.maxX = x
+        moveMark(ui, "maxMark", x)
+      end
+    elseif frame.maxX ~= -1 then
+      frame.maxX = -1
+      lvgl.hide(ui.maxMark)
+    end
+  end
 end
 
 -- Critical state pulses the fill at ~1 Hz, exactly as the dial pulses its
@@ -249,8 +282,16 @@ function M.update(widget)
         R.setProp(widget, m, "color",
                   T.stateColor(m.role, widget.accent, palette))
         R.setProp(widget, m, "opacity", state.opacity)
+        local assist = palette and palette.assist
+        local thickness = widget.layout.markThickness
+          + ((assist == "strong") and T.px(1) or 0)
+        R.setProp(widget, m, "thickness", thickness)
       end
     end
+    local historyColor = (palette and palette.history) or T.color.history
+    if ui.ghost then R.setProp(widget, ui.ghost, "color", historyColor) end
+    if ui.minMark then R.setProp(widget, ui.minMark, "color", historyColor) end
+    if ui.maxMark then R.setProp(widget, ui.maxMark, "color", historyColor) end
     -- the badge's fill and ink belong to R.updateChip: see renderer.applyColors
   end
 
@@ -280,7 +321,7 @@ function M.update(widget)
 
   widget.barFace.update(widget, ui, state)
   updateHistory(widget)
-  R.updatePulse(widget, key, ui.fill)
+  R.updatePulse(widget, key, ui.pulseTargets or ui.fill)
 
   R.flush(widget)
   frame.prevAvail = widget.data.availability

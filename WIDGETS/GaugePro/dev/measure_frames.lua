@@ -138,6 +138,11 @@ local SCENES = {
            Damping = 0 } },
   { name = "bar 300x60",          zone = { x = 0, y = 0, w = 300, h = 60 },
     ov = { Style = 4, ColorMode = 2, Precision = 4, Damping = 0 } },
+  { name = "bar 300x60 gradient", zone = { x = 0, y = 0, w = 300, h = 60 },
+    ov = { Style = 4, ColorMode = 4, Precision = 4, Damping = 0 } },
+  { name = "bar 480x120 gradient", zone = { x = 0, y = 0, w = 480, h = 120 },
+    ov = { Style = 4, ColorMode = 4, Precision = 4, Damping = 0,
+           Surface = 3, BarEnds = 4, ShowMinMax = 3 } },
 }
 
 -- ---- main --------------------------------------------------------------------

@@ -112,6 +112,12 @@ local SURFACE = { [2] = "transparent", [3] = "theme-panel",
                   [4] = "custom" }
 local CONTRAST = { [2] = "off", [3] = "strong" }
 
+local THEME_ROLES = {
+  COLOR_THEME_PRIMARY1, COLOR_THEME_PRIMARY2,
+  COLOR_THEME_SECONDARY1, COLOR_THEME_SECONDARY2, COLOR_THEME_SECONDARY3,
+  COLOR_THEME_ACTIVE, COLOR_THEME_WARNING, COLOR_THEME_DISABLED,
+}
+
 local function pick(index, values, inherited)
   return values[index] or inherited
 end
@@ -120,12 +126,25 @@ local function zoneProfile(zone)
   local w = max(1, tonumber(zone and zone.w) or 1)
   local h = max(1, tonumber(zone and zone.h) or 1)
   local short = min(w, h)
-  local family = "full"
-  if h <= 45 or w <= 74 then family = "micro"
-  elseif short <= 70 or w * h < 10000 then family = "compact" end
+  local ratio, area = w / h, w * h
+  local family
+  if h <= 45 or w <= 74 then
+    family = "micro"
+  elseif ratio >= 2.2 and h <= 64 then
+    family = "short"
+  elseif h / w >= 1.55 then
+    family = "tall"
+  elseif w >= 400 or area >= 60000 then
+    family = "large"
+  elseif short <= 70 or area < 10000 then
+    family = "compact"
+  else
+    family = "standard"
+  end
   return {
-    w = w, h = h, ratio = w / h, family = family,
-    compact = family ~= "full",
+    w = w, h = h, ratio = ratio, family = family,
+    compact = family == "micro" or family == "short"
+      or family == "compact",
   }
 end
 M.zoneProfile = zoneProfile
@@ -161,35 +180,75 @@ function M.configSignature(cfg)
   }
 end
 
-local function paletteFor(cfg, visual)
-  local normal = cfg.accent or T.color.accent
-  local warning, critical = T.color.warn, T.color.crit
+-- Theme role flags are stable IDs; their resolved RGB values change when HTX
+-- loads another theme. This is deliberately small enough to poll once per
+-- second on firmware that does not call widget.update() for a theme switch.
+function M.themeSignature()
+  return T.colorSignature(THEME_ROLES)
+end
+
+local function runtimeColor(color)
+  return T.resolveColor(color) or color
+end
+
+local function paletteInputSignature(cfg, visual, themeSig)
+  return signature{
+    visual.palette, visual.surface, visual.contrast,
+    cfg.accent, cfg.warnClr, cfg.critClr, cfg.trackClr, cfg.panelClr,
+    themeSig,
+  }
+end
+
+local function paletteFor(cfg, visual, themeSig, inputSig)
+  local normalSource = cfg.accent or T.color.accent
+  local warningSource, criticalSource = T.color.warn, T.color.crit
   local mode = visual.palette
 
   if mode == "theme" then
-    normal, warning = COLOR_THEME_ACTIVE, COLOR_THEME_WARNING
+    normalSource, warningSource = COLOR_THEME_ACTIVE, COLOR_THEME_WARNING
   elseif mode == "custom-three" then
-    warning = cfg.warnClr or T.color.warn
-    critical = cfg.critClr or T.color.crit
+    warningSource = cfg.warnClr or T.color.warn
+    criticalSource = cfg.critClr or T.color.crit
   elseif mode == "custom-two" then
-    critical = cfg.critClr or T.color.crit
-    warning = T.mixColor(critical, normal, 0.5)
+    criticalSource = cfg.critClr or T.color.crit
+    warningSource = T.mixColor(criticalSource, normalSource, 0.5)
   end
 
   local customSurface = visual.surface == "custom"
-  local track = customSurface and (cfg.trackClr or T.color.rail) or T.color.rail
-  local panel = customSurface and (cfg.panelClr or COLOR_THEME_SECONDARY3)
-                or COLOR_THEME_SECONDARY3
+  local trackSource = customSurface and (cfg.trackClr or T.color.rail)
+                      or T.color.rail
+  local panelSource = customSurface and (cfg.panelClr or COLOR_THEME_SECONDARY3)
+                      or COLOR_THEME_SECONDARY3
+  local normal, warning, critical = runtimeColor(normalSource),
+    runtimeColor(warningSource), runtimeColor(criticalSource)
+  local track, panel = runtimeColor(trackSource), runtimeColor(panelSource)
   local palette = {
     mode = mode,
     normal = normal, warning = warning, critical = critical,
-    track = track, panel = panel, border = COLOR_THEME_SECONDARY1,
-    history = T.color.history, muted = T.color.muted,
-    value = T.color.value, label = T.color.label,
-    inkDark = T.color.inkDark, inkLite = T.color.inkLite,
+    track = track, panel = panel,
+    border = runtimeColor(COLOR_THEME_SECONDARY1),
+    history = runtimeColor(T.color.history), muted = runtimeColor(T.color.muted),
+    value = runtimeColor(T.color.value), label = runtimeColor(T.color.label),
+    inkDark = runtimeColor(T.color.inkDark),
+    inkLite = runtimeColor(T.color.inkLite),
+    sources = {
+      normal = normalSource, warning = warningSource, critical = criticalSource,
+      track = trackSource, panel = panelSource,
+    },
   }
-  palette.calibrated = mode == "classic" and normal == T.color.accent
-    and warning == T.color.warn and critical == T.color.crit
+  -- A custom panel is an authored background, so theme text roles are not
+  -- automatically safe on it. Preserve the panel byte-for-byte and select
+  -- whichever existing theme ink reads best on top; no user color is altered.
+  if customSurface then
+    local panelInk = T.labelOn(panel, palette)
+    palette.value, palette.label = panelInk, panelInk
+    palette.border, palette.history = panelInk, panelInk
+  end
+  palette.calibrated = mode == "classic" and normalSource == T.color.accent
+    and warningSource == T.color.warn and criticalSource == T.color.crit
+  palette.themeSignature = themeSig or M.themeSignature()
+  palette.inputSignature = inputSig
+    or paletteInputSignature(cfg, visual, palette.themeSignature)
   palette.signature = mode .. ":" .. T.colorSignature{
     normal, warning, critical, track, panel, palette.border,
     palette.history, palette.muted, palette.value, palette.label,
@@ -201,15 +260,33 @@ local function paletteFor(cfg, visual)
   local nt = T.contrastRatio(normal, track)
   local wt = T.contrastRatio(warning, track)
   local ct = T.contrastRatio(critical, track)
+  local basicNeed = (nw and nw < 60) or (wc and wc < 60)
+    or (nt and nt < 3) or (wt and wt < 3) or (ct and ct < 3) or false
+  local nwCvd, wcCvd
+  -- Matrix simulation is the expensive fallback, not a tax on every widget
+  -- configure. If ordinary separation/contrast already requires assistance,
+  -- the decision is complete and the redundant WARN/CRIT channel is enabled.
+  if not basicNeed then
+    local nwProtan = T.colorVisionDistance(normal, warning, "protanopia")
+    local nwDeutan = T.colorVisionDistance(normal, warning, "deuteranopia")
+    local nwTritan = T.colorVisionDistance(normal, warning, "tritanopia")
+    local wcProtan = T.colorVisionDistance(warning, critical, "protanopia")
+    local wcDeutan = T.colorVisionDistance(warning, critical, "deuteranopia")
+    local wcTritan = T.colorVisionDistance(warning, critical, "tritanopia")
+    nwCvd = nwProtan and min(nwProtan, nwDeutan, nwTritan) or nil
+    wcCvd = wcProtan and min(wcProtan, wcDeutan, wcTritan) or nil
+  end
   palette.analysis = {
     normalWarningDistance = nw,
     warningCriticalDistance = wc,
     normalTrackContrast = nt,
     warningTrackContrast = wt,
     criticalTrackContrast = ct,
+    normalWarningCvdDistance = nwCvd,
+    warningCriticalCvdDistance = wcCvd,
   }
-  palette.needsAssist = (nw and nw < 60) or (wc and wc < 60)
-    or (nt and nt < 3) or (wt and wt < 3) or (ct and ct < 3) or false
+  palette.needsAssist = basicNeed or (nwCvd and nwCvd < 45)
+    or (wcCvd and wcCvd < 45) or false
   palette.assist = (visual.contrast == "strong") and "strong"
     or (visual.contrast == "off") and "off"
     or (palette.needsAssist and "needed" or "none")
@@ -268,9 +345,50 @@ function M.resolve(widget, cfg)
     visual.face, visual.direction, visual.origin, visual.thickness,
     visual.ends, visual.segments, visual.gap, visual.surface, profile.family,
   }
-  local palette = paletteFor(cfg, visual)
+  local previous = widget and widget.barPalette
+  -- Geometry-only settings edits are common and the live one-second probe is
+  -- already the authority for theme drift. Reuse the current palette without
+  -- eight lcd.getColor calls when its actual inputs are unchanged; if a
+  -- palette/surface/color input moved, resolve the live roles immediately.
+  local themeSig = previous and previous.themeSignature or M.themeSignature()
+  local inputSig = paletteInputSignature(cfg, visual, themeSig)
+  local palette
+  if previous and previous.inputSignature == inputSig then
+    palette = previous
+  else
+    themeSig = M.themeSignature()
+    inputSig = paletteInputSignature(cfg, visual, themeSig)
+    palette = paletteFor(cfg, visual, themeSig, inputSig)
+  end
   visual.paletteSig = palette.signature
+  visual.themeSig = palette.themeSignature
+  if widget then
+    local now = (type(getTime) == "function") and getTime() or 0
+    if palette ~= previous or widget.barThemeCheckAt == nil then
+      widget.barThemeCheckAt = now + 100
+    end
+  end
   return visual, palette
+end
+
+-- Re-resolve the palette at most once per second and only when a role's
+-- resolved RGB actually changed. No geometry signature is touched: the bar
+-- update path sees the new palette signature and recolors retained objects.
+function M.refreshPalette(widget, cfg, now)
+  if not widget or not widget.barVisual or not widget.barPalette then return false end
+  now = tonumber(now) or ((type(getTime) == "function") and getTime() or 0)
+  local due = widget.barThemeCheckAt or 0
+  if now < due then return false end
+  widget.barThemeCheckAt = now + 100
+  local themeSig = M.themeSignature()
+  if themeSig == widget.barVisual.themeSig then return false end
+  cfg = cfg or widget.config or {}
+  local inputSig = paletteInputSignature(cfg, widget.barVisual, themeSig)
+  local palette = paletteFor(cfg, widget.barVisual, themeSig, inputSig)
+  widget.barPalette = palette
+  widget.barVisual.themeSig = palette.themeSignature
+  widget.barVisual.paletteSig = palette.signature
+  return true
 end
 
 return M

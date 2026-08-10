@@ -92,6 +92,22 @@ local function buildPalettes()
       [COLOR_THEME_DISABLED] = "#6e6e6e",
       [RED] = "#ff0000", [WHITE] = "#ffffff", [BLACK] = "#000000",
     },
+    -- ---- explicit high-contrast fixture ---------------------------------
+    -- Not a cosmetic third skin: this maximizes role separation so every
+    -- thin mark, head, panel edge and data label is reviewed without relying
+    -- on the more forgiving mid-tone stock/dark palettes.
+    highcontrast = {
+      name = "highcontrast",
+      bg = "#000000", panel = "#000000", ink = "#ffffff", dim = "#ffffff",
+      rule = "#ffffff", accent = "#00e5ff",
+      [COLOR_THEME_PRIMARY1] = "#ffffff", [COLOR_THEME_PRIMARY2] = "#000000",
+      [COLOR_THEME_PRIMARY3] = "#ffffff", [COLOR_THEME_SECONDARY1] = "#ffffff",
+      [COLOR_THEME_SECONDARY2] = "#000000", [COLOR_THEME_SECONDARY3] = "#000000",
+      [COLOR_THEME_FOCUS] = "#00e5ff", [COLOR_THEME_EDIT] = "#7cff00",
+      [COLOR_THEME_ACTIVE] = "#ffff00", [COLOR_THEME_WARNING] = "#ffb000",
+      [COLOR_THEME_DISABLED] = "#b8b8b8",
+      [RED] = "#ff0000", [WHITE] = "#ffffff", [BLACK] = "#000000",
+    },
   }
 end
 
@@ -102,7 +118,7 @@ function M.palette(name)
   return palettes[name or "stock"] or palettes.stock
 end
 
-function M.paletteNames() return { "stock", "dark" } end
+function M.paletteNames() return { "stock", "dark", "highcontrast" } end
 
 -- The palette's THEME roles as { r, g, b }, keyed by the COLOR_THEME_* flag -
 -- the form tests/mock_env.lua's setThemeColors wants.

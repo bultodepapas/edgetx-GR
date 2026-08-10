@@ -26,12 +26,15 @@ assets.
 
 [![Gauge Pro — every option and every state](docs/gauge-pro-options.png)](docs/gauge-pro-options.png)
 
-**[`docs/gauge-pro-options.png`](docs/gauge-pro-options.png)** — 88 scenes
+**[`docs/gauge-pro-options.png`](docs/gauge-pro-options.png)** — 119 scenes
 covering every option, every state, every colour mode and every zone size an
 EdgeTX layout can hand out, on EdgeTX's **stock theme**.
 [`docs/gauge-pro-options-dark.png`](docs/gauge-pro-options-dark.png) is the same
-sheet on a dark theme, and both are also committed as SVG
-([stock](docs/gauge-pro-options.svg), [dark](docs/gauge-pro-options-dark.svg))
+sheet on a dark theme, and
+[`docs/gauge-pro-options-highcontrast.png`](docs/gauge-pro-options-highcontrast.png)
+is the explicit high-contrast fixture. All three are also committed as SVG
+([stock](docs/gauge-pro-options.svg), [dark](docs/gauge-pro-options-dark.svg),
+[high contrast](docs/gauge-pro-options-highcontrast.svg))
 if you want to zoom in without artefacts.
 
 Nothing in those images is a mock-up: every tile is the widget's own LVGL
@@ -45,11 +48,20 @@ SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
   Cels/TxBt
 - Dial with threshold rail, progress arc, **three-segment tapered needle**,
   pivot ring, adaptive major/minor ticks, scale end labels
-- **Linear bar style** for wide/short zones, chosen automatically where a dial
-  cannot work
-- Bar personalization foundation: nine purposeful appearance presets, Classic,
-  Theme Adaptive, Custom Three and Custom Two palettes, exact custom colors,
-  custom track color, surface contracts, and deterministic Auto inheritance
+- **Continuous Precision Rail bar** for wide/short zones: self-grounding casing,
+  permanent severity context, exact position head, independent min/max/ghost
+  history, and the same value hierarchy and safety badge as the dial
+- Bar personalization: nine purposeful appearance presets, four real thickness
+  levels, round/square/true-chamfer ends, transparent/theme/custom panels,
+  Classic, Theme Adaptive, Custom Three and Custom Two palettes, and exact
+  authored colors
+- A real **spatial Gradient bar** built from 8–24 budget-aware, gapless,
+  retained slices; it keeps explicit thresholds, an exact partial slice and
+  the exact position head on ascending, descending and low-is-good scales
+- Live HTX theme switching: theme candidates, track, panel, text, history,
+  badge ink and gradient caches re-resolve in place without rebuilding
+- Contrast assist Off / Auto / Strong: CVD-aware analysis strengthens casing,
+  head and threshold structure while never modifying a saved custom color
 - Colour modes: Static, Threshold, **Rail** (default), **Gradient**, Sections
 - Sweeps: 270°, 180°, 360°
 - Semantic states with **hysteresis** (no flicker on a threshold), a filled
@@ -70,9 +82,10 @@ SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
   balanced / fullscreen
 - Availability model: distinguishes no source, stale sensor, link down and
   missing data; keeps the last known value; snaps the needle on reconnect
-- Theme integration: everything but the three state colours is a
-  `COLOR_THEME_*` role, and the badge reads the theme at runtime to pick its
-  own label ink
+- Theme integration: semantic chrome/ink sources remain `COLOR_THEME_*` roles
+  and re-resolve to the active HTX RGB values at runtime; exact custom colors
+  remain authored values, and badges independently choose the better current
+  theme ink
 
 ## Options
 
@@ -100,7 +113,7 @@ widget on the card, used or not. Everything else loads on first use:
 | `options.lua` | the option wire format (integers, 1-based choices, capacity) |
 | `theme.lua` | design tokens and memoized text metrics |
 | `bar_style.lua` | appearance presets, Auto/override resolution, palettes and signatures |
-| `bar_faces.lua` | retained face interface, object ceilings and safe Continuous fallback |
+| `bar_faces.lua` | retained face interface, Continuous Precision Rail, spatial gradient slices, object ceilings and safe future-face fallback |
 | `geometry.lua`, `ranges.lua`, `presets.lua`, `format.lua`, `smoothing.lua` | pure Lua domain logic |
 | `telemetry.lua` | sources, values, availability, history |
 | `layout.lua` | classification, geometry, typography, regions |
@@ -112,10 +125,10 @@ widget on the card, used or not. Everything else loads on first use:
 Stock Lua 5.3, no radio needed:
 
 ```sh
-lua5.3 tests/run_tests.lua  ./          # pure modules        (53 tests)
-lua5.3 tests/smoke_test.lua ./          # lifecycle          (151 tests)
+lua5.3 tests/run_tests.lua  ./          # pure modules        (60 tests)
+lua5.3 tests/smoke_test.lua ./          # lifecycle          (168 tests)
 lua5.3 dev/collide.lua      ./          # geometric collision audit
-lua5.3 dev/gallery.lua      ./ /tmp/g   # visual contract sheet + manifest
+lua5.3 dev/gallery.lua      ./ --out /tmp/g   # visual contract sheet + manifest
 lua5.3 dev/collage.lua      ./ docs/    # the official option sheet (committed)
 ```
 
@@ -133,7 +146,8 @@ Three tools share one catalogue (`dev/scenes.lua`) and one emitter
 | `dev/gallery.lua` | review | contract sheet + manifest, overflow boxes, warning dots, option-coverage audit |
 | `dev/shots.lua` | close-up | one SVG per scene |
 
-The gallery renders every scene in both palettes plus a deterministic manifest
+The gallery renders every scene in stock and dark palettes plus a deterministic manifest;
+the Phase 3 evidence also renders the explicit high-contrast palette
 of what each scene resolved to — layout mode, availability, colour key, scale,
 object census — and reports which widget options no scene ever varies. Use
 `--baseline <manifest>` for a field-level diff of what a change moved. See
@@ -141,7 +155,8 @@ object census — and reports which widget options no scene ever varies. Use
 an option.
 
 The palettes are EdgeTX's **real** ones: `stock` is `colors.cpp`'s
-`defaultColors` byte for byte. That matters more than it sounds — the tools
+`defaultColors` byte for byte; dark and high-contrast fixtures exercise theme
+role inversion and maximum separation. That matters more than it sounds — the tools
 used to paint an invented palette, and it hid a normal state rendering at
 1.13 : 1 on a stock radio for four review rounds.
 

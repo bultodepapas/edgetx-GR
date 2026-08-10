@@ -34,8 +34,9 @@ end
 
 local function census(_w, label)
   local counts = {}
-  local total = 0
+  local total, retained = 0, 0
   for _, o in ipairs(mock.objects()) do
+    retained = retained + 1
     if o.visible then
       counts[o.kind] = (counts[o.kind] or 0) + 1
       total = total + 1
@@ -46,8 +47,8 @@ local function census(_w, label)
   for _, k in ipairs(order) do
     if counts[k] then parts[#parts + 1] = k .. " " .. counts[k] end
   end
-  print(string.format("%-34s total %2d  %s", label, total,
-    table.concat(parts, ", ")))
+  print(string.format("%-44s visible %2d  retained %2d  %s", label, total,
+    retained, table.concat(parts, ", ")))
 end
 
 print("GaugePro object census  (visible objects by kind)")
@@ -72,6 +73,15 @@ local w5 = build({ x = 0, y = 0, w = 300, h = 70 },
 mock.setValue(ID_RSSI, 22)
 mock.advance(50); w5.mod.refresh(w5)
 census(w5, "bar 300x70 Sections/markers+text CRIT")
+local w6 = build({ x = 0, y = 0, w = 300, h = 70 },
+  { Style = 4, ColorMode = 4, Damping = 0 })
+census(w6, "bar 300x70 spatial gradient")
+local w7 = build({ x = 0, y = 0, w = 480, h = 120 },
+  { Style = 4, ColorMode = 4, Surface = 3, BarEnds = 4,
+    ShowMinMax = 3, Damping = 0 })
+mock.setValue(ID_RSSI, 22)
+mock.advance(50); w7.mod.refresh(w7)
+census(w7, "bar 480x120 gradient/panel/chamfer/markers")
 print("")
 print("DOCS.md 5.4 uses the first row (worst case); the counts above are")
 print("the reproducible source for the table.")

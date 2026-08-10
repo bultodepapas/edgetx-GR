@@ -1040,6 +1040,10 @@ local function barLayout(widget, cfg, L, w, h)
     if L.bar.y + L.bar.h > h then L.bar.h = max(h - L.bar.y, 1) end
     barH = L.bar.h
   end
+  -- Keep the complete, containment-corrected footprint. Phase 2 can make the
+  -- visible rail thin or thick inside this slot without rerunning (or
+  -- weakening) the five-rung short-zone budget above.
+  L.barSlot = box(L.bar.x, L.bar.y, L.bar.w, L.bar.h)
   L.barRadius = floor(barH / 2)
   L.nameBox = box(pad, L.bar.y + barH + pad, floor((w - pad * 2) / 2), nameH)
   L.stateBox = box(pad + floor((w - pad * 2) / 2), L.bar.y + barH + pad,
@@ -1054,6 +1058,58 @@ local function barLayout(widget, cfg, L, w, h)
   -- update() loses it and the next chip render crashes (Tanda 6 F-1)
   L.chipOff = floor((L.chipHeight - stateH) / 2)
   L.markThickness = max(1, T.px(2))
+end
+
+-- Resolve the visible Continuous-rail body inside the footprint barLayout
+-- already proved fits. Appearance is resolved after M.calculate(), because
+-- the immutable bar-style resolver owns preset/override precedence while the
+-- layout owns pixels. Keeping that seam explicit prevents a BarSize edit from
+-- bypassing the short-bar degradation ladder.
+function M.applyBarVisual(L, visual, cfg)
+  if not L or L.style ~= "bar" or not visual then return L end
+  local slot = L.barSlot or L.bar
+  local maximum = max(1, slot.h)
+  local family = visual.profile and visual.profile.family or "standard"
+  local large = family == "large"
+  local wanted
+  if visual.thickness == "thin" then
+    wanted = T.px(large and 5 or 4)
+  elseif visual.thickness == "thick" then
+    wanted = T.px(large and 22 or 16)
+  elseif visual.thickness == "maximum" then
+    wanted = maximum
+  else
+    wanted = T.px(large and 14 or 10)
+  end
+  wanted = clamp(wanted, min(maximum, T.px(2)), maximum)
+
+  local outerY = slot.y + floor((slot.h - wanted) / 2)
+  L.barOuter = box(slot.x, outerY, slot.w, wanted)
+
+  -- A retained filled rectangle behind the track supplies a real casing. The
+  -- inset is surrendered on extremely small rails so the data channel never
+  -- collapses to zero pixels.
+  local edge = (wanted >= T.px(5) and slot.w >= T.px(12)) and T.px(1) or 0
+  local innerW = max(1, slot.w - edge * 2)
+  local innerH = max(1, wanted - edge * 2)
+  L.bar = box(slot.x + edge, outerY + edge, innerW, innerH)
+  L.barEdge = edge
+  L.barThickness = visual.thickness
+  L.barEnds = visual.ends
+  L.barRadius = (visual.ends == "round") and floor(innerH / 2) or 0
+  L.barOuterRadius = (visual.ends == "round") and floor(wanted / 2) or 0
+  L.barChamfer = (visual.ends == "chamfer")
+    and min(floor(innerH / 2), T.px(6)) or 0
+  local axisInset = L.barChamfer
+  L.barAxis = box(L.bar.x + axisInset, L.bar.y,
+                  max(1, L.bar.w - axisInset * 2), L.bar.h)
+  L.activeBar = box(L.barAxis.x, L.barAxis.y, L.barAxis.w, L.barAxis.h)
+  if cfg and (cfg.colorMode == 3 or cfg.colorMode == 5)
+     and L.barAxis.h >= T.px(5) then
+    local railH = max(1, min(T.px(3), floor(L.barAxis.h * 0.3)))
+    L.activeBar.h = max(1, L.barAxis.h - railH - T.px(1))
+  end
+  return L
 end
 
 -- --------------------------------------------------------------- entry ----
@@ -1079,7 +1135,8 @@ function M.signature(L, cfg)
     L.showNeedle and 1 or 0, L.showUnit and 1 or 0, L.showName and 1 or 0,
     L.showState and 1 or 0, L.showMarkers and 1 or 0,
     L.showMinMaxText and 1 or 0, L.showScale and 1 or 0,
-    cfg.colorMode, cfg.sweep or 1, L.valueFont, L.radius or 0,
+    cfg.colorMode, (L.style == "bar") and 0 or (cfg.sweep or 1),
+    L.valueFont, L.radius or 0,
     L.w, L.h,
     -- ShowChip no longer moves anything (F9 reserves the row either way), so
     -- it does not belong here structurally - but the badge's VISIBILITY is

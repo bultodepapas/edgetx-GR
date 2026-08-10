@@ -96,6 +96,13 @@ local SCENES = {
   { name = "300x60 bar threshold",
     zone = { x = 0, y = 0, w = 300, h = 60 },
     ov = { Style = 4, ColorMode = 2, Precision = 4 } },
+  { name = "300x60 bar spatial gradient",
+    zone = { x = 0, y = 0, w = 300, h = 60 },
+    ov = { Style = 4, ColorMode = 4, Precision = 4, Damping = 0 } },
+  { name = "480x120 gradient panel/chamfer/markers",
+    zone = { x = 0, y = 0, w = 480, h = 120 },
+    ov = { Style = 4, ColorMode = 4, Precision = 4, Damping = 0,
+           Surface = 3, BarEnds = 4, ShowMinMax = 3 } },
 }
 
 local fmt = string.format
@@ -113,11 +120,14 @@ local function probeScene(sc)
   local updNoop = countCall(function() mod.update(w, opts) end)
 
   -- update() with a structural change: the full rebuild path
-  local updBuild
+  local updBuild, refFirst
   do
-    o2.Sweep = (o2.Sweep or 1) == 1 and 3 or 1
+    local key = (w.layout.style == "bar") and "BarEnds" or "Sweep"
+    local original = o2[key] or 1
+    o2[key] = (original == 3) and 2 or 3
     updBuild = countCall(function() mod.update(w, o2) end)
-    o2.Sweep = (o2.Sweep or 1) == 1 and 3 or 1
+    refFirst = countCall(function() refresh(w, 1) end)
+    o2[key] = original
     countCall(function() mod.update(w, o2) end)
   end
 
@@ -134,11 +144,11 @@ local function probeScene(sc)
     if n > refChg then refChg = n end
   end
 
-  local worst = math.max(updNoop, updBuild, refIdle, refChg)
+  local worst = math.max(updNoop, updBuild, refFirst, refIdle, refChg)
   return {
     name = sc.name,
     updNoop = updNoop, updBuild = updBuild,
-    refIdle = refIdle, refChg = refChg,
+    refFirst = refFirst, refIdle = refIdle, refChg = refChg,
     worst = worst, worstCall = refChg,
   }
 end
@@ -151,16 +161,16 @@ for _, sc in ipairs(SCENES) do
   if r.worst > overall.worst then overall = r end
 end
 
-print(fmt("%-38s %8s %8s %8s %8s %10s %9s",
-  "scene", "upd-noop", "upd-bld", "ref-idle", "ref-chg",
+print(fmt("%-38s %8s %8s %9s %8s %8s %10s %9s",
+  "scene", "upd-noop", "upd-bld", "ref-1st", "ref-idle", "ref-chg",
   "instr/call", "headroom"))
-print(string.rep("-", 96))
+print(string.rep("-", 106))
 for _, r in ipairs(rows) do
-  print(fmt("%-38s %8d %8d %8d %8d %10d %8d fires",
-    r.name, r.updNoop, r.updBuild, r.refIdle, r.refChg,
+  print(fmt("%-38s %8d %8d %9d %8d %8d %10d %8d fires",
+    r.name, r.updNoop, r.updBuild, r.refFirst, r.refIdle, r.refChg,
     r.worst * 200, 100 - r.worst))
 end
-print(string.rep("-", 96))
+print(string.rep("-", 106))
 print(fmt("worst scene: %s", overall.name))
 print(fmt("worst callback: %d fires = %d instructions (limit 100 / 20000)",
   overall.worst, overall.worst * 200))

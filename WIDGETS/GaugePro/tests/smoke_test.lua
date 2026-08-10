@@ -186,7 +186,7 @@ test("Phase 1: zero-valued Auto choices resolve to declared defaults", function(
   assertEq(w.barVisual.preset, "classic-rail")
 end)
 
-test("Phase 1: default bar resolves Classic without changing its anatomy", function()
+test("Phase 2: Classic resolves to the retained Precision Rail anatomy", function()
   local w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
                       { Source = ID_RSSI, Style = "Bar" })
   assertEq(w.barVisual.preset, "classic-rail")
@@ -194,14 +194,15 @@ test("Phase 1: default bar resolves Classic without changing its anatomy", funct
   assertEq(w.barFaceName, "continuous")
   assertEq(w.barVisual.faceFallback, nil)
   assertEq(w.barPalette.mode, "classic")
-  assertEq(w.ui.track.props.color, w.mods.theme.color.rail)
+  assertEq(w.ui.track.props.color,
+    w.mods.theme.resolveColor(w.mods.theme.color.rail))
   refresh(w)
   assertEq(w.ui.fill.props.color, w.mods.theme.color.accent)
   local visible = 0
   for _, obj in ipairs(mock.objects()) do
     if obj.visible ~= false then visible = visible + 1 end
   end
-  assertEq(visible, 9, "Phase 0 default visible-object anatomy")
+  assertEq(visible, 16, "Precision Rail visible-object anatomy")
 end)
 
 test("Phase 1: resolving visuals never mutates the stored option table", function()
@@ -224,7 +225,8 @@ test("Phase 1: Theme Adaptive recolours only the bar path", function()
   wb.app.update(wb, withOption(wb.options, "Palette", 3))
   assertEq(wb.layoutRebuilt, false, "palette is non-structural")
   refresh(wb)
-  assertEq(wb.ui.fill.props.color, COLOR_THEME_ACTIVE)
+  assertEq(wb.ui.fill.props.color,
+    wb.mods.theme.resolveColor(COLOR_THEME_ACTIVE))
 
   local wd = newWidget({ x = 0, y = 0, w = 200, h = 160 },
     { Source = ID_RSSI, Style = "Needle" })
@@ -253,6 +255,34 @@ test("Phase 1: Custom Three drives exact normal warning critical colors", functi
   assertEq(w.ui.chip.props.color, cyan, "badge shares exact critical anchor")
 end)
 
+test("Phase 3: shared radio/Companion COLOR payload round-trips exactly", function()
+  setupRadio()
+  local mod = dofile(widgetDir .. "main.lua")
+  local colors = {
+    Accent = lcd.RGB(104, 24, 192), WarnClr = lcd.RGB(248, 216, 16),
+    CritClr = lcd.RGB(216, 32, 144), TrackClr = lcd.RGB(40, 24, 64),
+    PanelClr = lcd.RGB(16, 8, 32),
+  }
+  local authored = { Source = ID_RSSI, Style = "Bar", Palette = "Custom 3",
+    Surface = "Custom colors" }
+  for key, value in pairs(colors) do authored[key] = value end
+  local opts = mock.makeOptions(mod.defs, authored)
+  local w = mod.create({ x = 0, y = 0, w = 320, h = 90 }, opts, widgetDir)
+  mod.update(w, opts)
+  for key, value in pairs(colors) do
+    assertEq(opts[key], value, key .. " stored payload")
+  end
+  assertEq(w.barPalette.normal, colors.Accent)
+  assertEq(w.barPalette.warning, colors.WarnClr)
+  assertEq(w.barPalette.critical, colors.CritClr)
+  assertEq(w.barPalette.track, colors.TrackClr)
+  assertEq(w.barPalette.panel, colors.PanelClr)
+  mod.update(w, opts)
+  for key, value in pairs(colors) do
+    assertEq(opts[key], value, key .. " survives update")
+  end
+end)
+
 test("Phase 1: custom track recolours in place with no rebuild", function()
   local first = lcd.RGB(45, 35, 70)
   local second = lcd.RGB(80, 25, 110)
@@ -276,6 +306,367 @@ test("Phase 1: future faces use an explicit retained Continuous fallback", funct
   local before = mock.objectCount()
   refresh(w, 10)
   assertEq(mock.objectCount(), before, "fallback remains retained")
+end)
+
+test("Phase 2: descending bar keeps ghost, min and max at authored positions",
+function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 80 }, {
+    Source = ID_STICK, Style = "Bar", Scale = "Manual",
+    Min = 100, Max = 0, Damping = 0, ShowMinMax = "Markers",
+  })
+  mock.setValue(ID_STICK, 90); refresh(w)
+  mock.setValue(ID_STICK, 10); refresh(w)
+  local axis = w.layout.barAxis
+  local function authored(value)
+    return axis.x + math.floor(axis.w
+      * w.mods.geometry.normalize(value, 100, 0) + 0.5)
+  end
+  assertEq(w.frame.minX, authored(10), "descending minimum")
+  assertEq(w.frame.maxX, authored(90), "descending maximum")
+  assertEq(w.frame.ghostX, authored(10), "descending far-sweep ghost")
+  assertEq(w.ui.minMarkPts[1][1], w.frame.minX)
+  assertEq(w.ui.maxMarkPts[1][1], w.frame.maxX)
+  assertTrue(w.frame.minX ~= w.frame.maxX, "independent extrema")
+end)
+
+test("Phase 2: min and max bar markers hide and show independently", function()
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 }, {
+    Source = ID_STICK, Style = "Bar", Scale = "Manual",
+    Min = 0, Max = 100, Damping = 0, ShowMinMax = "Markers",
+  })
+  mock.setValue(ID_STICK, 50); refresh(w)
+  w.history.min, w.history.max = nil, 80
+  w.mods.bar.update(w)
+  assertEq(w.ui.minMark.visible, false, "minimum absent")
+  assertEq(w.ui.maxMark.visible, true, "maximum remains")
+  assertEq(w.ui.ghost.visible, false, "ghost requires a complete sweep")
+  w.history.min, w.history.max = 20, nil
+  w.mods.bar.update(w)
+  assertEq(w.ui.minMark.visible, true, "minimum remains")
+  assertEq(w.ui.maxMark.visible, false, "maximum absent")
+end)
+
+test("Phase 2: position head is exact, retained and above history", function()
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 }, {
+    Source = ID_STICK, Style = "Bar", Scale = "Manual",
+    Min = 0, Max = 100, Damping = 0, ShowMinMax = "Markers",
+  })
+  mock.setValue(ID_STICK, 25); refresh(w)
+  local axis = w.layout.barAxis
+  assertEq(w.frame.headX, axis.x + math.floor(axis.w * 0.25 + 0.5))
+  assertEq(w.ui.headPts[1][1], w.frame.headX)
+  assertTrue(objIndex(w.ui.head) > objIndex(w.ui.maxMark),
+    "head paints above extrema")
+  assertTrue(objIndex(w.ui.head) < objIndex(w.ui.valueLabel),
+    "digital value remains topmost")
+  local headPts, headSet = w.ui.headPts, w.ui.headSet
+  mock.setValue(ID_STICK, 75); refresh(w)
+  assertTrue(w.ui.head.props.pts == headPts, "head point buffer reused")
+  assertTrue(w.ui.headSet == headSet, "head set wrapper reused")
+end)
+
+test("Phase 2: zero crossing and out-of-range values clamp the same axis", function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 80 }, {
+    Source = ID_STICK, Style = "Bar", Scale = "Manual",
+    Min = -100, Max = 100, Warn = -30, Crit = -60, Damping = 0,
+  })
+  mock.setValue(ID_STICK, 0); refresh(w)
+  local axis = w.layout.barAxis
+  assertEq(w.frame.headX, axis.x + math.floor(axis.w * 0.5 + 0.5),
+    "zero is the authored midpoint")
+  mock.setValue(ID_STICK, 250); refresh(w)
+  assertEq(w.frame.headX, axis.x + axis.w, "high clamp")
+  mock.setValue(ID_STICK, -250); refresh(w)
+  assertEq(w.frame.headX, axis.x, "low clamp")
+end)
+
+test("Phase 2: a zero-position head hides and restores across data loss", function()
+  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 }, {
+    Source = ID_STICK, Style = "Bar", Scale = "Manual",
+    Min = 0, Max = 100, Damping = 0,
+  })
+  mock.setValue(ID_STICK, 0); refresh(w)
+  assertEq(w.ui.fill.visible, false, "zero has no false one-pixel fill")
+  assertEq(w.ui.head.visible, true, "zero head marks the authored start")
+  mock.setValue(ID_STICK, nil); refresh(w)
+  assertEq(w.ui.head.visible, false, "head leaves with invalid data")
+  mock.setValue(ID_STICK, 0); refresh(w)
+  assertEq(w.ui.head.visible, true, "same-position reconnect restores head")
+end)
+
+test("Phase 2: thickness choices are ordered inside the safe slot", function()
+  local heights = {}
+  for _, name in ipairs{ "Thin", "Medium", "Thick", "Maximum" } do
+    local w = newWidget({ x = 0, y = 0, w = 320, h = 100 }, {
+      Source = ID_RSSI, Style = "Bar", BarSize = name,
+    })
+    heights[#heights + 1] = w.layout.barOuter.h
+    local slot, body = w.layout.barSlot, w.layout.barOuter
+    assertTrue(body.y >= slot.y and body.y + body.h <= slot.y + slot.h,
+      name .. " remains in the rung-approved slot")
+  end
+  assertTrue(heights[1] < heights[2] and heights[2] < heights[3]
+    and heights[3] <= heights[4], "thin < medium < thick <= maximum")
+end)
+
+test("Phase 2: round, square and chamfer are materially different shapes", function()
+  local round = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", BarEnds = "Round",
+  })
+  assertTrue(round.ui.track.props.rounded > 0, "round radius")
+  local square = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", BarEnds = "Square",
+  })
+  assertEq(square.ui.track.props.rounded, 0, "square radius")
+  local chamfer = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", BarEnds = "Chamfer",
+  })
+  assertEq(#chamfer.ui.trackCaps, 2, "two real triangle tips")
+  assertEq(chamfer.ui.trackCaps[1].kind, "triangle")
+  assertTrue(mock.objectCount() <= 38,
+    "chamfer worst-case remains in the total budget")
+end)
+
+test("Phase 2: surfaces ground the widget and custom panel color is exact", function()
+  local transparent = newWidget({ x = 0, y = 0, w = 300, h = 80 }, {
+    Source = ID_RSSI, Style = "Bar", Surface = "Transparent",
+  })
+  assertEq(transparent.ui.panel, nil)
+  local themed = newWidget({ x = 0, y = 0, w = 300, h = 80 }, {
+    Source = ID_RSSI, Style = "Bar", Surface = "Theme panel",
+  })
+  assertEq(themed.ui.panel.props.color, themed.barPalette.panel)
+  local authored = lcd.RGB(55, 20, 90)
+  local custom = newWidget({ x = 0, y = 0, w = 300, h = 80 }, {
+    Source = ID_RSSI, Style = "Bar", Surface = "Custom colors",
+    PanelClr = authored,
+  })
+  assertEq(custom.ui.panel.props.color, authored, "exact custom panel")
+  assertEq(custom.ui.valueLabel.props.color,
+    custom.mods.theme.labelOn(authored), "panel-safe data ink")
+  local changed = lcd.RGB(15, 80, 100)
+  local panel = custom.ui.panel
+  custom.app.update(custom, withOption(custom.options, "PanelClr", changed))
+  assertEq(custom.layoutRebuilt, false, "panel color is non-structural")
+  refresh(custom)
+  assertTrue(custom.ui.panel == panel, "panel retained")
+  assertEq(custom.ui.panel.props.color, changed, "hot recolor")
+end)
+
+test("Phase 2: Theme panel survives an explicit high-contrast fixture", function()
+  setupRadio()
+  mock.setThemeColors({
+    [COLOR_THEME_PRIMARY1] = { 255, 255, 255 },
+    [COLOR_THEME_PRIMARY2] = { 0, 0, 0 },
+    [COLOR_THEME_PRIMARY3] = { 255, 255, 255 },
+    [COLOR_THEME_SECONDARY1] = { 255, 255, 255 },
+    [COLOR_THEME_SECONDARY2] = { 0, 0, 0 },
+    [COLOR_THEME_SECONDARY3] = { 0, 0, 0 },
+    [COLOR_THEME_ACTIVE] = { 255, 255, 0 },
+    [COLOR_THEME_WARNING] = { 255, 176, 0 },
+    [COLOR_THEME_DISABLED] = { 184, 184, 184 },
+  })
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", BarPreset = "Theme",
+  }, nil, true)
+  refresh(w)
+  assertTrue(w.mods.theme.contrastRatio(w.barPalette.value,
+    w.barPalette.panel) >= 7, "data ink clears enhanced contrast")
+  assertEq(w.ui.panel.props.color,
+    w.mods.theme.resolveColor(COLOR_THEME_SECONDARY3))
+  assertEq(w.ui.head.visible, true)
+  mock.setThemeColors()
+end)
+
+test("Phase 2: every colour mode keeps a distinct useful rail model", function()
+  local static = newWidget({ x = 0, y = 0, w = 300, h = 80 }, {
+    Source = ID_RSSI, Style = "Bar", ColorMode = "Static",
+  })
+  assertEq(static.ui.rails, nil); assertEq(static.ui.marks, nil)
+  local threshold = newWidget({ x = 0, y = 0, w = 300, h = 80 }, {
+    Source = ID_RSSI, Style = "Bar", ColorMode = "Threshold",
+  })
+  assertEq(threshold.ui.rails, nil)
+  assertTrue(#threshold.ui.marks == 2, "threshold marks")
+  local rail = newWidget({ x = 0, y = 0, w = 300, h = 80 }, {
+    Source = ID_RSSI, Style = "Bar", ColorMode = "Rail",
+  })
+  assertEq(#rail.ui.rails, 2, "warning and critical reference rail")
+  assertTrue(rail.layout.activeBar.h < rail.layout.barAxis.h,
+    "active channel clears the reference rail")
+  local sections = newWidget({ x = 0, y = 0, w = 300, h = 80 }, {
+    Source = ID_RSSI, Style = "Bar", ColorMode = "Sections",
+  })
+  assertEq(#sections.ui.rails, 3, "complete severity reference")
+  for _, band in ipairs(sections.ui.rails) do
+    assertTrue(band.props.h < sections.layout.barAxis.h,
+      "reference stays visible below the active channel")
+  end
+  assertTrue(sections.layout.activeBar.h < sections.layout.barAxis.h)
+  local gradient = newWidget({ x = 0, y = 0, w = 300, h = 80 }, {
+    Source = ID_RSSI, Style = "Bar", ColorMode = "Gradient",
+  })
+  assertTrue(#gradient.ui.gradientSlices >= 8, "retained spatial slices")
+  assertTrue(#gradient.ui.marks == 2, "gradient retains exact thresholds")
+end)
+
+test("Phase 3: spatial gradient is gapless, exact and retained", function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_STICK, Style = "Bar", ColorMode = "Gradient",
+    Scale = "Manual", Min = 0, Max = 100, Warn = 55, Crit = 35,
+    Damping = 0,
+  })
+  mock.setValue(ID_STICK, 50); refresh(w)
+  local slices = w.ui.gradientSlices
+  assertTrue(#slices >= 8 and #slices <= 24, "8..24 calibrated slices")
+  for i = 2, #slices do
+    assertEq(slices[i].props.x,
+      slices[i - 1].props.x + slices[i - 1].baseW,
+      "slice " .. i .. " has no spatial gap")
+  end
+  assertEq(slices[1].props.color, w.barPalette.critical,
+    "critical authored end remains explicit")
+  assertEq(slices[#slices].props.color, w.barPalette.normal,
+    "normal authored end remains explicit")
+  local lastRight = w.layout.barAxis.x
+  for _, slice in ipairs(slices) do
+    if slice.visible then
+      lastRight = math.max(lastRight, slice.props.x + slice.props.w)
+    end
+  end
+  assertEq(lastRight, w.frame.headX, "partial slice ends at exact head")
+  assertTrue(#w.ui.marks == 2, "threshold marks stay above the gradient")
+
+  local count = mock.objectCount()
+  local refs = {}
+  for i, slice in ipairs(slices) do refs[i] = slice end
+  mock.setValue(ID_STICK, 83); refresh(w)
+  assertEq(mock.objectCount(), count, "value movement creates no slices")
+  for i, slice in ipairs(slices) do
+    assertTrue(slice == refs[i], "slice " .. i .. " remains retained")
+  end
+end)
+
+test("Phase 3: gradient slice calibration respects the 38-object ceiling", function()
+  local w = newWidget({ x = 0, y = 0, w = 480, h = 120 }, {
+    Source = ID_RSSI, Style = "Bar", ColorMode = "Gradient",
+    Surface = "Theme panel", BarEnds = "Chamfer",
+    ShowMinMax = "Markers + text", Damping = 0,
+  })
+  refresh(w)
+  assertTrue(#w.ui.gradientSlices <= 24)
+  assertTrue(mock.objectCount() <= 38,
+    "gradient retained objects " .. mock.objectCount() .. " <= 38")
+  assertTrue(w.barFace.estimateObjects(w.barVisual.profile, w.config) <= 38,
+    "face estimate respects the same ceiling")
+end)
+
+test("Phase 3: zero and full gradient spans remain truthful", function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_STICK, Style = "Bar", ColorMode = "Gradient",
+    Scale = "Manual", Min = 0, Max = 100, Damping = 0,
+  })
+  mock.setValue(ID_STICK, 0); refresh(w)
+  for _, slice in ipairs(w.ui.gradientSlices) do
+    assertEq(slice.visible, false, "zero hides every slice")
+  end
+  assertEq(w.ui.head.visible, true, "exact head still marks zero")
+  mock.setValue(ID_STICK, 100); refresh(w)
+  for _, slice in ipairs(w.ui.gradientSlices) do
+    assertEq(slice.visible, true, "full scale shows every slice")
+    assertEq(slice.props.w, slice.baseW, "full slice width restored")
+  end
+  assertEq(w.frame.headX, w.layout.barAxis.x + w.layout.barAxis.w)
+end)
+
+test("Phase 3: live HTX theme changes recolor in place without rebuilding", function()
+  setupRadio()
+  mock.setThemeColors()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", Palette = "Theme adaptive",
+    Surface = "Theme panel", ColorMode = "Gradient", Damping = 0,
+  }, nil, true)
+  refresh(w)
+  local objects, panel, head = mock.objectCount(), w.ui.panel, w.ui.head
+  local beforeSig = w.barPalette.signature
+  local beforeNormal = w.barPalette.normal
+  local beforeGradientNormal = w.ui.gradientSlices[#w.ui.gradientSlices].props.color
+  w.layoutRebuilt = false
+  mock.setThemeColors({
+    [COLOR_THEME_PRIMARY1] = { 248, 248, 248 },
+    [COLOR_THEME_PRIMARY2] = { 8, 8, 8 },
+    [COLOR_THEME_SECONDARY1] = { 88, 32, 144 },
+    [COLOR_THEME_SECONDARY2] = { 48, 20, 80 },
+    [COLOR_THEME_SECONDARY3] = { 20, 12, 36 },
+    [COLOR_THEME_ACTIVE] = { 176, 72, 240 },
+    [COLOR_THEME_WARNING] = { 248, 208, 32 },
+    [COLOR_THEME_DISABLED] = { 136, 136, 152 },
+  })
+  refresh(w, 18)
+  assertEq(w.barPalette.signature, beforeSig,
+    "theme probe is throttled before one second")
+  refresh(w, 1)
+  assertTrue(w.barPalette.signature ~= beforeSig, "theme signature invalidated")
+  assertTrue(w.barPalette.normal ~= beforeNormal, "active candidate re-resolved")
+  assertEq(w.barPalette.normal,
+    w.mods.theme.resolveColor(COLOR_THEME_ACTIVE))
+  assertTrue(w.ui.gradientSlices[#w.ui.gradientSlices].props.color
+    ~= beforeGradientNormal, "gradient cache follows the theme signature")
+  assertEq(w.ui.gradientSlices[#w.ui.gradientSlices].props.color,
+    w.barPalette.normal)
+  assertEq(w.ui.panel.props.color,
+    w.mods.theme.resolveColor(COLOR_THEME_SECONDARY3))
+  assertEq(mock.objectCount(), objects, "theme change creates no objects")
+  assertTrue(w.ui.panel == panel and w.ui.head == head, "tree retained")
+  assertEq(w.layoutRebuilt, false, "theme color change is non-structural")
+  mock.setThemeColors()
+end)
+
+test("Phase 3: Off Auto Strong contrast remain structural and color-exact", function()
+  local grey = lcd.RGB(128, 128, 128)
+  local function build(mode)
+    local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+      Source = ID_RSSI, Style = "Bar", Palette = "Custom 3",
+      Accent = grey, WarnClr = grey, CritClr = grey,
+      Surface = "Custom colors", TrackClr = grey, PanelClr = grey,
+      Contrast = mode, Damping = 0,
+    })
+    refresh(w)
+    return w
+  end
+  local off = build("Off")
+  assertEq(off.barPalette.assist, "off")
+  assertEq(off.barPalette.normal, grey)
+  assertEq(off.ui.casing.props.opacity, off.mods.theme.opacity.railBand)
+  assertEq(off.ui.head.props.thickness, off.layout.markThickness)
+
+  local auto = build("Auto")
+  assertEq(auto.barPalette.assist, "needed")
+  assertEq(auto.ui.casing.props.opacity, auto.mods.theme.opacity.full)
+  assertTrue(auto.ui.head.props.thickness > auto.layout.markThickness)
+  assertEq(auto.barPalette.warning, grey, "Auto never recolors warning")
+
+  local strong = build("Strong")
+  assertEq(strong.barPalette.assist, "strong")
+  assertEq(strong.ui.casing.props.opacity, strong.mods.theme.opacity.full)
+  assertTrue(strong.ui.head.props.thickness > auto.ui.head.props.thickness)
+  assertEq(strong.barPalette.critical, grey, "Strong never recolors critical")
+end)
+
+test("Phase 3: color-independent WARN and CRIT survive monochrome", function()
+  local grey = lcd.RGB(128, 128, 128)
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", Palette = "Custom 3",
+    Accent = grey, WarnClr = grey, CritClr = grey, Contrast = "Auto",
+  })
+  mock.setValue(ID_RSSI, 45); refresh(w)
+  assertEq(w.frame.stateStr, "WARN")
+  assertEq(w.ui.stateLabel.visible, true)
+  mock.setValue(ID_RSSI, 20); refresh(w)
+  assertEq(w.frame.stateStr, "CRIT")
+  assertEq(w.ui.stateLabel.visible, true)
+  refresh(w, 10)
+  assertEq(w.frame.pulse, true, "critical adds a periodic non-color signal")
 end)
 
 -- ---- build ---------------------------------------------------------------

@@ -21,7 +21,7 @@
 --
 -- Opciones:
 --   --out DIR         destino (por defecto <widget>/dev/shots/gallery/)
---   --theme T         dark | light | both        (por defecto both)
+--   --theme T         stock | dark | highcontrast | both (por defecto both)
 --   --only PATRON     filtra por nombre de escena o clave de seccion
 --   --tag NOMBRE      guarda ademas una copia versionada -NOMBRE
 --   --baseline FILE   compara el manifiesto nuevo contra ese y lista cambios
@@ -43,7 +43,7 @@ do
       print((string.gsub([[
 uso: lua5.3 dev/gallery.lua <widget-dir> [opciones]
   --out DIR        destino (por defecto <widget>/dev/shots/gallery/)
-  --theme T        dark | light | both       (por defecto both)
+  --theme T        stock | dark | highcontrast | both (por defecto both)
   --only PATRON    filtra por nombre de escena o clave de seccion
   --tag NOMBRE     guarda ademas una copia versionada -NOMBRE
   --baseline FILE  compara contra un manifiesto anterior

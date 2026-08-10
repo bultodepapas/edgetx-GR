@@ -1397,6 +1397,15 @@ phases.
 
 ### Phase 2 — Perfect the flagship default
 
+**Status: COMPLETE (2026-08-09).** Continuous is now the Precision Rail:
+responsive thickness, round/square/true-chamfer ends, theme/custom surfaces,
+permanent Rail/Sections context, an exact retained position head, and fully
+independent ghost/min/max history. The existing five-rung short-zone ladder is
+unchanged. The 109-scene stock/dark/high-contrast review, 55 unit tests, 161
+lifecycle tests, collision/atlas/static-analysis gates, and radio CPU/allocation
+probes are recorded in `PHASE2_REPORT.md`. Spatial gradient slices remain Phase
+3; alternate faces remain Phase 4; vertical and zero origin remain Phase 5.
+
 #### 2.1 Correctness first
 
 - build independent min and max bar markers and add a failing-first descending-scale test where ghost/min/max occupy the correct authored positions;
@@ -1428,6 +1437,15 @@ phases.
 
 ### Phase 3 — Color freedom
 
+**Status: COMPLETE (2026-08-09).** Phase 3 ships exact custom palette
+round-trips, resolved HTX theme tokens with a throttled live-theme signature,
+CVD-aware structural contrast, and the real Continuous spatial Gradient. The
+119-scene stock/dark/high-contrast review, 60 unit tests, 168 lifecycle tests,
+38-object retained census, collision/atlas/static-analysis gates, and expanded
+CPU/allocation probes are recorded in `PHASE3_REPORT.md`. Alternate faces remain
+Phase 4; vertical and zero origin remain Phase 5; motion profiles remain Phase
+6.
+
 #### 3.1 Custom palettes
 
 - wire normal, warning, critical, track, and panel color pickers;
@@ -1457,6 +1475,15 @@ phases.
 - verify warnings with simulated color-vision deficiencies.
 
 **Exit gate:** every palette mode is readable across theme/background fixtures, and custom colors remain user-authored.
+
+**Gate result: PASS.** Custom Three/Two endpoints, track and panel payloads
+survive the shared radio/Companion integer option contract byte-for-byte. Theme
+roles re-resolve in place within one second without object churn. Auto/Strong
+change casing/head/mark structure and never a saved anchor. Spatial gradients
+use 8–24 physically calibrated slices reduced only by the remaining whole-face
+budget; both audited worst cases finish at 38/38 retained objects. Every bar
+callback is at or below 9,600/20,000 instructions and ordinary gradient motion
+is 1,772–1,798 instructions/frame.
 
 ### Phase 4 — Multiple visual faces and presets
 

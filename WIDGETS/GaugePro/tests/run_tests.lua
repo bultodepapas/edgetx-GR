@@ -21,7 +21,10 @@ local smoothing = load("smoothing")
 local theme = load("theme")
 local barStyle = load("bar_style")
 local barFaces = load("bar_faces")
+local renderer = load("renderer")
 barStyle.setup(theme, presets)
+renderer.setup(theme, geometry, format)
+barFaces.setup(theme, geometry, renderer)
 
 local passed, failed = 0, 0
 
@@ -417,6 +420,31 @@ test("compact variants cap detail and report the downgrade", function()
   assertTrue(visual.compactDescription ~= "", "preset compact form documented")
 end)
 
+test("Phase 2 classifies all six responsive bar families", function()
+  local cases = {
+    { { w = 300, h = 40 }, "micro" },
+    { { w = 300, h = 60 }, "short" },
+    { { w = 90, h = 70 }, "compact" },
+    { { w = 300, h = 100 }, "standard" },
+    { { w = 100, h = 220 }, "tall" },
+    { { w = 480, h = 160 }, "large" },
+  }
+  for _, c in ipairs(cases) do
+    local p = barStyle.zoneProfile(c[1])
+    assertEq(p.family, c[2], c[2])
+  end
+end)
+
+test("Phase 2 Auto keeps every established wide zone horizontal", function()
+  for _, zone in ipairs{
+    { w = 200, h = 60 }, { w = 300, h = 70 }, { w = 480, h = 120 },
+  } do
+    local visual = barStyle.resolve(visualWidget("RSSI", zone), visualConfig())
+    assertEq(visual.direction, "horizontal",
+      string.format("%dx%d", zone.w, zone.h))
+  end
+end)
+
 test("hex requests are capped by the 40-object face budget", function()
   local visual = barStyle.resolve(visualWidget("Cels", { w = 600, h = 180 }),
     visualConfig{ barPreset = 4, segments = 7 })
@@ -437,12 +465,14 @@ test("bar configuration signatures are stable and complete", function()
              "custom panel participates")
 end)
 
-test("Theme Adaptive preserves authored roles and analyzes separation", function()
+test("Theme Adaptive resolves candidates and analyzes separation", function()
   mock.setThemeColors()
   local _, palette = barStyle.resolve(visualWidget(), visualConfig{ palette = 3 })
-  assertEq(palette.normal, COLOR_THEME_ACTIVE)
-  assertEq(palette.warning, COLOR_THEME_WARNING)
+  assertEq(palette.normal, theme.resolveColor(COLOR_THEME_ACTIVE))
+  assertEq(palette.warning, theme.resolveColor(COLOR_THEME_WARNING))
   assertEq(palette.critical, theme.color.crit)
+  assertEq(palette.sources.normal, COLOR_THEME_ACTIVE)
+  assertEq(palette.sources.warning, COLOR_THEME_WARNING)
   assertTrue(type(palette.analysis.normalWarningDistance) == "number")
   assertTrue(type(palette.analysis.normalTrackContrast) == "number")
 end)
@@ -473,6 +503,32 @@ test("Custom Three preserves all user severity anchors exactly", function()
   assertEq(p.critical, critical)
   assertEq(theme.paletteColor(p, 0, 20), critical)
   assertEq(theme.paletteColor(p, 1, 20), normal)
+end)
+
+test("Phase 3 custom palette families preserve every authored anchor", function()
+  local families = {
+    { "purple-yellow", { 112, 24, 192 }, { 248, 216, 16 }, { 216, 32, 144 } },
+    { "blue-orange", { 24, 112, 224 }, { 248, 128, 16 }, { 224, 32, 32 } },
+    { "monochrome", { 128, 128, 128 }, { 128, 128, 128 }, { 128, 128, 128 } },
+    { "pastel", { 152, 208, 184 }, { 240, 208, 152 }, { 224, 160, 176 } },
+    { "saturated", { 0, 255, 112 }, { 255, 224, 0 }, { 255, 0, 128 } },
+  }
+  for _, family in ipairs(families) do
+    local normal = lcd.RGB(table.unpack(family[2]))
+    local warning = lcd.RGB(table.unpack(family[3]))
+    local critical = lcd.RGB(table.unpack(family[4]))
+    local track = lcd.RGB(32, 40, 56)
+    local panel = lcd.RGB(16, 20, 32)
+    local _, p = barStyle.resolve(visualWidget(), visualConfig{
+      palette = 4, accent = normal, warnClr = warning, critClr = critical,
+      surface = 4, trackClr = track, panelClr = panel,
+    })
+    assertEq(p.normal, normal, family[1] .. " normal")
+    assertEq(p.warning, warning, family[1] .. " warning")
+    assertEq(p.critical, critical, family[1] .. " critical")
+    assertEq(p.track, track, family[1] .. " track")
+    assertEq(p.panel, panel, family[1] .. " panel")
+  end
 end)
 
 test("Custom Two preserves endpoints and derives a luminance-aware midpoint", function()
@@ -522,8 +578,85 @@ test("color analysis utilities resolve RGB and theme flags", function()
   assertTrue(theme.colorDistance(COLOR_THEME_ACTIVE, COLOR_THEME_WARNING) > 0)
 end)
 
+test("Phase 3 color-vision simulations feed redundant contrast decisions", function()
+  local same = lcd.RGB(128, 128, 128)
+  assertNear(theme.colorVisionDistance(same, same, "deuteranopia"), 0, 0.001)
+  assertTrue(theme.colorVisionDistance(theme.color.warn, theme.color.crit,
+    "protanopia") >= 0)
+  assertTrue(theme.colorVisionDistance(theme.color.warn, theme.color.crit,
+    "deuteranopia") >= 0)
+  assertTrue(theme.colorVisionDistance(theme.color.warn, theme.color.crit,
+    "tritanopia") >= 0)
+
+  local _, auto = barStyle.resolve(visualWidget(), visualConfig{
+    palette = 4, accent = same, warnClr = same, critClr = same,
+    surface = 4, trackClr = same, panelClr = same, contrast = 1,
+  })
+  local _, off = barStyle.resolve(visualWidget(), visualConfig{
+    palette = 4, accent = same, warnClr = same, critClr = same,
+    surface = 4, trackClr = same, panelClr = same, contrast = 2,
+  })
+  local _, strong = barStyle.resolve(visualWidget(), visualConfig{
+    palette = 4, accent = same, warnClr = same, critClr = same,
+    surface = 4, trackClr = same, panelClr = same, contrast = 3,
+  })
+  assertEq(auto.assist, "needed")
+  assertEq(off.assist, "off")
+  assertEq(strong.assist, "strong")
+  assertEq(auto.normal, same, "analysis never recolors the authored anchor")
+  assertEq(theme.colorVisionDistance(auto.warning, auto.critical,
+    "deuteranopia"), 0)
+end)
+
+test("Phase 3 spatial gradient maps authored scale and goodness direction", function()
+  local highGood = { min = 0, max = 100, warn = 55, crit = 35,
+                     highGood = true }
+  assertEq(barFaces.gradientPosition(highGood, 0), 0)
+  assertEq(barFaces.gradientPosition(highGood, 1), 1)
+  assertNear(barFaces.gradientPosition(highGood, 0.45), 0.5, 0.001)
+  local lowGood = { min = 0, max = 100, warn = 45, crit = 65,
+                    highGood = false }
+  assertEq(barFaces.gradientPosition(lowGood, 0), 1)
+  assertEq(barFaces.gradientPosition(lowGood, 1), 0)
+  local descending = { min = 100, max = 0, warn = 55, crit = 35,
+                       highGood = true }
+  assertEq(barFaces.gradientPosition(descending, 0), 1)
+  assertEq(barFaces.gradientPosition(descending, 1), 0)
+end)
+
+test("Phase 3 gradient slice count is physical, bounded and budget-aware", function()
+  lvgl.LCD_SCALE = 1
+  assertEq(barFaces.gradientSliceCount(48, 24), 8)
+  assertEq(barFaces.gradientSliceCount(160, 24), 14)
+  assertEq(barFaces.gradientSliceCount(480, 24), 24)
+  assertEq(barFaces.gradientSliceCount(480, 19), 19)
+end)
+
+test("Phase 3 live theme polling recolors only after the one-second gate", function()
+  mock.setThemeColors()
+  local cfg = visualConfig{ palette = 3, surface = 3 }
+  local widget = visualWidget()
+  widget.config = cfg
+  widget.barVisual, widget.barPalette = barStyle.resolve(widget, cfg)
+  local before = widget.barPalette.signature
+  mock.setThemeColors({
+    [COLOR_THEME_PRIMARY1] = { 240, 240, 240 },
+    [COLOR_THEME_PRIMARY2] = { 8, 8, 8 },
+    [COLOR_THEME_SECONDARY1] = { 72, 24, 128 },
+    [COLOR_THEME_SECONDARY3] = { 20, 12, 36 },
+    [COLOR_THEME_ACTIVE] = { 176, 72, 240 },
+    [COLOR_THEME_WARNING] = { 248, 208, 32 },
+  })
+  assertEq(barStyle.refreshPalette(widget, cfg, 99), false)
+  assertEq(widget.barPalette.signature, before)
+  assertEq(barStyle.refreshPalette(widget, cfg, 100), true)
+  assertTrue(widget.barPalette.signature ~= before)
+  assertEq(widget.barPalette.normal, theme.resolveColor(COLOR_THEME_ACTIVE))
+  mock.setThemeColors()
+end)
+
 test("every bar face exposes the retained interface and a hard ceiling", function()
-  local methods = { "supports", "estimateObjects", "build", "update",
+  local methods = { "supports", "estimateObjects", "build", "buildOverlay", "update",
                     "applyPalette", "setVisible" }
   for _, name in ipairs(barFaces.ORDER) do
     local face = barFaces.REGISTRY[name]

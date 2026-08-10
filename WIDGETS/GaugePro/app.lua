@@ -204,15 +204,16 @@ local function configure(widget)
   end
 
   local L = m.layout.calculate(widget, cfg)
-  widget.layout = L
   -- Resolve bar appearance from immutable stored config only when the active
   -- layout can consume it. A dial ignores every bar-only option, so it should
   -- not pay RGB analysis/cache-signature cost during configure either.
   if L.style == "bar" then
     widget.barVisual, widget.barPalette = m.bar_style.resolve(widget, cfg)
+    m.layout.applyBarVisual(L, widget.barVisual, cfg)
   else
     widget.barVisual, widget.barPalette = nil, nil
   end
+  widget.layout = L
   -- rangeSig is included so a range edit (min/max/warn/crit/precision, or the
   -- battery cell latch) rebuilds everything derived from it at BUILD time:
   -- section/rail arcs, bar threshold marks, scale end labels (AUDIT.md P0-2).
@@ -336,6 +337,14 @@ function M.refresh(widget, _event, _touch)
     -- it lands, the scale is rebuilt once
     widget.cellsApplied = true
     apply(widget)
+  end
+
+  -- EdgeTX/HTX does not guarantee widget.update() for a live theme switch.
+  -- The resolver therefore probes the small resolved-role signature at most
+  -- once per second and swaps only the palette table. bar.update() detects its
+  -- signature and recolors the existing tree in this same refresh.
+  if widget.layout.style == "bar" then
+    m.bar_style.refreshPalette(widget, widget.config)
   end
 
   m.alerts.update(widget)
