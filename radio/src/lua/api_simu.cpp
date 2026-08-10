@@ -20,6 +20,7 @@
 #include <string.h>
 #include <string>
 
+#define LUA_LIB
 #include "edgetx.h"
 #include "lua_api.h"
 #include "lua_states.h"
