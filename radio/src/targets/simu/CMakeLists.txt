@@ -156,6 +156,12 @@ else()
 
   target_compile_options(simu PUBLIC -DSIMU)
 
+  if(WIDGET_STUDIO)
+    # The SDL main loop (sdl_simu.cpp) owns the --pipe steering channel and
+    # the reset-request consumption; it lives in the simu executable target.
+    target_compile_definitions(simu PUBLIC WIDGET_STUDIO)
+  endif()
+
   add_png_target(image_assets "assets/images/*.png")
   add_dependencies(simu image_assets)
 

@@ -682,6 +682,10 @@ static void dispatchPipeCommand(const std::string& line)
     std::string path;
     iss >> path;
     simuCaptureArm(path.c_str());
+  } else if (cmd == "key") {
+    int key = -1, state = 0;
+    iss >> key >> state;
+    if (key >= 0) simuSetKey((uint8_t)key, state != 0);
   } else if (cmd == "reset") {
     simuStop();
     simuStart();
