@@ -90,6 +90,8 @@ M.SOURCES = {
   T1    = { id = 3078, unit = 11, prec = 0, sensor = 3 },
   timer = { id = 200,  name = "timer1" },
   Thr   = { id = 100 },
+  Ail   = { id = 101 },
+  CH1   = { id = 102, name = "CH1" },
 }
 
 -- Options that cannot be shown in a still frame. Listed explicitly so the
@@ -100,8 +102,7 @@ M.NON_VISUAL = {
   Delay   = "retardo de arranque de alertas",
   Vibrate = "haptic",
   ResetSw = "accion, no estado",
-  BarDir    = "contrato Phase 1; eje vertical llega en Phase 5",
-  BarOrigin = "contrato Phase 1; origen cero llega en Phase 5",
+  Motion  = "perfil temporal; se verifica con secuencias, no en un fotograma",
 }
 
 -- ---------------------------------------------------------------- harness --
@@ -208,13 +209,24 @@ function M.facts(ctx)
     barSegments = w.barVisual and w.barVisual.renderedSegments,
     barPreset = w.barVisual and w.barVisual.preset,
     barDirection = w.barVisual and w.barVisual.direction,
+    barOrigin = w.barVisual and w.barVisual.origin,
     barThickness = w.barVisual and w.barVisual.thickness,
     barEnds = w.barVisual and w.barVisual.ends,
     barSurface = w.barVisual and w.barVisual.surface,
     barPalette = w.barPalette and w.barPalette.mode,
     barAssist = w.barPalette and w.barPalette.assist,
+    barMotion = w.barVisual and w.barVisual.motion,
+    barHead = w.barVisual and w.barVisual.head,
+    barMarks = w.barVisual and w.barVisual.marks,
+    barValuePosition = w.barVisual and w.barVisual.valuePos,
+    barLabelPosition = w.barVisual and w.barVisual.labelPos,
+    barDowngrades = w.barVisual and w.barVisual.downgrades,
     gradientSlices = w.ui and w.ui.gradientSlices and #w.ui.gradientSlices,
     barBody = L.barOuter and { L.barOuter.w, L.barOuter.h } or nil,
+    barAxisOrientation = L.axis and L.axis.orientation,
+    barAxisGrowth = L.axis and L.axis.growth,
+    barZeroPosition = L.axis and L.axis.zeroT,
+    barZeroInside = L.axis and L.axis.zeroInside,
   }
 end
 
@@ -318,6 +330,167 @@ local function phase4FaceMatrix()
       }, value = 78 },
   }
   for _, c in ipairs(edges) do out[#out + 1] = c end
+  return out
+end
+
+-- Phase 5 is an axis-and-semantics matrix, not a handful of hero images.
+-- It proves every retained reading model vertically, every signed face on both
+-- sides of a numeric zero, Dual Rail's asymmetric/descending truth, and each
+-- presentation control as a materially distinct authored result.
+local function phase5AxisMatrix()
+  local out = {}
+  local faces = { "Continuous", "Blocks", "Hex", "Ticks", "Steps" }
+  local modes = { "Static", "Threshold", "Rail", "Gradient", "Sections" }
+
+  for _, face in ipairs(faces) do
+    for _, mode in ipairs(modes) do
+      out[#out + 1] = {
+        name = "f5-v-" .. string.lower(face) .. "-" .. string.lower(mode),
+        title = "Vertical " .. face .. " / " .. mode,
+        zone = { 120, 300 }, source = "Thr", opts = {
+          Style = "Bar", BarDir = "Vertical", BarFace = face,
+          ColorMode = mode, Scale = "Manual", Min = 0, Max = 100,
+          Warn = 55, Crit = 35, Damping = 0,
+        }, value = 45,
+      }
+    end
+  end
+
+  for _, face in ipairs(faces) do
+    for _, value in ipairs({ -65, 65 }) do
+      local side = (value < 0) and "negative" or "positive"
+      out[#out + 1] = {
+        name = "f5-zero-h-" .. string.lower(face) .. "-" .. side,
+        title = face .. " / zero / " .. side,
+        zone = { 420, 110 }, source = "Ail", opts = {
+          Style = "Bar", BarDir = "Horizontal", BarFace = face,
+          BarOrigin = "Zero", ColorMode = (face == "Continuous")
+            and "Gradient" or "Sections",
+          Scale = "Manual", Min = -100, Max = 100,
+          Warn = -30, Crit = -60, Damping = 0,
+        }, value = value,
+      }
+    end
+    out[#out + 1] = {
+      name = "f5-zero-v-" .. string.lower(face),
+      title = "Vertical " .. face .. " / zero",
+      zone = { 120, 300 }, source = "Ail", opts = {
+        Style = "Bar", BarDir = "Vertical", BarFace = face,
+        BarOrigin = "Zero", ColorMode = (face == "Continuous")
+          and "Gradient" or "Sections",
+        Scale = "Manual", Min = -100, Max = 100,
+        Warn = -30, Crit = -60, Damping = 0,
+      }, value = -65,
+    }
+  end
+
+  local duals = {
+    { "f5-dual-h-neg", "Dual Rail H / negative", { 420, 110 },
+      "Horizontal", -20, -30, 100 },
+    { "f5-dual-h-zero", "Dual Rail H / zero", { 420, 110 },
+      "Horizontal", 0, -30, 100 },
+    { "f5-dual-h-pos", "Dual Rail H / positive", { 420, 110 },
+      "Horizontal", 80, -30, 100 },
+    { "f5-dual-v-neg", "Dual Rail V / negative", { 120, 300 },
+      "Vertical", -65, -100, 100 },
+    { "f5-dual-v-zero", "Dual Rail V / zero", { 120, 300 },
+      "Vertical", 0, -100, 100 },
+    { "f5-dual-v-pos", "Dual Rail V / positive", { 120, 300 },
+      "Vertical", 65, -100, 100 },
+  }
+  for _, d in ipairs(duals) do
+    out[#out + 1] = {
+      name = d[1], title = d[2], zone = d[3], source = "Ail", opts = {
+        Style = "Bar", BarDir = d[4], BarFace = "Dual rail",
+        BarOrigin = "Zero", Scale = "Manual", Min = d[6], Max = d[7],
+        Damping = 0,
+      }, value = d[5],
+    }
+  end
+  out[#out + 1] = {
+    name = "f5-dual-custom-neg", title = "Dual / purple-yellow / negative",
+    zone = { 420, 110 }, source = "Ail", opts = {
+      Style = "Bar", BarFace = "Dual rail", BarOrigin = "Zero",
+      Palette = "Custom 2", Accent = lcd.RGB(0xf0, 0xd8, 0x18),
+      CritClr = lcd.RGB(0x88, 0x28, 0xd8), Scale = "Manual",
+      Min = -30, Max = 100, Damping = 0,
+    }, value = -20,
+  }
+  out[#out + 1] = {
+    name = "f5-dual-custom-pos", title = "Dual / purple-yellow / positive",
+    zone = { 420, 110 }, source = "Ail", opts = {
+      Style = "Bar", BarFace = "Dual rail", BarOrigin = "Zero",
+      Palette = "Custom 2", Accent = lcd.RGB(0xf0, 0xd8, 0x18),
+      CritClr = lcd.RGB(0x88, 0x28, 0xd8), Scale = "Manual",
+      Min = -30, Max = 100, Damping = 0,
+    }, value = 80,
+  }
+  out[#out + 1] = {
+    name = "f5-dual-desc", title = "Dual / descending +100..-30",
+    zone = { 420, 110 }, source = "Ail", opts = {
+      Style = "Bar", BarFace = "Dual rail", BarOrigin = "Zero",
+      Scale = "Manual", Min = 100, Max = -30, Damping = 0,
+    }, value = -20,
+  }
+  out[#out + 1] = {
+    name = "f5-dual-fallback", title = "Dual / one-sided honest fallback",
+    zone = { 420, 110 }, source = "Thr", opts = {
+      Style = "Bar", BarFace = "Dual rail", Scale = "Manual",
+      Min = 0, Max = 100, Damping = 0,
+    }, value = 65,
+    note = "sin cero interior: Continuous y downgrade explicito",
+  }
+
+  for _, head in ipairs({ "None", "Cap", "Dot", "Line", "Needle" }) do
+    out[#out + 1] = {
+      name = "f5-head-" .. string.lower(head), title = "Head / " .. head,
+      zone = { 360, 100 }, opts = {
+        Style = "Bar", BarHead = head, BarSize = "Thick", Damping = 0,
+      }, value = 67,
+    }
+  end
+  for _, marks in ipairs({ "Off", "Thresholds", "Ends", "Full" }) do
+    out[#out + 1] = {
+      name = "f5-marks-" .. string.lower(marks),
+      title = "Scale marks / " .. marks, zone = { 360, 100 }, opts = {
+        Style = "Bar", ScaleMarks = marks, ColorMode = "Static", Damping = 0,
+      }, value = 67,
+    }
+  end
+
+  for _, position in ipairs({ "Above", "Inside", "End", "Off" }) do
+    out[#out + 1] = {
+      name = "f5-value-v-" .. string.lower(position),
+      title = "Vertical value / " .. position, zone = { 120, 300 }, opts = {
+        Style = "Bar", BarDir = "Vertical", ValuePos = position,
+        BarFace = "Ticks", ScaleMarks = "Full", Damping = 0,
+      }, value = 67,
+    }
+  end
+  for _, position in ipairs({ "Above", "Below", "Inside", "Off" }) do
+    out[#out + 1] = {
+      name = "f5-label-v-" .. string.lower(position),
+      title = "Vertical name / " .. position, zone = { 120, 300 }, opts = {
+        Style = "Bar", BarDir = "Vertical", LabelPos = position,
+        BarFace = "Steps", Label = "AILERON", Damping = 0,
+      }, value = 67,
+    }
+  end
+
+  local autoSources = {
+    { "f5-auto-ail", "Auto Source / Ail -> RC Center", "Ail", -65, -100, 100 },
+    { "f5-auto-ch1", "Auto Source / CH1 -> RC Center", "CH1", 65, -100, 100 },
+    { "f5-auto-thr", "Auto Source / Thr stays throttle", "Thr", 65, -100, 100 },
+    { "f5-auto-ail-one", "Auto Ail / one-sided fallback", "Ail", 65, 0, 100 },
+  }
+  for _, a in ipairs(autoSources) do
+    out[#out + 1] = {
+      name = a[1], title = a[2], zone = { 420, 110 }, source = a[3], opts = {
+        Style = "Bar", BarPreset = "Auto", Scale = "Manual",
+        Min = a[5], Max = a[6], Damping = 0,
+      }, value = a[4],
+    }
+  end
   return out
 end
 
@@ -801,8 +974,15 @@ M.sections = {
     cases = phase4FaceMatrix(),
   },
   {
+    key = "ejes5",
+    title = "12 - Ejes, cero y presentacion Phase 5",
+    note = "Matriz exhaustiva: todas las caras verticales, origen numerico cero"
+      .. ", Dual Rail asimetrico, fuentes RC y cada control de presentacion.",
+    cases = phase5AxisMatrix(),
+  },
+  {
     key = "zonas",
-    title = "12 - Matriz de zonas",
+    title = "13 - Matriz de zonas",
     note = "La misma configuracion en cada tamano de hueco que un layout de"
       .. " EdgeTX puede dar. Ningun texto puede desbordar ni cruzar el aro.",
     cases = zoneMatrix(),

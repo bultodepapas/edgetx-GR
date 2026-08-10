@@ -35,8 +35,9 @@ end
 
 -- ---- simulated radio -----------------------------------------------------
 
-local ID_RSSI, ID_CELLS, ID_TEMP_T1, ID_TIMER1, ID_STICK, ID_RXBT =
-  3072, 3075, 3078, 200, 100, 3081
+local ID_RSSI, ID_CELLS, ID_TEMP_T1, ID_TIMER1, ID_STICK, ID_RXBT,
+      ID_AIL, ID_CH1, ID_TRIM, ID_GVAR =
+  3072, 3075, 3078, 200, 100, 3081, 101, 201, 202, 203
 local ID_RSSI_MIN, ID_RSSI_MAX = 3073, 3074
 local ID_RXBT_MIN, ID_RXBT_MAX = 3082, 3083
 
@@ -53,10 +54,18 @@ local function setupRadio()
   mock.addField(ID_RXBT_MAX, "RxBt+", 1)
   mock.addField(ID_TIMER1, "timer1")     -- no unit: not a telemetry source
   mock.addField(ID_STICK, "Thr")
+  mock.addField(ID_AIL, "Ail")
+  mock.addField(ID_CH1, "CH1")
+  mock.addField(ID_TRIM, "TrmA")
+  mock.addField(ID_GVAR, "GV1")
   mock.sim.sensors[0] = { name = "RSSI", prec = 0, unit = 17 }
   mock.sim.sensors[1] = { name = "RxBt", prec = 2, unit = 1 }
   mock.setValue(ID_RSSI, 70)
   mock.setValue(ID_STICK, 512)
+  mock.setValue(ID_AIL, 0)
+  mock.setValue(ID_CH1, 0)
+  mock.setValue(ID_TRIM, 0)
+  mock.setValue(ID_GVAR, 0)
 end
 
 local ZONE = { x = 0, y = 0, w = 200, h = 160 }
@@ -152,7 +161,7 @@ test("contract: 2.12 declares the full set", function()
   mock.reset()
   mock.sim.version = { "2.12.0", "sim", 2, 12, 0 }
   local mod = dofile(widgetDir .. "main.lua")
-  assertEq(#mod.options, 39, "Phase 1 extended set")
+  assertEq(#mod.options, 44, "Phase 5 extended set")
   for i = 1, #CORE_ORDER do
     assertEq(mod.options[i][1], CORE_ORDER[i], "position " .. i)
   end
@@ -319,11 +328,295 @@ test("Phase 4: alternate faces are production; Dual Rail stays honest", function
 
   local pending = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
     Source = ID_STICK, Style = "Bar", BarFace = "Dual rail",
+    Scale = "Manual", Min = -100, Max = 100,
   })
   assertEq(pending.barVisual.face, "dual-rail")
-  assertEq(pending.barFaceName, "continuous")
-  assertTrue(string.find(pending.barVisual.faceFallback,
-    "face%-phase%-pending") ~= nil)
+  assertEq(pending.barFaceName, "dual-rail")
+  assertEq(pending.barVisual.faceFallback, nil)
+end)
+
+test("Phase 5: every production face renders vertically and stays retained", function()
+  for _, case in ipairs{
+    { "Continuous", "continuous" }, { "Blocks", "blocks" },
+    { "Hex", "hex" }, { "Ticks", "ticks" }, { "Steps", "steps" },
+  } do
+    local w = newWidget({ x = 0, y = 0, w = 110, h = 280 }, {
+      Source = ID_RSSI, Style = "Bar", BarFace = case[1],
+      BarDir = "Vertical", Segments = "8", Damping = 0,
+    })
+    refresh(w)
+    assertEq(w.barFaceName, case[2], case[1] .. " vertical renderer")
+    assertEq(w.barVisual.faceFallback, nil)
+    assertEq(w.layout.axis.orientation, "vertical")
+    assertEq(w.layout.axis.growth, -1)
+    assertTrue(w.layout.barOuter.h > w.layout.barOuter.w,
+      case[1] .. " uses the tall zone")
+    local before = mock.objectCount()
+    mock.setValue(ID_RSSI, 45); refresh(w, 5)
+    assertEq(mock.objectCount(), before, case[1] .. " vertical retained")
+  end
+end)
+
+test("Phase 5: vertical fill, head and history share one axis", function()
+  local w = newWidget({ x = 0, y = 0, w = 120, h = 300 }, {
+    Source = ID_STICK, Style = "Bar", BarDir = "Vertical",
+    Scale = "Manual", Min = 0, Max = 100, Damping = 0,
+    ShowMinMax = "Markers",
+  })
+  mock.setValue(ID_STICK, 25); refresh(w)
+  mock.setValue(ID_STICK, 75); refresh(w)
+  local axis = w.layout.axis
+  local expected = w.mods.geometry.axisPoint(axis, 0.75)
+  assertEq(w.frame.headPos, expected)
+  assertEq(w.ui.headPts[1][2], expected)
+  assertEq(w.ui.fill.props.y, expected)
+  assertEq(w.ui.fill.props.h, axis.start - expected)
+  assertEq(w.ui.minMarkPts[1][2], w.mods.geometry.axisPoint(axis, 0.25))
+  assertEq(w.ui.maxMarkPts[1][2], expected)
+  assertEq(w.ui.ghostPts[1][2], expected)
+end)
+
+test("Phase 5: asymmetric zero origin fills from numeric zero in both directions",
+function()
+  local w = newWidget({ x = 0, y = 0, w = 360, h = 100 }, {
+    Source = ID_STICK, Style = "Bar", BarOrigin = "Zero",
+    Scale = "Manual", Min = -30, Max = 100, Damping = 0,
+  })
+  local axis = w.layout.axis
+  assertTrue(axis.zeroInside, "zero belongs to -30..100")
+  assertTrue(math.abs(axis.originT - 30 / 130) < 0.0001,
+    "origin is not a false geometric midpoint")
+  local zero = w.mods.geometry.axisPoint(axis, axis.originT)
+  assertEq(w.ui.zeroMark.visible, true, "zero notch is permanent")
+  assertEq(w.ui.zeroMarkPts[1][1], zero)
+
+  mock.setValue(ID_STICK, -15); refresh(w)
+  local negative = w.mods.geometry.axisPoint(axis,
+    w.mods.geometry.normalize(-15, -30, 100))
+  assertEq(w.ui.fill.props.x, negative)
+  assertEq(w.ui.fill.props.w, zero - negative)
+  assertEq(w.frame.headPos, negative)
+
+  mock.setValue(ID_STICK, 50); refresh(w)
+  local positive = w.mods.geometry.axisPoint(axis,
+    w.mods.geometry.normalize(50, -30, 100))
+  assertEq(w.ui.fill.props.x, zero)
+  assertEq(w.ui.fill.props.w, positive - zero)
+  mock.setValue(ID_STICK, nil); refresh(w)
+  assertEq(w.ui.zeroMark.visible, true, "dropout never removes the origin")
+end)
+
+test("Phase 5: explicit zero outside the scale clamps and reports the truth", function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_STICK, Style = "Bar", BarOrigin = "Zero",
+    Scale = "Manual", Min = 10, Max = 100, Damping = 0,
+  })
+  assertEq(w.layout.axis.zeroInside, false)
+  assertEq(w.layout.axis.originT, 0)
+  assertTrue(string.find(table.concat(w.barVisual.downgrades, "|"),
+    "zero%-origin%-clamped") ~= nil)
+end)
+
+test("Phase 5: Dual Rail preserves an asymmetric signed scale", function()
+  local w = newWidget({ x = 0, y = 0, w = 360, h = 100 }, {
+    Source = ID_AIL, Style = "Bar", BarFace = "Dual rail",
+    Scale = "Manual", Min = -30, Max = 100, Damping = 0,
+    Palette = "Custom 2", Accent = lcd.RGB(150, 70, 230),
+    CritClr = lcd.RGB(250, 210, 30),
+  })
+  assertEq(w.barFaceName, "dual-rail")
+  assertEq(#w.ui.dualTracks, 2)
+  local axis, zero = w.layout.axis, w.layout.axis.originCoord
+  assertEq(zero, w.mods.geometry.axisPoint(axis, 30 / 130))
+  local objects = mock.objectCount()
+  mock.setValue(ID_AIL, -15); refresh(w)
+  assertEq(w.ui.fill.props.color, w.barPalette.critical,
+    "negative uses the authored second endpoint")
+  assertTrue(w.ui.fill.props.x < zero)
+  mock.setValue(ID_AIL, 80); refresh(w)
+  assertEq(w.ui.fill.props.color, w.barPalette.normal,
+    "positive uses the authored first endpoint")
+  assertEq(w.ui.fill.props.x, zero)
+  assertEq(mock.objectCount(), objects, "signed movement remains retained")
+end)
+
+test("Phase 5: Auto Source selects RC Center only for truthful centered controls",
+function()
+  for _, id in ipairs{ ID_AIL, ID_CH1, ID_TRIM, ID_GVAR } do
+    local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+      Source = id, Style = "Bar", BarPreset = "Auto",
+      Scale = "Manual", Min = -1024, Max = 1024,
+    })
+    assertEq(w.barVisual.sourceHint, "control")
+    assertEq(w.barVisual.inheritedPreset, "rc-center")
+    assertEq(w.barFaceName, "dual-rail")
+  end
+  local throttle = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_STICK, Style = "Bar", BarPreset = "Auto",
+  })
+  assertTrue(throttle.barFaceName ~= "dual-rail",
+    "unipolar throttle never implies a center")
+end)
+
+test("Phase 5: position-head choices are materially distinct and retained", function()
+  local expected = {
+    None = nil, Cap = "rectangle", Dot = "circle", Line = "line",
+    Needle = "triangle",
+  }
+  for choice, kind in pairs(expected) do
+    local w = newWidget({ x = 0, y = 0, w = 340, h = 100 }, {
+      Source = ID_STICK, Style = "Bar", Scale = "Manual",
+      Min = -100, Max = 100, Damping = 0, BarHead = choice,
+    })
+    mock.setValue(ID_STICK, -25); refresh(w)
+    if kind then
+      assertEq(w.ui.head.kind, kind, choice .. " object")
+      assertEq(w.ui.head.visible, true, choice .. " visible")
+      local head, count = w.ui.head, mock.objectCount()
+      mock.setValue(ID_STICK, 70); refresh(w)
+      assertTrue(w.ui.head == head, choice .. " retained")
+      assertEq(mock.objectCount(), count, choice .. " creates no frame object")
+    else
+      assertEq(w.ui.head, nil, "None builds no hidden ornament")
+    end
+  end
+end)
+
+test("Phase 5: scale-mark choices expose only the requested reference model", function()
+  local cases = {
+    { "Off", false, false }, { "Thresholds", true, false },
+    { "Ends", false, true }, { "Full", true, true },
+  }
+  for _, case in ipairs(cases) do
+    local w = newWidget({ x = 0, y = 0, w = 340, h = 100 }, {
+      Source = ID_RSSI, Style = "Bar", ScaleMarks = case[1],
+    })
+    assertEq(w.ui.marks ~= nil, case[2], case[1] .. " thresholds")
+    assertEq(w.ui.endMarks ~= nil, case[3], case[1] .. " ends")
+    if w.ui.endMarks then assertEq(#w.ui.endMarks, 2) end
+  end
+end)
+
+test("Phase 5: value and name placement remain contained in both directions", function()
+  local zones = {
+    { x = 0, y = 0, w = 360, h = 100 },
+    { x = 0, y = 0, w = 120, h = 280 },
+  }
+  for _, zone in ipairs(zones) do
+    for _, valuePos in ipairs{ "Above", "Inside", "End", "Off" } do
+      for _, labelPos in ipairs{ "Above", "Below", "Inside", "Off" } do
+        local w = newWidget(zone, {
+          Source = ID_RSSI, Style = "Bar",
+          BarDir = (zone.h > zone.w) and "Vertical" or "Horizontal",
+          ValuePos = valuePos, LabelPos = labelPos,
+        })
+        assertEq(w.ui.valueLabel ~= nil, valuePos ~= "Off",
+          valuePos .. " value")
+        assertEq(w.ui.nameLabel ~= nil, labelPos ~= "Off",
+          labelPos .. " name")
+        for _, obj in ipairs(mock.objects()) do
+          local p = obj.props
+          if obj.visible and p.x and p.y then
+            local right = p.x + (p.w or 0)
+            local bottom = p.y + (p.h or 0)
+            assertTrue(p.x >= 0 and p.y >= 0 and right <= zone.w
+              and bottom <= zone.h,
+              valuePos .. "/" .. labelPos .. " contained")
+          end
+        end
+      end
+    end
+  end
+end)
+
+test("Phase 5: tall presentation keeps value, unit and name as coherent rows",
+function()
+  local w = newWidget({ x = 0, y = 0, w = 120, h = 300 }, {
+    Source = ID_RXBT, Style = "Bar", BarDir = "Vertical",
+    LabelPos = "Above", Label = "AILERON", Damping = 0,
+  })
+  refresh(w)
+  local value, unit, name = w.ui.valueLabel.props, w.ui.unitLabel.props,
+    w.ui.nameLabel.props
+  assertTrue(value.y + value.h <= name.y,
+    "Auto value row must clear an Above name row")
+  assertEq(unit.y + unit.h, value.y + value.h - w.mods.theme.px(1),
+    "unit follows the value baseline")
+
+  local inside = newWidget({ x = 0, y = 0, w = 120, h = 300 }, {
+    Source = ID_RXBT, Style = "Bar", BarDir = "Vertical",
+    ValuePos = "Inside", LabelPos = "Inside", Label = "AILERON", Damping = 0,
+  })
+  refresh(inside)
+  assertEq(inside.ui.unitLabel.props.y + inside.ui.unitLabel.props.h,
+    inside.ui.valueLabel.props.y + inside.ui.valueLabel.props.h
+      - inside.mods.theme.px(1),
+    "Inside unit follows the moved value baseline")
+  assertTrue(inside.ui.valueLabel.props.x >= inside.layout.barOuter.x
+      + inside.layout.barOuter.w,
+    "Inside text uses the side information lane, not the data rail")
+end)
+
+test("Phase 5: zero-origin segmented and gradient faces cross sign truthfully",
+function()
+  for _, face in ipairs{ "Blocks", "Hex", "Ticks", "Steps", "Continuous" } do
+    local w = newWidget({ x = 0, y = 0, w = 360, h = 100 }, {
+      Source = ID_AIL, Style = "Bar", BarFace = face,
+      BarOrigin = "Zero", Scale = "Manual", Min = -100, Max = 100,
+      ColorMode = (face == "Continuous") and "Gradient" or "Sections",
+      Segments = "10", Damping = 0,
+    })
+    mock.setValue(ID_AIL, -50); refresh(w)
+    local leftActive = 0
+    if w.ui.faceCells then
+      for _, cell in ipairs(w.ui.faceCells) do
+        if cell.fraction > 0 then
+          leftActive = leftActive + 1
+          assertTrue(cell.position <= 0.5, face .. " negative side only")
+        end
+      end
+      assertTrue(leftActive > 0, face .. " negative cells")
+    else
+      assertTrue(w.ui.gradientSlices[1].visible == false,
+        "gradient does not fill from scale low")
+    end
+    mock.setValue(ID_AIL, 50); refresh(w)
+    if w.ui.faceCells then
+      for _, cell in ipairs(w.ui.faceCells) do
+        if cell.fraction > 0 then
+          assertTrue(cell.position >= 0.5, face .. " positive side only")
+        end
+      end
+    end
+    assertEq(w.ui.zeroMark.visible, true)
+  end
+end)
+
+test("Phase 5: vertical Dual Rail grows down for negative and up for positive",
+function()
+  local w = newWidget({ x = 0, y = 0, w = 120, h = 300 }, {
+    Source = ID_AIL, Style = "Bar", BarFace = "Dual rail",
+    BarDir = "Vertical", Scale = "Manual", Min = -100, Max = 100,
+    Damping = 0,
+  })
+  local zero = w.layout.axis.originCoord
+  mock.setValue(ID_AIL, -50); refresh(w)
+  assertEq(w.ui.fill.props.y, zero)
+  assertTrue(w.ui.fill.props.y + w.ui.fill.props.h > zero)
+  mock.setValue(ID_AIL, 50); refresh(w)
+  assertTrue(w.ui.fill.props.y < zero)
+  assertEq(w.ui.fill.props.y + w.ui.fill.props.h, zero)
+end)
+
+test("Phase 5: one-sided Dual Rail requests fall back instead of inventing a center",
+function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_STICK, Style = "Bar", BarFace = "Dual rail",
+    Scale = "Manual", Min = 0, Max = 100,
+  })
+  assertEq(w.barFaceName, "continuous")
+  assertTrue(string.find(table.concat(w.barVisual.downgrades, "|"),
+    "dual%-rail%-zero%-outside%-range") ~= nil)
 end)
 
 test("Phase 2: descending bar keeps ghost, min and max at authored positions",
@@ -767,6 +1060,8 @@ test("Phase 4: Fine Ticks align major ticks to exact thresholds", function()
     end
   end
   assertTrue(found.warning and found.critical, "both threshold ticks exist")
+  assertTrue(found.warning.primary.props.w >= w.mods.theme.px(2),
+    "major ticks remain readable at radio scale")
   assertEq(found.critical.position, 0.35)
   assertEq(found.warning.position, 0.55)
   local markX = {}
@@ -841,6 +1136,99 @@ test("Phase 4: rich alternate faces respect whole-tree ceilings", function()
     mock.setValue(ID_RSSI, 20); refresh(w, 20)
     assertEq(mock.objectCount(), count, face .. " creates no live objects")
   end
+end)
+
+test("Phase 4: every face survives dropout, pulse and recovery in place",
+function()
+  for _, face in ipairs{ "Blocks", "Hex", "Ticks", "Steps" } do
+    local w = newWidget({ x = 0, y = 0, w = 360, h = 100 }, {
+      Source = ID_STICK, Style = "Bar", BarFace = face,
+      Segments = "10", Scale = "Manual", Min = 0, Max = 100,
+      Warn = 55, Crit = 35, Damping = 0,
+    })
+    mock.setValue(ID_STICK, 20); refresh(w)
+    local count = mock.objectCount()
+    local cellOpacity = w.ui.faceCells[1].primary.props.opacity
+    refresh(w, 10)
+    assertEq(w.frame.pulse, true, face .. " reaches the critical pulse")
+    assertEq(w.ui.faceCells[1].primary.props.opacity, cellOpacity,
+      face .. " pulse never falsifies the retained reference scale")
+    assertTrue(w.ui.pulseTargets[1] == w.ui.head,
+      face .. " pulses only the exact position head")
+
+    mock.setValue(ID_STICK, nil); refresh(w)
+    assertEq(w.ui.head.visible, false, face .. " head leaves with the data")
+    for _, cell in ipairs(w.ui.faceCells) do
+      assertEq(cell.fraction, 0, face .. " clears active segments on dropout")
+    end
+
+    mock.setValue(ID_STICK, 72); refresh(w)
+    assertEq(w.ui.head.visible, true, face .. " head returns with the data")
+    assertTrue(w.ui.faceCells[1].fraction > 0,
+      face .. " restores the active reading")
+    assertEq(mock.objectCount(), count, face .. " recovery retains the tree")
+  end
+end)
+
+test("Phase 4: HTX theme changes recolor every face without rebuilding",
+function()
+  for _, face in ipairs{ "Blocks", "Hex", "Ticks", "Steps" } do
+    local w = newWidget({ x = 0, y = 0, w = 360, h = 100 }, {
+      Source = ID_STICK, Style = "Bar", BarFace = face,
+      Segments = "10", Palette = "Theme adaptive",
+      Surface = "Theme panel", ColorMode = "Sections",
+      Scale = "Manual", Min = 0, Max = 100, Damping = 0,
+    })
+    mock.setValue(ID_STICK, 100); refresh(w)
+    local count, cells, panel = mock.objectCount(), w.ui.faceCells, w.ui.panel
+    local signature = w.barPalette.signature
+    local normal = w.barPalette.normal
+    mock.setThemeColors({
+      [COLOR_THEME_PRIMARY1] = { 248, 248, 248 },
+      [COLOR_THEME_PRIMARY2] = { 8, 8, 8 },
+      [COLOR_THEME_SECONDARY1] = { 88, 32, 144 },
+      [COLOR_THEME_SECONDARY2] = { 48, 20, 80 },
+      [COLOR_THEME_SECONDARY3] = { 20, 12, 36 },
+      [COLOR_THEME_ACTIVE] = { 176, 72, 240 },
+      [COLOR_THEME_WARNING] = { 248, 208, 32 },
+      [COLOR_THEME_DISABLED] = { 136, 136, 152 },
+    })
+    refresh(w, 19)
+    assertTrue(w.barPalette.signature ~= signature,
+      face .. " invalidates the live theme signature")
+    assertTrue(w.barPalette.normal ~= normal,
+      face .. " resolves the new active theme role")
+    assertEq(w.ui.faceCells[#w.ui.faceCells].primary.props.color,
+      w.barPalette.normal, face .. " repaints its normal band")
+    assertEq(w.ui.panel.props.color,
+      w.mods.theme.resolveColor(COLOR_THEME_SECONDARY3))
+    assertTrue(w.ui.faceCells == cells and w.ui.panel == panel,
+      face .. " retains cells and surface")
+    assertEq(mock.objectCount(), count, face .. " theme creates no objects")
+    mock.setThemeColors()
+  end
+end)
+
+test("Phase 4: dense structural edits are staged across safe callbacks",
+function()
+  local w, mod, opts = newWidget({ x = 0, y = 0, w = 480, h = 120 }, {
+    Source = ID_RSSI, Style = "Bar", BarFace = "Blocks",
+    Segments = "6", Surface = "Theme panel", Damping = 0,
+  })
+  refresh(w)
+  local oldCells = w.ui.faceCells
+  local dense = withOption(opts, "Segments", 7) -- choice 7 = 24 segments
+  mod.update(w, dense)
+  assertEq(w.rebuildPending, true, "settings update latches the rebuild")
+  assertTrue(w.ui.faceCells == oldCells,
+    "the old complete tree remains visible until refresh")
+  refresh(w)
+  assertEq(w.rebuildPending, false, "the structural frame builds once")
+  assertTrue(w.ui.faceCells ~= oldCells, "a new retained tree was installed")
+  assertEq(#w.ui.faceCells, 24, "the dense request was not silently reduced")
+  assertEq(w.frame.valueStr, "", "painting is isolated from the build frame")
+  refresh(w)
+  assertEq(w.frame.valueStr, "70", "normal painting resumes next frame")
 end)
 
 -- ---- build ---------------------------------------------------------------
@@ -3037,7 +3425,7 @@ test("contract: Phase 1 option tail 25-39 is frozen", function()
     { "PanelClr", COLOR },
     { "Contrast", CHOICE, 1, "Auto|Off|Strong" },
   }
-  assertEq(#defs, 39, "Phase 1 owns exactly slots 25-39")
+  assertTrue(#defs >= 39, "Phase 1 frozen prefix remains present")
   for i, want in ipairs(TAIL) do
     local slot, d = i + 24, defs[i + 24]
     assertEq(d.key, want[1], "slot " .. slot .. " key")
@@ -3053,6 +3441,27 @@ test("contract: Phase 1 option tail 25-39 is frozen", function()
   assertEq(defs[35].default, lcd.RGB(0xff, 0x00, 0x00))
   assertEq(defs[36].default, COLOR_THEME_SECONDARY1)
   assertEq(defs[38].default, COLOR_THEME_SECONDARY3)
+end)
+
+test("contract: Phase 5 appends presentation slots 40-44 and reserves 45-50", function()
+  local defs = dofile(widgetDir .. "main.lua").defs
+  local tail = {
+    { "Motion", "Auto|Off|Essential|Refined|Expressive" },
+    { "BarHead", "Auto|None|Cap|Dot|Line|Needle" },
+    { "ScaleMarks", "Auto|Off|Thresholds|Ends|Full" },
+    { "ValuePos", "Auto|Above|Inside|End|Off" },
+    { "LabelPos", "Auto|Above|Below|Inside|Off" },
+  }
+  assertEq(#defs, 44, "six slots 45-50 remain reserved")
+  for i, want in ipairs(tail) do
+    local slot, d = 39 + i, defs[39 + i]
+    assertEq(d.key, want[1], "slot " .. slot)
+    assertEq(d.type, CHOICE, d.key .. " type")
+    assertEq(d.default, 1, d.key .. " default")
+    assertEq(table.concat(d.choices, "|"), want[2], d.key .. " choices")
+  end
+  assertEq(defs[16].key, "Damping")
+  assertEq(defs[16].label, "Gauge damping")
 end)
 
 test("contract: the option labels fit the radio's settings screen", function()

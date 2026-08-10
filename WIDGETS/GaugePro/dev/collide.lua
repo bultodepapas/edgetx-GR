@@ -62,6 +62,7 @@ local function inBox(box, x, y)
   return x >= box.x1 and x <= box.x2 and y >= box.y1 and y <= box.y2
 end
 
+local collisionCases = 0
 local function report(name, w, zone)
   local hits = {}
   local labels, arcs, lines = {}, {}, {}
@@ -159,6 +160,7 @@ local function report(name, w, zone)
     if not seen[h] then seen[h] = true; out[#out+1] = h end
   end
   if #out > 0 then
+    collisionCases = collisionCases + 1
     print("\n## " .. name .. "  (" .. zone.w .. "x" .. zone.h .. ")")
     for _, h in ipairs(out) do print("   " .. h) end
   else
@@ -191,3 +193,68 @@ for _, s in ipairs({ "270 deg", "180 deg", "360 deg" }) do
   local w = build(zone, { Sweep = s }, 78, nil)
   report(s, w, zone)
 end
+
+print("\n\n=== Phase 4 faces / compact, standard and rich bars ===")
+for _, face in ipairs({ "Blocks", "Hex", "Ticks", "Steps" }) do
+  for _, z in ipairs({ { 160, 44 }, { 300, 70 }, { 480, 120 } }) do
+    local zone = { x = 0, y = 0, w = z[1], h = z[2] }
+    local w = build(zone, {
+      Style = "Bar", BarFace = face, Segments = "24",
+      ColorMode = "Sections", Surface = "Theme panel", Damping = 0,
+    }, 40, { 31, 92 })
+    report(face .. " " .. z[1] .. "x" .. z[2], w, zone)
+  end
+end
+
+print("\n\n=== Phase 5 vertical / zero-origin / Dual Rail / presentation ===")
+local P5_CASES = {
+  { "vertical continuous", { 100, 260 }, {
+      Style = "Bar", BarDir = "Vertical", ColorMode = "Gradient",
+      ScaleMarks = "Full", ShowMinMax = "Markers + text", Damping = 0,
+    }, 45 },
+  { "vertical blocks zero", { 120, 300 }, {
+      Style = "Bar", BarDir = "Vertical", BarFace = "Blocks",
+      Segments = "24", BarOrigin = "Zero", ScaleMarks = "Thresholds",
+      Scale = "Manual", Min = -100, Max = 100, Damping = 0,
+    }, -65 },
+  { "vertical hex zero", { 120, 300 }, {
+      Style = "Bar", BarDir = "Vertical", BarFace = "Hex",
+      Segments = "10", BarOrigin = "Zero", BarHead = "Needle",
+      Scale = "Manual", Min = -100, Max = 100, Damping = 0,
+    }, 65 },
+  { "vertical ticks", { 100, 260 }, {
+      Style = "Bar", BarDir = "Vertical", BarFace = "Ticks",
+      Segments = "24", ValuePos = "Inside", LabelPos = "Below", Damping = 0,
+    }, 45 },
+  { "vertical steps", { 120, 300 }, {
+      Style = "Bar", BarDir = "Vertical", BarFace = "Steps",
+      Segments = "10", ValuePos = "End", LabelPos = "Inside", Damping = 0,
+    }, 78 },
+  { "horizontal zero gradient", { 420, 110 }, {
+      Style = "Bar", BarOrigin = "Zero", ColorMode = "Gradient",
+      BarHead = "Dot", ScaleMarks = "Full", Scale = "Manual",
+      Min = -100, Max = 100, Damping = 0,
+    }, -65 },
+  { "horizontal dual rail", { 420, 110 }, {
+      Style = "Bar", BarFace = "Dual rail", BarOrigin = "Zero",
+      BarHead = "Cap", ScaleMarks = "Ends", Scale = "Manual",
+      Min = -30, Max = 100, Damping = 0,
+    }, -20 },
+  { "vertical dual rail", { 120, 300 }, {
+      Style = "Bar", BarDir = "Vertical", BarFace = "Dual rail",
+      BarOrigin = "Zero", BarHead = "Line", ScaleMarks = "Full",
+      Scale = "Manual", Min = -100, Max = 100, Damping = 0,
+    }, 65 },
+}
+for _, c in ipairs(P5_CASES) do
+  local zone = { x = 0, y = 0, w = c[2][1], h = c[2][2] }
+  local w = build(zone, c[3], c[4], { -82, 91 })
+  report(c[1], w, zone)
+end
+
+if collisionCases > 0 then
+  io.stderr:write(string.format("collision audit: %d dirty case(s)\n",
+    collisionCases))
+  os.exit(1)
+end
+print("\ncollision audit: all cases clean")

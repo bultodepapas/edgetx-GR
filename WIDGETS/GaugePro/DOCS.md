@@ -85,7 +85,7 @@ settings shifted.
 | **Unit override** | String | "" | Custom unit; empty uses the sensor unit. |
 | **Scale ends** | Choice | Auto | Where **Scale low/high** (and the two levels) come from: Auto takes a known-sensor preset, Manual always uses your values. |
 | **Dial sweep** | Choice | 270° | 270° / 180° / 360°. |
-| **Needle damping** | Slider | 4 | 0 = raw, 9 = heavy (see 6.6). |
+| **Gauge damping** | Slider | 4 | 0 = raw, 9 = heavy; controls dial needle and bar value geometry without changing the saved slot/type/range (see 6.6). |
 | **Cell reading** | Choice | Lowest | How a `CELLS` table is reduced: Lowest / Total / Average. |
 | **Volts as %** | Choice | Off | Off / Li-Po / Li-Ion — show state of charge instead of volts (see 4.8). |
 | **Alerts** | Choice | Off | Off / Critical / Warning + critical (see 4.9). |
@@ -95,28 +95,33 @@ settings shifted.
 | **Reset min/max** | Switch | none | Clears the tracked history in flight. |
 | **Info badges** | Bool | On | Hides the *informational* pills (`NO LINK`, `STALE`, `NO DATA`, `NO SOURCE`). **WARN and CRIT always show**, whatever this is set to — they are a safety signal, and colour alone does not reach every pilot (4.3). The row is reserved either way, so turning it off does not buy the value more space. |
 | **Bar preset** | Choice | Classic | Auto Source / Classic / Theme / Hex / Blocks / Ticks / RC Center / Minimal / Bold Data. A coherent starting point; explicit overrides below win. |
-| **Bar face** | Choice | Auto | Continuous / Blocks / Hex / Ticks / Steps / Dual Rail. Phase 1 freezes and resolves the contract; non-Continuous drawing lands in Phase 4 and currently uses an explicit Continuous fallback. |
-| **Bar direction** | Choice | Auto | Horizontal / Vertical. Auto resolves tall zones vertically; vertical drawing lands in Phase 5. |
-| **Bar origin** | Choice | Auto | Scale low / Zero. Zero-origin drawing lands in Phase 5. |
+| **Bar face** | Choice | Auto | Continuous / Blocks / Hex / Ticks / Steps / Dual Rail. All six are production retained renderers. Dual Rail requires a scale that strictly crosses numeric zero; a one-sided request reports and draws an honest Continuous fallback. |
+| **Bar direction** | Choice | Auto | Horizontal / Vertical. Auto resolves tall zones vertically. Every face, gradient slice, threshold, head and history mark uses the same axis. A descending authored scale reverses the value direction truthfully. |
+| **Bar origin** | Choice | Auto | Scale low / Zero. Zero fills between numeric zero and the value, retains a permanent notch, supports asymmetric ranges, and reports when zero had to clamp outside a one-sided scale. |
 | **Bar thickness** | Choice | Auto | Thin / Medium / Thick / Maximum; inherits from the preset and is live on the Continuous Precision Rail. Large zones scale the physical rail up while short zones remain inside the proven degradation slot. |
 | **Bar ends** | Choice | Auto | Round / Square / Chamfer; inherits from the preset. Chamfer uses real retained triangle tips, not a rounded approximation. |
 | **Bar segments** | Choice | Auto | 6 / 8 / 10 / 12 / 16 / 24. Responsive and object ceilings may lower it; Hex is already capped at 10 by its 40-object budget. |
 | **Segment gap** | Choice | Auto | Tight / Normal / Wide. Used by segmented faces. |
-| **Palette** | Choice | Auto | Classic / Theme adaptive / Custom 3 / Custom 2. This is live on the current Continuous bar. |
+| **Palette** | Choice | Auto | Classic / Theme adaptive / Custom 3 / Custom 2. Live on every production bar face. |
 | **Warning colour** | Color | `#c86000` | Exact Custom Three warning anchor. |
 | **Critical colour** | Color | `#ff0000` | Exact Custom Three critical anchor and Custom Two endpoint. |
 | **Track colour** | Color | theme `SECONDARY1` | Used when Surface = Custom colors; updates retained objects without rebuilding. |
 | **Surface** | Choice | Auto | Transparent / Theme panel / Custom colors. Panels ground the complete instrument behind rail and text; micro zones downgrade to transparent. |
 | **Panel colour** | Color | theme `SECONDARY3` | Exact custom panel color. Gauge Pro preserves it and chooses the better existing theme ink on top instead of recoloring it. |
 | **Contrast assist** | Choice | Auto | Off / Strong. Auto measures contrast, ordinary color distance and simulated color-vision separation, then strengthens casing/head structure only when needed. Strong keeps the strongest local ground and marks. Neither mode replaces authored colors. |
+| **Motion** | Choice | Auto | Off / Essential / Refined / Expressive. The append-only slot and preset resolution ship in Phase 5; the temporal profiles themselves are the explicit Phase 6 scope. Gauge damping remains the only active speed control until then. |
+| **Position head** | Choice | Auto | None / Cap / Dot / Line / Needle. Every choice has materially different retained geometry and moves on the exact shared data axis. |
+| **Scale marks** | Choice | Auto | Off / Thresholds / Ends / Full. Marks are a shared overlay, independent of the selected face. |
+| **Value position** | Choice | Auto | Above / Inside / End / Off. Vertical Inside/End use a side information lane rather than printing through ticks or the rail. |
+| **Name position** | Choice | Auto | Above / Below / Inside / Off. Tall Below layouts stack the name and safety badge as separate rows; long overrides remain single-line in the audited zone matrix. |
 
-Phase 1 froze slots 25–39 before every face was drawn. Phases 2–3 now ship the
+Phase 1 froze slots 25–39 before every face was drawn. Phases 2–5 now ship the
 Continuous Precision Rail, thickness/end geometry, panel surfaces, complete
 bar history, live HTX theme re-resolution, structural contrast assistance and
-the retained spatial Gradient. Future face, orientation and origin choices still resolve
-deterministically, participate in signatures, report responsive downgrades and
-fall back to Continuous until their scheduled phases; no resolver mutates the
-stored option table.
+the retained spatial Gradient plus Blocks, true Hex, Fine Ticks and Signal
+Steps, orientation-neutral horizontal/vertical axes, signed zero origin,
+asymmetric Dual Rail and presentation controls in slots 40–44. No resolver
+mutates the stored option table; slots 45–50 remain reserved.
 
 Notes:
 
@@ -276,6 +281,25 @@ never silently substitutes a user's color.
   and state. Thin/medium/thick/maximum and round/square/chamfer are real
   geometry choices.
 
+The bar face changes the reading model, not the telemetry truth:
+
+- **Continuous** — the flagship exact rail, best for general-purpose values.
+- **Blocks** — 6–24 square or soft cells with a truthful partially active
+  current cell; useful for percentages and capacity.
+- **Hex** — 6–10 cells built from a rectangle and two retained triangle tips;
+  its technological silhouette is useful for battery and system telemetry.
+  Very thin zones report and use the honest compact block variant.
+- **Fine Ticks** — 8–28 lines with a visible major/minor rhythm. Endpoints,
+  fifths and the exact warning/critical positions are major ticks; the black
+  retained head remains the precise current reading.
+- **Signal Steps** — 5–10 increasing-height columns on one baseline, optimized
+  for one-glance RSSI/RQly link strength while retaining the numeric value.
+
+Auto Source chooses Steps for RSSI/RQly/VFR-style link metrics, Ticks for other
+signal metrics, Hex for batteries and Blocks for capacity. Presets are only a
+starting point: an explicit face, thickness, density, gap, palette or surface
+always wins.
+
 ### 4.5 Colour modes
 
 The mode chooses how the **status** channel is coloured. It never changes the
@@ -432,19 +456,19 @@ current value instead of sweeping up from zero.
 | File | Responsibility |
 |---|---|
 | `main.lua` | **Boot-weight only**: option declarations, version gate, `lvgl` guard, and a `loadScript` of `app.lua` on first use. Every widget's `main.lua` is executed at radio startup, used or not (see 6.1). |
-| `app.lua` | Lifecycle: create / update / refresh, config → ranges → layout, rebuild decisions. |
+| `app.lua` | Lifecycle: create / update / refresh, config → ranges → layout, staged rebuild decisions. |
 | `options.lua` | The option wire format: capacity and typed parsing. Pure Lua. |
 | `theme.lua` | Design tokens, text metrics, RGB/luminance/contrast analysis, bounded palette and badge-ink caches. |
-| `geometry.lua` | Clamp/normalize, value→angle, circle points, line/tick/triangle builders, bar fill. Pure Lua. |
+| `geometry.lua` | Clamp/normalize, value→angle, circle points, line/tick/triangle builders, and horizontal/vertical axis descriptors with numeric-zero spans. Pure Lua. |
 | `ranges.lua` | Band ordering, state detection, hysteresis. Pure Lua. |
 | `presets.lua` | Known-sensor profiles, cell detection, discharge curves. Pure Lua. |
 | `format.lua` | Value/timer formatting and the widest-sample measurement. Pure Lua. |
-| `smoothing.lua` | Frame-rate independent needle damping. |
+| `smoothing.lua` | Frame-rate independent gauge-geometry damping. |
 | `telemetry.lua` | Source metadata cache, value reading, cell aggregation, availability model, history. |
 | `layout.lua` | Mode/orientation/style classification, dial and bar geometry, typography, regions. |
 | `renderer.lua` | Retained LVGL dial tree; per-frame property-only updates. |
 | `bar_style.lua` | Appearance presets, Auto inheritance, runtime palettes, compact variants and signatures. |
-| `bar_faces.lua` | Retained face interface, normalized render state, the Continuous Precision Rail, object ceilings and future-face fallback. |
+| `bar_faces.lua` | Retained face interface and normalized render state for Continuous, Blocks, Hex, Fine Ticks, Steps and signed Dual Rail on horizontal/vertical/zero-origin axes, plus object ceilings and honest one-sided fallback. |
 | `bar.lua` | Linear orchestrator: shared thresholds/history/labels/badges plus face dispatch. |
 | `alerts.lua` | Transition alerts with startup delay, switch gate and rate limiting. |
 | `dev/preview.lua` | Renders the real object tree to SVG for off-radio design review. |
@@ -484,7 +508,12 @@ calls it (`widgets.cpp` reads exactly those keys).
   manual), resolve precision and the displayed unit/name, build the bands and
   the layout, and rebuild the LVGL tree **only when the structural signature
   changed** (style, mode, orientation, visibility flags, colour mode, sweep,
-  value font, radius, zone size, unit text).
+  value font, radius, zone size, unit text). On an existing widget, a dense
+  settings rebuild is staged: `update()` latches the new structure, the next
+  refresh builds it, and ordinary painting resumes one frame later. This
+  keeps option parsing, object construction and live painting in separate
+  callbacks below their radio CPU budgets; the old complete tree remains
+  visible until the build frame.
 - **`refresh(widget, event, touch)`** — per frame: check the reset switch,
   read telemetry, run alerts, then write only the properties that changed.
 - **`background()` is intentionally absent.** The firmware only calls it while
@@ -494,8 +523,9 @@ calls it (`widgets.cpp` reads exactly those keys).
 ### 5.4 Rendering model
 
 `build()` creates every object once; `update()` mutates only properties that
-actually changed, guarded by a per-object cache, and writes through a single
-reused table so `refresh()` allocates nothing.
+actually changed, guarded by a per-object cache. Retained per-object dirty
+tables and one shared face paint table are cleared and reused, so moving a
+dense face does not create a table per segment or per property write.
 
 Dial object tree (worst audited case at 200×200 — needle, Sections, scale
 labels, markers+text, chip shown): **33 visible objects**; the tests assert
@@ -504,6 +534,11 @@ default scene and **20** for Sections + markers + critical badge. The spatial
 Gradient is capped from the actual layout anatomy: both the canonical 300×70
 scene and the 480×120 panel/chamfer/markers stress scene are exactly **38
 retained objects**, never 40 hidden behind a smaller visible census.
+The rich Phase 4 census is **37** retained objects for Blocks 24, **40** for
+true Hex 10, **37** for Fine Ticks 24 and **23** for Signal Steps 10. Compact
+Hex remains within its reported 40-object whole-tree cap. Phase 5's vertical
+Gradient + Full marks remains **36** retained objects, vertical zero-origin
+Blocks 24 remains **37**, and both horizontal and vertical Dual Rail are **16**.
 The counts are reproducible: `lua5.3 dev/census.lua ./`.
 
 | Object | Kind | Count | Created when |

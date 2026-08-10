@@ -99,7 +99,10 @@ local PRESETS = {
   },
   {
     names = { "Thr", "Throttle" },
-    kind = "control",
+    -- Throttle is deliberately not a centred control. Treating it like a
+    -- stick/channel would invent a neutral midpoint and select Dual Rail for
+    -- a unipolar source.
+    kind = "throttle",
     minimum = 0, maximum = 100, warning = 80, critical = 95, highIsGood = false,
   },
   {
@@ -181,7 +184,20 @@ end
 -- scale, thresholds, alerts, or telemetry transforms owned above.
 function M.kind(source)
   local preset = M.find(source)
-  return (preset and preset.kind) or "generic"
+  if preset and preset.kind then return preset.kind end
+  local name = normName(source and source.name)
+  -- Stable EdgeTX source families whose native meaning is signed around a
+  -- neutral centre. This hint selects appearance only; scale ownership stays
+  -- in app.lua and the user's Scale setting.
+  if name == "ail" or name == "ele" or name == "rud"
+     or string.find(name, "^ch%d+$")
+     or string.find(name, "^trm[%a%d]+$")
+     or string.find(name, "^trim[%a%d]+$")
+     or string.find(name, "^gv%d+$")
+     or string.find(name, "^gvar%d+$") then
+    return "control"
+  end
+  return "generic"
 end
 
 -- ---------------------------------------------------------------- battery --

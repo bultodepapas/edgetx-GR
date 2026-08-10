@@ -166,6 +166,8 @@ M.opacity = {
                     -- ring, competing with the full-red arc/text it is
                     -- supposed to sit behind (Tanda 5 review 3.6)
   ghost    = 110,   -- peak-hold segment
+  tickMinor = 110,  -- Fine Ticks reference grid: visible but subordinate
+  tickMajor = 145,  -- endpoints, fifths and exact thresholds read first
   muted    = 120,   -- whole gauge when data is not live
   pulse    = 150,   -- critical pulse trough
 }

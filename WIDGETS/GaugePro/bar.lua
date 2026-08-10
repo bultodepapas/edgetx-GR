@@ -14,7 +14,7 @@
 
 local M = {}
 
-local floor = math.floor
+local floor, max = math.floor, math.max
 
 local T, G, F, R, Faces  -- shared helpers + retained face registry
 
@@ -26,17 +26,23 @@ function M.setup(theme, geometry, format, renderer, faces)
   M.updateSourceLabels = R.updateSourceLabels
 end
 
-local function markX(widget, value)
-  local L, cfg = widget.layout, widget.config
-  local t = G.normalize(value, cfg.min, cfg.max)
-  local axis = L.barAxis or L.bar
-  return axis.x + floor(axis.w * t + 0.5)
+local function markPosition(widget, value)
+  local cfg, axis = widget.config, widget.layout.axis
+  local normalized = G.normalize(value, cfg.min, cfg.max)
+  return axis.start + axis.growth * floor(axis.length * normalized + 0.5)
 end
 
-local function vline(x, y, h, thickness, color)
+local function axisLine(axis, position, cross1, cross2, thickness, color,
+                        opacity)
+  local pts
+  if axis.orientation == "vertical" then
+    pts = { { cross1, position }, { cross2, position } }
+  else
+    pts = { { position, cross1 }, { position, cross2 } }
+  end
   return lvgl.line{
-    pts = { { x, y }, { x, y + h } },
-    thickness = thickness, color = color,
+    pts = pts, thickness = thickness, color = color,
+    opacity = opacity or T.opacity.full,
   }
 end
 
@@ -48,8 +54,14 @@ end
 -- NEVER route these through R.setProp: its cache compares tables by identity
 -- and would drop every write after the first (5.1/5.2 TRAP 2).
 -- The static threshold marks keep plain vline() above - they never move.
-local function movingMark(ui, key, x, y1, y2, thickness, color, opacity)
-  local pts = { { x, y1 }, { x, y2 } }
+local function movingMark(ui, key, axis, position, cross1, cross2, thickness,
+                          color, opacity)
+  local pts
+  if axis.orientation == "vertical" then
+    pts = { { cross1, position }, { cross2, position } }
+  else
+    pts = { { position, cross1 }, { position, cross2 } }
+  end
   ui[key .. "Pts"] = pts
   ui[key .. "Set"] = { pts = pts }
   ui[key] = lvgl.line{
@@ -59,9 +71,10 @@ local function movingMark(ui, key, x, y1, y2, thickness, color, opacity)
   lvgl.hide(ui[key])
 end
 
-local function moveMark(ui, key, x)
+local function moveMark(ui, key, axis, position)
   local pts = ui[key .. "Pts"]
-  pts[1][1], pts[2][1] = x, x
+  local coordinate = (axis.orientation == "vertical") and 2 or 1
+  pts[1][coordinate], pts[2][coordinate] = position, position
   lvgl.set(ui[key], ui[key .. "Set"])
   lvgl.show(ui[key])
 end
@@ -88,21 +101,43 @@ function M.build(widget)
   -- critical) the warning threshold is the `to` of the NORMAL band, so the
   -- old condition drew only one mark where the dial draws two rails
   -- (AUDIT.md P1-11).
-  if cfg.colorMode ~= R.COLOR_STATIC then
+  local marksMode = visual.marks or "auto"
+  local showThresholds = marksMode == "thresholds" or marksMode == "full"
+    or (marksMode == "auto" and cfg.colorMode ~= R.COLOR_STATIC)
+  local showEnds = marksMode == "ends" or marksMode == "full"
+  if showThresholds then
     ui.marks = {}
     for i = 1, #widget.ranges do
       local r = widget.ranges[i]
       local t = G.normalize(r.to, cfg.min, cfg.max)
       if t > 0 and t < 1 then
-        local body = L.barOuter or b
-        local m = vline(markX(widget, r.to), body.y, body.h,
-          L.markThickness,
-          T.stateColor(r.role, widget.accent, widget.barPalette))
+        local body, axis = L.barOuter or b, L.axis
+        local cross1 = (axis.orientation == "vertical") and body.x or body.y
+        local cross2 = cross1
+          + ((axis.orientation == "vertical") and body.w or body.h)
+        local m = axisLine(axis, markPosition(widget, r.to), cross1, cross2,
+          L.markThickness, T.stateColor(r.role, widget.accent,
+                                       widget.barPalette))
         -- role rides on the object so an accent edit can recolor the
         -- normal-boundary mark without pairing by index (Tanda 6 F-5)
         m.role = r.role
         ui.marks[#ui.marks + 1] = m
       end
+    end
+  end
+
+  if showEnds then
+    ui.endMarks = {}
+    local body, axis = L.barOuter or b, L.axis
+    local cross1 = (axis.orientation == "vertical") and body.x or body.y
+    local cross2 = cross1
+      + ((axis.orientation == "vertical") and body.w or body.h)
+    for i = 1, 2 do
+      ui.endMarks[i] = axisLine(axis,
+        G.axisPoint(axis, (i == 1) and 0 or 1), cross1, cross2,
+        L.markThickness,
+        (widget.barPalette and widget.barPalette.label) or T.color.label,
+        T.opacity.railBand)
     end
   end
 
@@ -113,10 +148,16 @@ function M.build(widget)
   -- above and only 1 px below on a 320 px screen.
   local over = L.markOverhang
   local body = L.barOuter or b
-  local markTop, markBottom = body.y - over, body.y + body.h + over
-  local markMid = body.y + floor(body.h / 2)
+  local axis = L.axis
+  local crossStart = (axis.orientation == "vertical")
+    and (body.x - over) or (body.y - over)
+  local crossEnd = (axis.orientation == "vertical")
+    and (body.x + body.w + over) or (body.y + body.h + over)
+  local crossMid = (axis.orientation == "vertical")
+    and (body.x + floor(body.w / 2)) or (body.y + floor(body.h / 2))
   if L.showGhost then
-    movingMark(ui, "ghost", b.x, markTop, markBottom, L.markThickness,
+    movingMark(ui, "ghost", axis, axis.start, crossStart, crossEnd,
+               L.markThickness,
                (widget.barPalette and widget.barPalette.history)
                  or T.color.history, T.opacity.ghost)
   end
@@ -124,12 +165,22 @@ function M.build(widget)
     -- Min and max are independent authored readings. Split their ticks around
     -- the rail centre so coincident extrema remain distinguishable without
     -- inventing a color meaning.
-    movingMark(ui, "minMark", b.x, markTop, markMid, L.markThickness,
+    movingMark(ui, "minMark", axis, axis.start, crossStart, crossMid,
+               L.markThickness,
                (widget.barPalette and widget.barPalette.history)
                  or T.color.history)
-    movingMark(ui, "maxMark", b.x, markMid, markBottom, L.markThickness,
+    movingMark(ui, "maxMark", axis, axis.start, crossMid, crossEnd,
+               L.markThickness,
                (widget.barPalette and widget.barPalette.history)
                  or T.color.history)
+  end
+
+  if visual.origin == "zero" then
+    movingMark(ui, "zeroMark", axis, axis.originCoord, crossStart, crossEnd,
+      max(L.markThickness, T.px(2)),
+      (widget.barPalette and widget.barPalette.label) or T.color.label,
+      T.opacity.full)
+    lvgl.show(ui.zeroMark)
   end
 
   assert(face.buildOverlay(widget, b, visual) ~= false,
@@ -138,9 +189,11 @@ function M.build(widget)
   -- DATA text takes the theme's ink role, not the status colour (Tanda 8
   -- §3.2) - see renderer.valueColor.
   local palette = widget.barPalette
-  ui.valueLabel = R.label(L.valueBox, L.valueFont,
-                          (palette and palette.value) or T.color.value,
-                          L.valueAlign, F.NO_VALUE)
+  if L.showValue ~= false then
+    ui.valueLabel = R.label(L.valueBox, L.valueFont,
+                            (palette and palette.value) or T.color.value,
+                            L.valueAlign, F.NO_VALUE)
+  end
   if L.showUnit and widget.unitText ~= "" then
     ui.unitLabel = R.label(L.unitBox, L.unitFont,
                            (palette and palette.label) or T.color.label,
@@ -185,9 +238,11 @@ function M.build(widget)
   widget.frame = {
     props = {},
     dirty = {},
-    fillW = -1, fillShown = false, headX = -1, headShown = false,
+    fillW = -1, fillStart = -1, fillLength = -1,
+    fillShown = false, headX = -1, headPos = -1, headShown = false,
     gradientWhole = -1,
     ghostX = -1, minX = -1, maxX = -1,
+    ghostPos = -1, minPos = -1, maxPos = -1,
     needleShown = true, markersShown = false, chipShown = false,
     colorKey = "", accentKey = nil, paletteSig = initialPaletteSig,
     valueStr = "", stateStr = "",
@@ -215,37 +270,37 @@ local function updateHistory(widget)
       -- bounds are required: readHistorySiblings can populate one alone, and
       -- the descending peak picks either one (Tanda 6 F-8 hardens the guard).
       local peak = (widget.config.max >= widget.config.min) and h.max or h.min
-      local x = markX(widget, peak)
-      if x ~= frame.ghostX then
-        frame.ghostX = x
-        moveMark(ui, "ghost", x)
+      local position = markPosition(widget, peak)
+      if position ~= frame.ghostPos then
+        frame.ghostPos, frame.ghostX = position, position
+        moveMark(ui, "ghost", widget.layout.axis, position)
       end
     elseif frame.ghostX ~= -1 then
-      frame.ghostX = -1
+      frame.ghostX, frame.ghostPos = -1, -1
       lvgl.hide(ui.ghost)
     end
   end
   if ui.minMark then
     if h.min then
-      local x = markX(widget, h.min)
-      if x ~= frame.minX then
-        frame.minX = x
-        moveMark(ui, "minMark", x)
+      local position = markPosition(widget, h.min)
+      if position ~= frame.minPos then
+        frame.minPos, frame.minX = position, position
+        moveMark(ui, "minMark", widget.layout.axis, position)
       end
     elseif frame.minX ~= -1 then
-      frame.minX = -1
+      frame.minX, frame.minPos = -1, -1
       lvgl.hide(ui.minMark)
     end
   end
   if ui.maxMark then
     if h.max then
-      local x = markX(widget, h.max)
-      if x ~= frame.maxX then
-        frame.maxX = x
-        moveMark(ui, "maxMark", x)
+      local position = markPosition(widget, h.max)
+      if position ~= frame.maxPos then
+        frame.maxPos, frame.maxX = position, position
+        moveMark(ui, "maxMark", widget.layout.axis, position)
       end
     elseif frame.maxX ~= -1 then
-      frame.maxX = -1
+      frame.maxX, frame.maxPos = -1, -1
       lvgl.hide(ui.maxMark)
     end
   end
@@ -287,6 +342,18 @@ function M.update(widget)
           + ((assist == "strong") and T.px(1) or 0)
         R.setProp(widget, m, "thickness", thickness)
       end
+    end
+    if ui.endMarks then
+      for i = 1, #ui.endMarks do
+        R.setProp(widget, ui.endMarks[i], "color", palette.label)
+        R.setProp(widget, ui.endMarks[i], "opacity",
+                  (state.colorKey == "muted") and T.opacity.muted
+                    or T.opacity.railBand)
+      end
+    end
+    if ui.zeroMark then
+      R.setProp(widget, ui.zeroMark, "color", palette.label)
+      R.setProp(widget, ui.zeroMark, "opacity", T.opacity.full)
     end
     local historyColor = (palette and palette.history) or T.color.history
     if ui.ghost then R.setProp(widget, ui.ghost, "color", historyColor) end

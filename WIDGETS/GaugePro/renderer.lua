@@ -733,7 +733,14 @@ function M.anchorUnit(widget, str)
   local ui, L = widget.ui, widget.layout
   if not ui.unitLabel then return end
   local actualW = T.measureWidth(str, L.valueFont)
-  local inkRight = L.valueBox.x + floor((L.valueBox.w + actualW) / 2)
+  local inkRight
+  if L.valueAlign == LEFT then
+    inkRight = L.valueBox.x + actualW
+  elseif L.valueAlign == RIGHT then
+    inkRight = L.valueBox.x + L.valueBox.w
+  else
+    inkRight = L.valueBox.x + floor((L.valueBox.w + actualW) / 2)
+  end
   local x = inkRight + T.px(T.space.md)
   -- Never anchor the unit outside the zone. In a region too small for the
   -- value+unit group, pickValueFont's last-resort branch clamps the RESERVED

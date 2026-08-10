@@ -124,6 +124,16 @@ local PALETTE = { [2] = "classic", [3] = "theme", [4] = "custom-three",
 local SURFACE = { [2] = "transparent", [3] = "theme-panel",
                   [4] = "custom" }
 local CONTRAST = { [2] = "off", [3] = "strong" }
+local MOTION = { [2] = "off", [3] = "essential", [4] = "refined",
+                 [5] = "expressive" }
+local HEAD = { [2] = "none", [3] = "cap", [4] = "dot", [5] = "line",
+               [6] = "needle" }
+local MARKS = { [2] = "off", [3] = "thresholds", [4] = "ends",
+                [5] = "full" }
+local VALUE_POS = { [2] = "above", [3] = "inside", [4] = "end",
+                    [5] = "off" }
+local LABEL_POS = { [2] = "above", [3] = "below", [4] = "inside",
+                    [5] = "off" }
 
 local THEME_ROLES = {
   COLOR_THEME_PRIMARY1, COLOR_THEME_PRIMARY2,
@@ -166,7 +176,7 @@ local function autoDirection(profile)
   return (profile.ratio < 0.8) and "vertical" or "horizontal"
 end
 
-local function sourcePreset(kind, source)
+local function sourcePreset(kind, source, cfg)
   if kind == "signal" then
     local name = (SENSOR_PRESETS and SENSOR_PRESETS.normName)
       and SENSOR_PRESETS.normName(source and source.name) or ""
@@ -180,7 +190,9 @@ local function sourcePreset(kind, source)
   end
   if kind == "battery" then return PRESETS[4] end
   if kind == "capacity" then return PRESETS[5] end
-  if kind == "control" then return PRESETS[7] end
+  if kind == "control" and cfg and cfg.min < 0 and cfg.max > 0 then
+    return PRESETS[7]
+  end
   return PRESETS[2]
 end
 
@@ -213,6 +225,7 @@ function M.configSignature(cfg)
     cfg.barPreset, cfg.barFace, cfg.barDir, cfg.barOrigin, cfg.barSize,
     cfg.barEnds, cfg.segments, cfg.segGap, cfg.palette, cfg.warnClr,
     cfg.critClr, cfg.trackClr, cfg.surface, cfg.panelClr, cfg.contrast,
+    cfg.motion, cfg.barHead, cfg.scaleMarks, cfg.valuePos, cfg.labelPos,
   }
 end
 
@@ -339,7 +352,7 @@ function M.resolve(widget, cfg)
   local hint = (SENSOR_PRESETS and SENSOR_PRESETS.kind)
     and SENSOR_PRESETS.kind(widget and widget.source) or "generic"
   local inherited = selected.sourceAware
-    and sourcePreset(hint, widget and widget.source) or selected
+    and sourcePreset(hint, widget and widget.source, cfg) or selected
 
   local visual = {
     preset = selected.key,
@@ -356,13 +369,37 @@ function M.resolve(widget, cfg)
     palette = pick(cfg.palette, PALETTE, inherited.palette),
     surface = pick(cfg.surface, SURFACE, inherited.surface),
     contrast = pick(cfg.contrast, CONTRAST, inherited.contrast),
-    motion = inherited.motion,
+    motion = pick(cfg.motion, MOTION, inherited.motion or "refined"),
+    head = pick(cfg.barHead, HEAD, inherited.head or "line"),
+    marks = pick(cfg.scaleMarks, MARKS, inherited.marks or "auto"),
+    valuePos = pick(cfg.valuePos, VALUE_POS, inherited.valuePos or "auto"),
+    labelPos = pick(cfg.labelPos, LABEL_POS, inherited.labelPos or "auto"),
     compactDescription = inherited.compact,
     profile = profile,
     downgrades = {},
   }
   visual.face = visual.requestedFace
   if visual.direction == "auto" then visual.direction = autoDirection(profile) end
+
+  if visual.face == "dual-rail" and ORIGIN[cfg.barOrigin] == nil then
+    visual.origin = "zero"
+  elseif visual.face == "dual-rail" and visual.origin ~= "zero" then
+    visual.face = "continuous"
+    visual.downgrades[#visual.downgrades + 1] = "dual-rail-requires-zero-origin"
+  end
+
+  local lo, hi = min(cfg.min or 0, cfg.max or 0), max(cfg.min or 0, cfg.max or 0)
+  local zeroInside = lo <= 0 and hi >= 0
+  local signedZero = lo < 0 and hi > 0
+  visual.zeroInside = zeroInside
+  if visual.origin == "zero" and not zeroInside then
+    visual.downgrades[#visual.downgrades + 1] = "zero-origin-clamped"
+  end
+  if visual.face == "dual-rail" and not signedZero then
+    visual.face = "continuous"
+    visual.origin = "scale-low"
+    visual.downgrades[#visual.downgrades + 1] = "dual-rail-zero-outside-range"
+  end
 
   if visual.face == "ticks" and visual.segmentsAuto
      and profile.family == "large" then
@@ -388,6 +425,7 @@ function M.resolve(widget, cfg)
   visual.structuralSig = signature{
     visual.face, visual.direction, visual.origin, visual.thickness,
     visual.ends, visual.segments, visual.gap, visual.surface, profile.family,
+    visual.head, visual.marks, visual.valuePos, visual.labelPos,
   }
   local previous = widget and widget.barPalette
   -- Geometry-only settings edits are common and the live one-second probe is

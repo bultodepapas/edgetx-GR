@@ -82,6 +82,12 @@ local EN_SECTION = {
     "Phase 2 Precision Rail adds an exact head, three history readings, real"
     .. " thickness/end geometry and grounded surfaces without losing the"
     .. " dial's safety semantics." },
+  ["caras4"]  = { "Segmented faces",
+    "Blocks, true Hex, Fine Ticks and Signal Steps are production reading"
+    .. " models across all five colour modes." },
+  ["ejes5"]   = { "Axes, zero and presentation",
+    "Every face works vertically and around numeric zero; Dual Rail preserves"
+    .. " asymmetric signed truth, with configurable heads, marks and text." },
   ["zonas"]   = { "Zone matrix",
     "The same configuration in every zone size an EdgeTX layout can hand"
     .. " out. No text may overflow or cross the ring." },

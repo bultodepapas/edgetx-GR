@@ -904,6 +904,7 @@ local function barLayout(widget, cfg, L, w, h)
   local compactPad = T.px(T.space.xs)
   local pad = (h < T.px(46)) and compactPad or T.px(T.space.sm)
   L.showUnit = true
+  L.showValue = true
   L.showName = h >= T.px(46)
   -- the row is reserved whatever ShowChip says: see the dial branch (F9)
   L.showState = w >= T.px(120)
@@ -1068,7 +1069,144 @@ end
 function M.applyBarVisual(L, visual, cfg)
   if not L or L.style ~= "bar" or not visual then return L end
   local slot = L.barSlot or L.bar
-  local maximum = max(1, slot.h)
+  local vertical = visual.direction == "vertical"
+  L.barDirection = vertical and "vertical" or "horizontal"
+  L.valuePosition = visual.valuePos or "auto"
+  L.labelPosition = visual.labelPos or "auto"
+  L.showValue = L.valuePosition ~= "off"
+  if not L.showValue then L.showUnit = false end
+  if L.labelPosition == "off" then L.showName = false end
+
+  if vertical then
+    -- Reclaim the tall zone: barLayout has already selected safe fonts and
+    -- badge dimensions, but its provisional horizontal rail would consume
+    -- only ~26 px. Keep the information hierarchy above/below and turn the
+    -- middle into a genuine vertical instrument.
+    local pad = max(1, slot.x)
+    local top = pad
+    local valueH = L.showValue and L.valueBox.h or 0
+    local nameH = L.showName and L.nameBox.h or 0
+    local topRows = 0
+    if L.showValue and (L.valuePosition == "auto"
+       or L.valuePosition == "above") then
+      topRows = topRows + valueH + pad
+    end
+    if L.showName and L.labelPosition == "above" then
+      topRows = topRows + nameH + pad
+    end
+    top = top + topRows
+
+    local belowName = L.showName and (L.labelPosition == "auto"
+      or L.labelPosition == "below")
+    local bottomRows = belowName and nameH or 0
+    if L.showState then
+      local stateFoot = L.chipHeight - L.chipOff + L.chipOutline
+      if bottomRows > 0 then bottomRows = bottomRows + pad end
+      bottomRows = bottomRows + stateFoot
+    end
+    local bottom = L.h - pad - ((bottomRows > 0) and (bottomRows + pad) or 0)
+    if bottom <= top then
+      -- A pathological tiny/tall zone keeps containment and makes the value
+      -- an overlay before sacrificing the data axis.
+      top = pad
+      L.valuePosition = L.showValue and "inside" or L.valuePosition
+      bottom = max(top + 1, L.h - pad
+        - ((bottomRows > 0) and (bottomRows + pad) or 0))
+    end
+    slot = box(pad, top, max(1, L.w - pad * 2), max(1, bottom - top))
+    L.barSlot = slot
+
+    -- "Inside" on a tall instrument means inside the instrument footprint,
+    -- not printed through its data rail. Reserve a compact information lane
+    -- beside the rail whenever the value/name is authored Inside or End. This
+    -- keeps ticks, threshold marks and the moving head readable while giving
+    -- the text a stable high-contrast canvas in both light and dark themes.
+    local sideValue = L.showValue
+      and (L.valuePosition == "inside" or L.valuePosition == "end")
+    local sideLabel = L.showName and L.labelPosition == "inside"
+    if (sideValue or sideLabel) and slot.w >= T.px(36) then
+      local gap = max(pad, T.px(3))
+      local railW = max(T.px(12), floor((slot.w - gap) * 0.38))
+      railW = min(railW, max(1, slot.w - gap - T.px(18)))
+      L.barRailSlot = box(slot.x, slot.y, railW, slot.h)
+      local textX = slot.x + railW + gap
+      local textW = max(1, slot.x + slot.w - textX)
+      if sideValue then
+        L.valueBox.x, L.valueBox.w = textX, textW
+        L.valueAlign = LEFT
+      end
+      if sideLabel then
+        L.nameBox.x, L.nameBox.w = textX, textW
+        L.nameAlign = LEFT
+      end
+    end
+
+    if L.showValue then
+      if L.valuePosition == "inside" then
+        L.valueBox.y = top + floor((slot.h - L.valueBox.h) / 2)
+      elseif L.valuePosition == "end" then
+        L.valueBox.y = top
+      else
+        L.valueBox.y = pad
+      end
+    end
+    if L.showName then
+      if L.labelPosition == "above" then
+        L.nameBox.x, L.nameBox.y, L.nameBox.w = pad,
+          pad + ((L.showValue and (L.valuePosition == "above"
+            or L.valuePosition == "auto"))
+            and (valueH + pad) or 0), L.w - pad * 2
+        L.nameAlign = LEFT
+      elseif L.labelPosition == "inside" then
+        if not L.barRailSlot then
+          L.nameBox.x, L.nameBox.w, L.nameAlign = pad, L.w - pad * 2, CENTER
+        end
+        L.nameBox.y = max(top, bottom - nameH - pad)
+      else
+        L.nameBox.x, L.nameBox.y, L.nameBox.w = pad, bottom + pad,
+          L.w - pad * 2
+        L.nameAlign = CENTER
+      end
+    end
+    if L.showState then
+      L.stateBox.x, L.stateBox.y = pad + floor((L.w - pad * 2) / 2),
+        bottom + pad + (belowName and (nameH + pad) or 0)
+      L.stateBox.w = floor((L.w - pad * 2) / 2)
+    end
+  else
+    -- Horizontal placement variants preserve the proven short-bar footprint;
+    -- they only move information within its reserved regions. This keeps the
+    -- state row and marker overhang guarantees intact at 44 px heights.
+    local pad = max(1, slot.x)
+    if L.showValue and L.valuePosition == "inside" then
+      L.valueBox.x, L.valueBox.y, L.valueBox.w = pad,
+        slot.y + floor((slot.h - L.valueBox.h) / 2), L.w - pad * 2
+      L.valueAlign = CENTER
+    elseif L.showValue and L.valuePosition == "end" then
+      L.valueBox.x, L.valueBox.w = floor(L.w * 0.5),
+        max(1, L.w - floor(L.w * 0.5) - pad)
+      L.valueAlign = RIGHT
+    end
+    if L.showName and L.labelPosition == "above" then
+      L.nameBox.x, L.nameBox.y, L.nameBox.w = pad, pad,
+        max(1, floor((L.w - pad * 2) / 2))
+      L.nameAlign = LEFT
+    elseif L.showName and L.labelPosition == "inside" then
+      L.nameBox.x, L.nameBox.y, L.nameBox.w = pad,
+        slot.y + max(0, slot.h - L.nameBox.h), L.w - pad * 2
+      L.nameAlign = CENTER
+    end
+  end
+
+  -- placeValue() authored the unit against the original value baseline. Any
+  -- presentation variant that moves the value row must move that baseline as
+  -- one semantic group; anchorUnit() will handle the live horizontal edge.
+  if L.showValue and L.showUnit and L.unitBox then
+    L.unitBox.y = L.valueBox.y + L.valueBox.h - L.unitBox.h - T.px(1)
+  end
+
+  local railSlot = L.barRailSlot or slot
+  local maximum = max(1, vertical and railSlot.w or railSlot.h)
   local family = visual.profile and visual.profile.family or "standard"
   local large = family == "large"
   local wanted
@@ -1083,32 +1221,53 @@ function M.applyBarVisual(L, visual, cfg)
   end
   wanted = clamp(wanted, min(maximum, T.px(2)), maximum)
 
-  local outerY = slot.y + floor((slot.h - wanted) / 2)
-  L.barOuter = box(slot.x, outerY, slot.w, wanted)
+  local outerX = vertical and (railSlot.x + floor((railSlot.w - wanted) / 2))
+    or railSlot.x
+  local outerY = vertical and railSlot.y
+    or (railSlot.y + floor((railSlot.h - wanted) / 2))
+  L.barOuter = vertical and box(outerX, outerY, wanted, railSlot.h)
+    or box(outerX, outerY, railSlot.w, wanted)
 
   -- A retained filled rectangle behind the track supplies a real casing. The
   -- inset is surrendered on extremely small rails so the data channel never
   -- collapses to zero pixels.
-  local edge = (wanted >= T.px(5) and slot.w >= T.px(12)) and T.px(1) or 0
-  local innerW = max(1, slot.w - edge * 2)
-  local innerH = max(1, wanted - edge * 2)
-  L.bar = box(slot.x + edge, outerY + edge, innerW, innerH)
+  local primaryLength = vertical and slot.h or slot.w
+  local edge = (wanted >= T.px(5) and primaryLength >= T.px(12))
+    and T.px(1) or 0
+  local innerW = max(1, L.barOuter.w - edge * 2)
+  local innerH = max(1, L.barOuter.h - edge * 2)
+  L.bar = box(L.barOuter.x + edge, L.barOuter.y + edge, innerW, innerH)
   L.barEdge = edge
   L.barThickness = visual.thickness
   L.barEnds = visual.ends
-  L.barRadius = (visual.ends == "round") and floor(innerH / 2) or 0
+  L.barRadius = (visual.ends == "round")
+    and floor((vertical and innerW or innerH) / 2) or 0
   L.barOuterRadius = (visual.ends == "round") and floor(wanted / 2) or 0
   L.barChamfer = (visual.ends == "chamfer")
-    and min(floor(innerH / 2), T.px(6)) or 0
+    and min(floor((vertical and innerW or innerH) / 2), T.px(6)) or 0
   local axisInset = L.barChamfer
-  L.barAxis = box(L.bar.x + axisInset, L.bar.y,
-                  max(1, L.bar.w - axisInset * 2), L.bar.h)
+  if vertical then
+    L.barAxis = box(L.bar.x, L.bar.y + axisInset, L.bar.w,
+                    max(1, L.bar.h - axisInset * 2))
+  else
+    L.barAxis = box(L.bar.x + axisInset, L.bar.y,
+                    max(1, L.bar.w - axisInset * 2), L.bar.h)
+  end
   L.activeBar = box(L.barAxis.x, L.barAxis.y, L.barAxis.w, L.barAxis.h)
   if cfg and (cfg.colorMode == 3 or cfg.colorMode == 5)
-     and L.barAxis.h >= T.px(5) then
-    local railH = max(1, min(T.px(3), floor(L.barAxis.h * 0.3)))
-    L.activeBar.h = max(1, L.barAxis.h - railH - T.px(1))
+     and (vertical and L.barAxis.w or L.barAxis.h) >= T.px(5) then
+    local cross = vertical and L.barAxis.w or L.barAxis.h
+    local rail = max(1, min(T.px(3), floor(cross * 0.3)))
+    if vertical then
+      L.activeBar.w = max(1, L.barAxis.w - rail - T.px(1))
+    else
+      L.activeBar.h = max(1, L.barAxis.h - rail - T.px(1))
+    end
   end
+  L.axis = G.makeAxis(L.barAxis, L.barDirection, cfg.min, cfg.max,
+                      visual.origin)
+  L.activeAxis = G.makeAxis(L.activeBar, L.barDirection, cfg.min, cfg.max,
+                            visual.origin)
   return L
 end
 
@@ -1133,6 +1292,7 @@ function M.signature(L, cfg)
   return table.concat({
     L.style, L.mode, L.orientation,
     L.showNeedle and 1 or 0, L.showUnit and 1 or 0, L.showName and 1 or 0,
+    (L.showValue == false) and 0 or 1,
     L.showState and 1 or 0, L.showMarkers and 1 or 0,
     L.showMinMaxText and 1 or 0, L.showScale and 1 or 0,
     cfg.colorMode, (L.style == "bar") and 0 or (cfg.sweep or 1),

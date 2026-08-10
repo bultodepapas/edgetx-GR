@@ -99,6 +99,26 @@ local wh = build({ x = 0, y = 0, w = 160, h = 44 }, {
   Style = "Bar", BarFace = "Hex", Segments = "10", Damping = 0,
 })
 census(wh, "bar 160x44 hex compact block fallback")
+local phase5Rows = {
+  { "vertical gradient/full marks", { Style = "Bar", BarDir = "Vertical",
+      ColorMode = "Gradient", ScaleMarks = "Full", Damping = 0 } },
+  { "vertical blocks 24/zero", { Style = "Bar", BarDir = "Vertical",
+      BarFace = "Blocks", Segments = "24", BarOrigin = "Zero",
+      ColorMode = "Sections", Scale = "Manual", Min = -100, Max = 100,
+      Damping = 0 } },
+  { "horizontal dual rail", { Style = "Bar", BarFace = "Dual rail",
+      BarOrigin = "Zero", Scale = "Manual", Min = -100, Max = 100,
+      Damping = 0 } },
+  { "vertical dual rail", { Style = "Bar", BarDir = "Vertical",
+      BarFace = "Dual rail", BarOrigin = "Zero", Scale = "Manual",
+      Min = -100, Max = 100, Damping = 0 } },
+}
+for _, row in ipairs(phase5Rows) do
+  local vertical = row[2].BarDir == "Vertical"
+  local wf = build(vertical and { x = 0, y = 0, w = 120, h = 300 }
+                         or { x = 0, y = 0, w = 420, h = 110 }, row[2])
+  census(wf, "bar Phase 5 " .. row[1])
+end
 print("")
 print("DOCS.md 5.4 uses the first row (worst case); the counts above are")
 print("the reproducible source for the table.")

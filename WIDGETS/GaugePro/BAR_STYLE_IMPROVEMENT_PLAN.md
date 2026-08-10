@@ -1487,6 +1487,15 @@ is 1,772–1,798 instructions/frame.
 
 ### Phase 4 — Multiple visual faces and presets
 
+**Status: COMPLETE (2026-08-09).** Blocks, true Hex, Fine Ticks and Signal
+Steps now share the production telemetry/threshold/history/head contract and
+all five colour modes. Source-aware Auto maps link, signal, battery and
+capacity semantics without overriding explicit settings. The 151-scene
+stock/dark/high-contrast review, 61 unit tests, 178 lifecycle tests, face-zone
+collision matrix, 17-layout atlas, object census and enforced CPU/allocation
+gates are recorded in `PHASE4_REPORT.md`. Dual Rail remains Phase 5 because it
+depends on signed zero-origin axes; motion profiles remain Phase 6.
+
 #### 4.1 Blocks
 
 - implement square and soft variants;
@@ -1521,7 +1530,26 @@ is 1,772–1,798 instructions/frame.
 
 **Exit gate:** each face adds a useful reading model, not merely a novelty shape, and remains under its object budget.
 
+**Gate result: PASS.** Blocks preserve a truthful partial cell; Hex keeps
+static rectangle/triangle seams at all three LCD scales; Fine Ticks preserve
+major/minor and exact threshold hierarchy; Steps provide an increasing-height
+link pattern without sacrificing the numeric reading. Rich whole-tree counts
+are 37/38, 40/40, 37/40 and 23/32 respectively. Dense moving frames measure
+1,430–1,952 instructions and 32 B/frame, state transitions stay below 6,000,
+and staged structural callbacks stay below 10,000 instructions.
+
 ### Phase 5 — Orientation and RC-control depth
+
+**Status: COMPLETE (2026-08-09).** All six production faces now use one
+orientation-neutral axis for horizontal/vertical drawing, scale-low/numeric-zero
+spans, thresholds, position heads, gradients and history. Dual Rail preserves
+signed asymmetric truth; conservative Auto Source mapping selects RC Center for
+sticks/channels/trims/GVars only when the effective range strictly crosses zero,
+while throttle and one-sided ranges remain honest. Presentation slots 40–44 are
+append-only and six future slots remain reserved. The 222-scene
+stock/dark/high-contrast review, 63 unit tests, 192 lifecycle tests, collision
+matrix, object census and enforced CPU/allocation gates are recorded in
+`PHASE5_REPORT.md`. Motion profile behavior remains Phase 6.
 
 #### 5.1 Vertical bars
 
@@ -1550,6 +1578,13 @@ is 1,772–1,798 instructions/frame.
 - retain six option slots for future work.
 
 **Exit gate:** vertical and centered modes communicate real source semantics and never imply a false midpoint.
+
+**Gate result: PASS.** Vertical and zero-origin ordinary motion measures
+1,502–1,988 instructions, signed Dual Rail measures 1,226–1,378, all Phase 5
+transitions stay below 5,400 and the heaviest structural callback is
+9,000/20,000. Stock, dark and high-contrast galleries render 222/222 scenes
+without a warning; every visual option has a concrete variant and the complete
+collision audit is clean.
 
 ### Phase 6 — Motion and micro-interactions
 

@@ -128,6 +128,45 @@ test("barFill maps value to width", function()
   assertEq(geometry.barFill(200, 999, 0, 100), 200)
 end)
 
+test("Phase 5 axis maps horizontal and vertical coordinates without drift", function()
+  local rect = { x = 10, y = 20, w = 100, h = 160 }
+  local horizontal = geometry.makeAxis(rect, "horizontal", -30, 100,
+                                       "scale-low")
+  assertEq(horizontal.orientation, "horizontal")
+  assertEq(horizontal.start, 10)
+  assertEq(horizontal.growth, 1)
+  assertEq(geometry.axisPoint(horizontal, 0.5), 60)
+  local x, y, w, h = geometry.axisSpan(horizontal, 0.2, 0.7)
+  assertEq(x, 30); assertEq(y, 20); assertEq(w, 50); assertEq(h, 160)
+
+  local vertical = geometry.makeAxis(rect, "vertical", -30, 100, "zero")
+  assertEq(vertical.orientation, "vertical")
+  assertEq(vertical.start, 180)
+  assertEq(vertical.growth, -1)
+  assertEq(geometry.axisPoint(vertical, 0), 180)
+  assertEq(geometry.axisPoint(vertical, 1), 20)
+  x, y, w, h = geometry.axisSpan(vertical, 0.25, 0.75)
+  assertEq(x, 10); assertEq(y, 60); assertEq(w, 100); assertEq(h, 80)
+end)
+
+test("Phase 5 zero origin is numeric, asymmetric and honestly clamped", function()
+  local rect = { x = 0, y = 0, w = 130, h = 20 }
+  local asymmetric = geometry.makeAxis(rect, "horizontal", -30, 100, "zero")
+  assertNear(asymmetric.zeroT, 30 / 130, 0.0001)
+  assertNear(asymmetric.originT, 30 / 130, 0.0001)
+  assertEq(asymmetric.zeroInside, true)
+  assertEq(asymmetric.originClamped, false)
+  local lo, hi = geometry.axisOriginSpan(asymmetric,
+    geometry.normalize(-15, -30, 100))
+  assertNear(lo, 15 / 130, 0.0001)
+  assertNear(hi, 30 / 130, 0.0001)
+
+  local outside = geometry.makeAxis(rect, "horizontal", 10, 100, "zero")
+  assertEq(outside.zeroInside, false)
+  assertEq(outside.originT, 0)
+  assertEq(outside.originClamped, true)
+end)
+
 -- ---- ranges --------------------------------------------------------------
 
 test("ranges high-is-good ordering", function()
@@ -400,8 +439,10 @@ test("Auto Source uses stable semantic hints only for appearance", function()
                                    visualConfig{ barPreset = 1 })
   local capacity = barStyle.resolve(visualWidget("Capacity"),
                                     visualConfig{ barPreset = 1 })
-  local control = barStyle.resolve(visualWidget("Thr"),
-                                   visualConfig{ barPreset = 1 })
+  local control = barStyle.resolve(visualWidget("Ail"),
+    visualConfig{ barPreset = 1, min = -1024, max = 1024 })
+  local throttle = barStyle.resolve(visualWidget("Thr"),
+    visualConfig{ barPreset = 1, min = 0, max = 100 })
   assertEq(signal.face, "steps")
   assertEq(signal.sourceHint, "signal")
   assertEq(fastSignal.face, "ticks")
@@ -410,6 +451,7 @@ test("Auto Source uses stable semantic hints only for appearance", function()
   assertEq(capacity.face, "blocks")
   assertEq(control.face, "dual-rail")
   assertEq(control.origin, "zero")
+  assertEq(throttle.face, "continuous")
   -- The sensor preset remains the owner of range truth.
   assertEq(presets.find({ name = "RSSI" }).minimum, 0)
   assertEq(presets.find({ name = "RSSI" }).maximum, 100)
@@ -679,7 +721,7 @@ test("every bar face exposes the retained interface and a hard ceiling", functio
   end
 end)
 
-test("Phase 4 faces select production renderers and Phase 5 stays explicit", function()
+test("Phase 5 all faces select production renderers in both orientations", function()
   for _, name in ipairs{ "blocks", "hex", "ticks", "steps" } do
     local face, reason = barFaces.select(name, {}, {
       segments = 8, direction = "horizontal", origin = "scale-low",
@@ -691,16 +733,17 @@ test("Phase 4 faces select production renderers and Phase 5 stays explicit", fun
   local pending, reason = barFaces.select("dual-rail", {}, {
     segments = 8, direction = "horizontal", origin = "zero",
   })
-  assertEq(pending.name, "continuous")
-  assertTrue(string.find(reason, "face%-phase%-pending") ~= nil)
+  assertEq(pending.name, "dual-rail")
+  assertEq(pending.implemented, true)
+  assertEq(reason, nil)
   local ready, noReason = barFaces.select("continuous", {}, {})
   assertEq(ready.name, "continuous")
   assertEq(noReason, nil)
   local vertical, verticalReason = barFaces.select("blocks", {}, {
     direction = "vertical", origin = "scale-low",
   })
-  assertEq(vertical.name, "continuous")
-  assertTrue(string.find(verticalReason, "orientation%-phase%-pending") ~= nil)
+  assertEq(vertical.name, "blocks")
+  assertEq(verticalReason, nil)
 end)
 
 test("Phase 4 segmented progress preserves partial-cell truth", function()

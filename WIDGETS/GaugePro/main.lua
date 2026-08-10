@@ -117,7 +117,7 @@ local DEFS = {
     since = 212, default = 1, choices = { "Auto", "Manual" } },
   { key = "Sweep", label = "Dial sweep", type = CHOICE, field = "sweep",
     since = 212, default = 1, choices = { "270 deg", "180 deg", "360 deg" } },
-  { key = "Damping", label = "Needle damping", type = SLIDER,
+  { key = "Damping", label = "Gauge damping", type = SLIDER,
     field = "damping", since = 212, default = 4, min = 0, max = 9 },
   { key = "Cells", label = "Cell reading", type = CHOICE, field = "cells",
     since = 212, default = 1, choices = { "Lowest", "Total", "Average" } },
@@ -186,6 +186,26 @@ local DEFS = {
   { key = "Contrast", label = "Contrast assist", type = CHOICE,
     field = "contrast", since = 212, default = 1,
     choices = { "Auto", "Off", "Strong" } },
+
+  -- ---- advanced bar presentation (Phase 5, append-only slots 40-44) -----
+  -- The radio settings dialog was reviewed against its two-column width and
+  -- ten-character key contract. These five concise rows fit without wrapping;
+  -- slots 45-50 remain deliberately unused for future evidence-led controls.
+  { key = "Motion", label = "Motion", type = CHOICE,
+    field = "motion", since = 212, default = 1,
+    choices = { "Auto", "Off", "Essential", "Refined", "Expressive" } },
+  { key = "BarHead", label = "Position head", type = CHOICE,
+    field = "barHead", since = 212, default = 1,
+    choices = { "Auto", "None", "Cap", "Dot", "Line", "Needle" } },
+  { key = "ScaleMarks", label = "Scale marks", type = CHOICE,
+    field = "scaleMarks", since = 212, default = 1,
+    choices = { "Auto", "Off", "Thresholds", "Ends", "Full" } },
+  { key = "ValuePos", label = "Value position", type = CHOICE,
+    field = "valuePos", since = 212, default = 1,
+    choices = { "Auto", "Above", "Inside", "End", "Off" } },
+  { key = "LabelPos", label = "Name position", type = CHOICE,
+    field = "labelPos", since = 212, default = 1,
+    choices = { "Auto", "Above", "Below", "Inside", "Off" } },
 }
 
 -- Firmware option array. Built inline (rather than in options.lua) so boot

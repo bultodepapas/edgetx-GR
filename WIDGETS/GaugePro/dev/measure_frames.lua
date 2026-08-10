@@ -1,5 +1,4 @@
--- GaugePro per-frame allocation probe (Tanda 6 F-11 / response Phase 5.1+5.2,
--- acceptance measurement Phase 5.3).
+-- GaugePro per-frame allocation probe (Tanda 6 F-11 plus Bar v2 Phases 3-5).
 --
 -- Reproduces the review's methodology: "basura generada por frame, con la
 -- instrumentación del harness desactivada". Two things make the number
@@ -26,7 +25,7 @@
 --
 -- Usage: lua5.3 dev/measure_frames.lua <widget-dir>
 --
--- Phase 5 target (revert criterion): the needle's share must drop
+-- Retained-render target (revert criterion): the needle's share must drop
 -- demonstrably against the Tanda baseline (~511 B/frame needle share).
 local widgetDir = arg[1] or "./"
 if string.sub(widgetDir, -1) ~= "/" then widgetDir = widgetDir .. "/" end
@@ -155,6 +154,35 @@ local SCENES = {
   { name = "bar steps-10", zone = { x = 0, y = 0, w = 480, h = 120 },
     ov = { Style = "Bar", BarFace = "Steps", Segments = "10",
            ColorMode = "Sections", Surface = "Theme panel", Damping = 0 } },
+  { name = "vertical gradient", zone = { x = 0, y = 0, w = 120, h = 300 },
+    ov = { Style = "Bar", BarDir = "Vertical", ColorMode = "Gradient",
+           ScaleMarks = "Full", Damping = 0 } },
+  { name = "vertical blocks-24", zone = { x = 0, y = 0, w = 120, h = 300 },
+    ov = { Style = "Bar", BarDir = "Vertical", BarFace = "Blocks",
+           Segments = "24", ColorMode = "Sections", Damping = 0 } },
+  { name = "vertical hex-10", zone = { x = 0, y = 0, w = 120, h = 300 },
+    ov = { Style = "Bar", BarDir = "Vertical", BarFace = "Hex",
+           Segments = "10", ColorMode = "Sections", Damping = 0 } },
+  { name = "vertical ticks-24", zone = { x = 0, y = 0, w = 120, h = 300 },
+    ov = { Style = "Bar", BarDir = "Vertical", BarFace = "Ticks",
+           Segments = "24", ColorMode = "Sections", Damping = 0 } },
+  { name = "vertical steps-10", zone = { x = 0, y = 0, w = 120, h = 300 },
+    ov = { Style = "Bar", BarDir = "Vertical", BarFace = "Steps",
+           Segments = "10", ColorMode = "Sections", Damping = 0 } },
+  { name = "zero gradient", zone = { x = 0, y = 0, w = 420, h = 110 },
+    ov = { Style = "Bar", BarOrigin = "Zero", ColorMode = "Gradient",
+           Scale = "Manual", Min = -100, Max = 100, Damping = 0 } },
+  { name = "zero blocks-24", zone = { x = 0, y = 0, w = 420, h = 110 },
+    ov = { Style = "Bar", BarOrigin = "Zero", BarFace = "Blocks",
+           Segments = "24", ColorMode = "Sections", Scale = "Manual",
+           Min = -100, Max = 100, Damping = 0 } },
+  { name = "dual rail H", zone = { x = 0, y = 0, w = 420, h = 110 },
+    ov = { Style = "Bar", BarFace = "Dual rail", BarOrigin = "Zero",
+           Scale = "Manual", Min = -100, Max = 100, Damping = 0 } },
+  { name = "dual rail V", zone = { x = 0, y = 0, w = 120, h = 300 },
+    ov = { Style = "Bar", BarDir = "Vertical", BarFace = "Dual rail",
+           BarOrigin = "Zero", Scale = "Manual", Min = -100, Max = 100,
+           Damping = 0 } },
 }
 
 -- ---- main --------------------------------------------------------------------

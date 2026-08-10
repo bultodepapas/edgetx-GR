@@ -94,10 +94,26 @@ local function painter(widget)
 end
 M.painter = painter
 
+-- A dense segmented face can require nearly forty retained LVGL objects.
+-- Building that tree in the same callback that parses all 2.12 options and
+-- resolves layout/theme metadata needlessly concentrates the work. Existing
+-- widgets therefore stage a structural settings rebuild: update() resolves
+-- and latches the new structure, the next refresh builds it, and the normal
+-- paint resumes one frame later. Initial creation and telemetry-driven
+-- reconfiguration still build immediately because no prior tree exists (or
+-- because refresh already owns the bounded callback).
+local function rebuild(widget)
+  widget.rebuildPending = false
+  lvgl.clear()
+  widget.ui = {}
+  widget.frame = { props = {}, dirty = {} }
+  painter(widget).build(widget)
+end
+
 -- Ranges, derived text and layout. Called from update(), and from refresh()
 -- through the two one-shot latches there: the frame a battery pack's cell
 -- count becomes known, and the frame a late-arriving sensor finally resolves.
-local function configure(widget)
+local function configure(widget, deferRebuild)
   local m, cfg, src = widget.mods, widget.config, widget.source
 
   -- Everything below is DERIVED from `src`. Record which resolution of the
@@ -225,10 +241,11 @@ local function configure(widget)
   if sig ~= widget.layoutSig then
     widget.layoutSig = sig
     widget.layoutRebuilt = true
-    lvgl.clear()
-    widget.ui = {}
-    widget.frame = { props = {}, dirty = {} }
-    painter(widget).build(widget)
+    if deferRebuild and widget.ui and widget.ui.built then
+      widget.rebuildPending = true
+    else
+      rebuild(widget)
+    end
   end
 end
 M.configure = configure
@@ -240,9 +257,9 @@ M.configure = configure
 -- only reaches the screen through updateSourceLabels (AUDIT.md P0-6).
 -- Splitting the two across call sites is what let the late-resolution path
 -- draw an unnamed, unitless gauge.
-local function apply(widget)
+local function apply(widget, deferRebuild)
   widget.layoutRebuilt = false
-  configure(widget)
+  configure(widget, deferRebuild)
   -- setProp() no-ops when the string is unchanged, so this is free on the
   -- common "nothing moved" call.
   if not widget.layoutRebuilt then
@@ -279,7 +296,7 @@ function M.update(widget, options)
     m.alerts.reset(widget)
   end
 
-  apply(widget)
+  apply(widget, true)
 end
 
 -- A SWITCH option is a swsrc_t, read with getSwitchValue() (AUDIT.md P0-1),
@@ -308,7 +325,12 @@ local function checkResetSwitch(widget)
 end
 
 function M.refresh(widget, _event, _touch)
-  if not widget.mods or not widget.ui.built then return end
+  if not widget.mods then return end
+  if widget.rebuildPending then
+    rebuild(widget)
+    return
+  end
+  if not widget.ui.built then return end
   local m = widget.mods
   checkResetSwitch(widget)
   m.telemetry.refresh(widget)
@@ -330,13 +352,13 @@ function M.refresh(widget, _event, _touch)
     -- so without this an RPM sensor discovered a second after boot kept
     -- drawing on the default 0..100 scale, nameless and unitless, until the
     -- user happened to edit an option.
-    apply(widget)
+    apply(widget, false)
   elseif widget.config.battery == BATTERY_OFF and widget.source.cells
          and not widget.cellsApplied then
     -- a battery pack's cell count is only known after the first reading; when
     -- it lands, the scale is rebuilt once
     widget.cellsApplied = true
-    apply(widget)
+    apply(widget, false)
   end
 
   -- EdgeTX/HTX does not guarantee widget.update() for a live theme switch.

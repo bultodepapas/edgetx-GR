@@ -26,7 +26,7 @@ assets.
 
 [![Gauge Pro — every option and every state](docs/gauge-pro-options.png)](docs/gauge-pro-options.png)
 
-**[`docs/gauge-pro-options.png`](docs/gauge-pro-options.png)** — 119 scenes
+**[`docs/gauge-pro-options.png`](docs/gauge-pro-options.png)** — 222 scenes
 covering every option, every state, every colour mode and every zone size an
 EdgeTX layout can hand out, on EdgeTX's **stock theme**.
 [`docs/gauge-pro-options-dark.png`](docs/gauge-pro-options-dark.png) is the same
@@ -58,6 +58,22 @@ SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
 - A real **spatial Gradient bar** built from 8–24 budget-aware, gapless,
   retained slices; it keeps explicit thresholds, an exact partial slice and
   the exact position head on ascending, descending and low-is-good scales
+- Four production segmented reading models: truthful partial **Blocks**,
+  three-primitive **Hex** cells, threshold-aligned major/minor **Fine Ticks**,
+  and increasing-height **Signal Steps**. All retain the exact position head,
+  every colour mode, live HTX themes, compact fallbacks and hard object caps
+- A first-class orientation-neutral bar axis: every production face runs
+  horizontally or vertically, including gradients, thresholds, exact head,
+  zero notch and all three history markers
+- Truthful **Zero origin** on signed and asymmetric scales, plus production
+  **Dual Rail** for sticks/channels/trims/GVars: negative and positive spans
+  grow independently around numeric zero instead of inventing a midpoint
+- Configurable Position Head (None/Cap/Dot/Line/Needle), scale marks
+  (Off/Thresholds/Ends/Full), value placement and name placement; tall Inside
+  layouts reserve a separate information lane so text never crosses the rail
+- Source-aware Auto appearance: RSSI/RQly-style links choose Steps, other
+  signal metrics choose Ticks, battery sources choose Hex, and capacity-style
+  sources choose Blocks; explicit user overrides always win
 - Live HTX theme switching: theme candidates, track, panel, text, history,
   badge ink and gradient caches re-resolve in place without rebuilding
 - Contrast assist Off / Auto / Strong: CVD-aware analysis strengthens casing,
@@ -77,7 +93,7 @@ SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
 - **Alerts**: tone and haptic on state transitions, gated by a switch, a
   startup delay and a rate limit
 - Reset min/max from a switch, in flight
-- Normal-state colour, custom name and unit, needle damping
+- Normal-state colour, custom name and unit, shared gauge damping
 - Responsive: micro / compact / normal / large × horizontal / vertical /
   balanced / fullscreen
 - Availability model: distinguishes no source, stale sensor, link down and
@@ -90,8 +106,9 @@ SVG. Regenerate with `lua5.3 dev/collage.lua ./ docs/`.
 ## Options
 
 Ten options on EdgeTX 2.11 (the firmware limit there, in both the radio and
-Companion), and all 39 on 2.12+. The original 24 and the new 25–39 tail are
-independently frozen append-only contracts. The core ten keep fixed positions on every
+Companion), and all 44 on 2.12+. The original 24, Phase 1's 25–39 tail and
+Phase 5's 40–44 presentation tail are independently frozen append-only
+contracts; slots 45–50 remain reserved. The core ten keep fixed positions on every
 firmware, so a model can move between versions without its settings shifting.
 
 The labels are written for the radio's settings screen, where a label gets
@@ -113,7 +130,7 @@ widget on the card, used or not. Everything else loads on first use:
 | `options.lua` | the option wire format (integers, 1-based choices, capacity) |
 | `theme.lua` | design tokens and memoized text metrics |
 | `bar_style.lua` | appearance presets, Auto/override resolution, palettes and signatures |
-| `bar_faces.lua` | retained face interface, Continuous Precision Rail, spatial gradient slices, object ceilings and safe future-face fallback |
+| `bar_faces.lua` | retained face interface, Continuous, Blocks, Hex, Fine Ticks, Steps and Dual Rail; horizontal/vertical/zero spans, gradients, responsive fallbacks and object ceilings |
 | `geometry.lua`, `ranges.lua`, `presets.lua`, `format.lua`, `smoothing.lua` | pure Lua domain logic |
 | `telemetry.lua` | sources, values, availability, history |
 | `layout.lua` | classification, geometry, typography, regions |
@@ -125,8 +142,8 @@ widget on the card, used or not. Everything else loads on first use:
 Stock Lua 5.3, no radio needed:
 
 ```sh
-lua5.3 tests/run_tests.lua  ./          # pure modules        (60 tests)
-lua5.3 tests/smoke_test.lua ./          # lifecycle          (168 tests)
+lua5.3 tests/run_tests.lua  ./          # pure modules         (63 tests)
+lua5.3 tests/smoke_test.lua ./          # lifecycle           (192 tests)
 lua5.3 dev/collide.lua      ./          # geometric collision audit
 lua5.3 dev/gallery.lua      ./ --out /tmp/g   # visual contract sheet + manifest
 lua5.3 dev/collage.lua      ./ docs/    # the official option sheet (committed)
@@ -147,7 +164,7 @@ Three tools share one catalogue (`dev/scenes.lua`) and one emitter
 | `dev/shots.lua` | close-up | one SVG per scene |
 
 The gallery renders every scene in stock and dark palettes plus a deterministic manifest;
-the Phase 3 evidence also renders the explicit high-contrast palette
+the Phase 5 evidence also renders the explicit high-contrast palette
 of what each scene resolved to — layout mode, availability, colour key, scale,
 object census — and reports which widget options no scene ever varies. Use
 `--baseline <manifest>` for a field-level diff of what a change moved. See

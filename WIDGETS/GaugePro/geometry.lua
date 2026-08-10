@@ -79,6 +79,62 @@ function M.barFill(width, value, minimum, maximum)
   return floor(width * M.normalize(value, minimum, maximum) + 0.5)
 end
 
+-- Orientation-neutral authored-scale axis. The descriptor is allocated once
+-- during layout and then reused by every body, threshold, head and history
+-- overlay. `start` is always the physical position of normalized 0: left for
+-- horizontal bars and bottom for vertical bars. Vertical therefore grows with
+-- -1 in screen coordinates while preserving the same normalized scale model.
+function M.makeAxis(rect, orientation, minimum, maximum, origin)
+  local vertical = orientation == "vertical"
+  local length = vertical and rect.h or rect.w
+  local start = vertical and (rect.y + rect.h) or rect.x
+  local growth = vertical and -1 or 1
+  local zeroInside = (minimum <= 0 and maximum >= 0)
+    or (maximum <= 0 and minimum >= 0)
+  local zeroT = M.normalize(0, minimum, maximum)
+  local wantsZero = origin == "zero"
+  local originT = wantsZero and zeroT or 0
+  local axis = {
+    orientation = vertical and "vertical" or "horizontal",
+    x = rect.x, y = rect.y, w = rect.w, h = rect.h,
+    start = start, length = length, growth = growth,
+    crossStart = vertical and rect.x or rect.y,
+    crossLength = vertical and rect.w or rect.h,
+    scaleLowT = 0, zeroT = zeroT, zeroInside = zeroInside,
+    origin = wantsZero and "zero" or "scale-low",
+    originT = originT,
+    originClamped = wantsZero and not zeroInside or false,
+  }
+  axis.endCoord = start + growth * length
+  axis.originCoord = start + growth * floor(length * originT + 0.5)
+  axis.zeroCoord = start + growth * floor(length * zeroT + 0.5)
+  return axis
+end
+
+function M.axisPoint(axis, normalized)
+  normalized = M.clamp(tonumber(normalized) or 0, 0, 1)
+  return axis.start + axis.growth * floor(axis.length * normalized + 0.5)
+end
+
+-- Return a retained-rectangle-compatible x, y, w, h span between two
+-- normalized authored-scale positions. Either order is accepted, which is
+-- what lets a zero-origin value cross sign without face-local swapping.
+function M.axisSpan(axis, fromPosition, toPosition)
+  local p1 = M.axisPoint(axis, fromPosition)
+  local p2 = M.axisPoint(axis, toPosition)
+  if p1 > p2 then p1, p2 = p2, p1 end
+  if axis.orientation == "vertical" then
+    return axis.x, p1, axis.w, p2 - p1
+  end
+  return p1, axis.y, p2 - p1, axis.h
+end
+
+function M.axisOriginSpan(axis, normalized)
+  normalized = M.clamp(tonumber(normalized) or 0, 0, 1)
+  if normalized < axis.originT then return normalized, axis.originT end
+  return axis.originT, normalized
+end
+
 function M.round(n)
   return floor(n + 0.5)
 end
