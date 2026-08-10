@@ -832,7 +832,7 @@ test("Phase 3: spatial gradient is gapless, exact and retained", function()
   assertTrue(#slices >= 8 and #slices <= 24, "8..24 calibrated slices")
   for i = 2, #slices do
     assertEq(slices[i].props.x,
-      slices[i - 1].props.x + slices[i - 1].baseW,
+      slices[i - 1].props.x + w.ui.sliceState[i - 1].baseW,
       "slice " .. i .. " has no spatial gap")
   end
   assertEq(slices[1].props.color, w.barPalette.critical,
@@ -883,9 +883,10 @@ test("Phase 3: zero and full gradient spans remain truthful", function()
   end
   assertEq(w.ui.head.visible, true, "exact head still marks zero")
   mock.setValue(ID_STICK, 100); refresh(w)
-  for _, slice in ipairs(w.ui.gradientSlices) do
+  for i, slice in ipairs(w.ui.gradientSlices) do
     assertEq(slice.visible, true, "full scale shows every slice")
-    assertEq(slice.props.w, slice.baseW, "full slice width restored")
+    assertEq(slice.props.w, w.ui.sliceState[i].baseW,
+      "full slice width restored")
   end
   assertEq(w.frame.headX, w.layout.barAxis.x + w.layout.barAxis.w)
 end)
@@ -1065,7 +1066,9 @@ test("Phase 4: Fine Ticks align major ticks to exact thresholds", function()
   assertEq(found.critical.position, 0.35)
   assertEq(found.warning.position, 0.55)
   local markX = {}
-  for _, mark in ipairs(w.ui.marks) do markX[mark.role] = mark.props.pts[1][1] end
+  for i, mark in ipairs(w.ui.marks) do
+    markX[w.ui.markRoles[i]] = mark.props.pts[1][1]
+  end
   assertEq(found.critical.centerX, markX.critical)
   assertEq(found.warning.centerX, markX.warning)
   assertTrue(w.ui.pulseTargets[1] == w.ui.head,
@@ -3748,8 +3751,8 @@ test("F-5: accent reaches the Sections bands and bar threshold marks", function(
   local w = newWidget(nil, { Source = ID_RSSI, ColorMode = 5 })
   refresh(w, 1)
   local normalArc = nil
-  for _, s in ipairs(w.ui.sections) do
-    if s.role == "normal" then normalArc = s end
+  for i, s in ipairs(w.ui.sections) do
+    if w.ui.sectionRoles[i] == "normal" then normalArc = s end
   end
   assertTrue(normalArc ~= nil, "a normal section band exists")
   w.app.update(w, withOption(w.options, "Accent", RED))
@@ -3760,8 +3763,8 @@ test("F-5: accent reaches the Sections bands and bar threshold marks", function(
     { Source = ID_TEMP_T1, Style = "Bar", ColorMode = "Threshold" })
   refresh(wb, 1)
   local normalMark = nil
-  for _, m in ipairs(wb.ui.marks) do
-    if m.role == "normal" then normalMark = m end
+  for i, m in ipairs(wb.ui.marks) do
+    if wb.ui.markRoles[i] == "normal" then normalMark = m end
   end
   assertTrue(normalMark ~= nil, "a normal-boundary mark exists (low-is-good)")
   wb.app.update(wb, withOption(wb.options, "Accent", RED))

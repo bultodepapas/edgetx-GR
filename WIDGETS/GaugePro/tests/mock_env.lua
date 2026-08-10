@@ -122,6 +122,26 @@ local function makeObject(kind, params)
     setCount = 0,
     visible = true,
   }
+  -- Fidelity rule (radio/src/lua/api_colorlcd_lvgl.cpp:564-617): real LVGL
+  -- objects are full userdata whose metatable provides __index/__gc and
+  -- methods but NO __newindex. Assigning any field to one raises "attempt to
+  -- index a userdata value" on the radio; reads of unknown fields return nil.
+  -- The harness therefore rejects field writes that are neither harness
+  -- instrumentation nor a recognised LVGL property, so GaugePro can never
+  -- regress into carrying widget state on the objects again.
+  setmetatable(obj, {
+    __newindex = function(t, k, v)
+      if k == "kind" or k == "params" or k == "props" or k == "sets"
+         or k == "setCount" or k == "visible" then
+        rawset(t, k, v)
+        return
+      end
+      error(string.format(
+        "mock: field write '%s' on %s rejected - radio lvgl objects are "
+        .. "userdata without __newindex; keep state in widget.ui",
+        tostring(k), kind), 3)
+    end,
+  })
   objects[objectCount] = obj
   return obj
 end

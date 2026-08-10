@@ -217,6 +217,7 @@ local function buildReferenceBands(widget, axis)
     return
   end
   ui.rails = {}
+  ui.railMeta = {}
   local railCross = max(1, min(T.px(3),
     floor(axis.crossLength * 0.3)))
   for i = 1, #widget.ranges do
@@ -236,8 +237,11 @@ local function buildReferenceBands(widget, axis)
           color = T.stateColor(range.role, widget.accent, palette),
           opacity = opacity, filled = 1, rounded = 0,
         }
-        band.role, band.baseOpacity = range.role, opacity
+        -- LVGL objects are opaque userdata on the radio (no __newindex), so
+        -- the role/opacity the repaint path needs ride in a parallel array.
         ui.rails[#ui.rails + 1] = band
+        ui.railMeta[#ui.railMeta + 1] = { role = range.role,
+                                          baseOpacity = opacity }
       end
     end
   end
@@ -289,6 +293,7 @@ local function continuousBuild(widget, _geometry, style)
     local available = GRADIENT_CEILING - gradientSharedObjects(widget) - fixed
     local count = M.gradientSliceCount(axis.length, available)
     ui.gradientSlices = {}
+    ui.sliceState = {}
     style.gradientSlices = count
     for i = 1, count do
       local t1, t2 = (i - 1) / count, i / count
@@ -302,12 +307,19 @@ local function continuousBuild(widget, _geometry, style)
         color = (palette and palette.critical) or T.color.crit,
         filled = 1, rounded = 0,
       }
-      slice.fromPosition, slice.toPosition = t1, t2
-      slice.baseX, slice.baseY = x, y
-      slice.baseW, slice.baseH = max(1, w), max(1, h)
-      slice.paintX, slice.paintY = x, y
-      slice.paintW, slice.paintH = slice.baseW, slice.baseH
-      slice.barShown = false
+      -- LVGL objects are opaque userdata on the radio (no __newindex), so all
+      -- per-slice geometry/visibility state lives in a parallel array. The
+      -- userdata back-reference stays here so show/set reach the object.
+      local sdata = {
+        object = slice,
+        fromPosition = t1, toPosition = t2,
+        baseX = x, baseY = y,
+        baseW = max(1, w), baseH = max(1, h),
+        paintX = x, paintY = y,
+        paintW = max(1, w), paintH = max(1, h),
+        barShown = false,
+      }
+      ui.sliceState[i] = sdata
       lvgl.hide(slice)
       ui.gradientSlices[i] = slice
     end
@@ -479,32 +491,32 @@ local function moveHead(ui, key, axis, position)
   lvgl.show(ui[key])
 end
 
-local function showSlice(slice, shown)
-  if slice.barShown == shown then return end
-  slice.barShown = shown
-  if shown then lvgl.show(slice) else lvgl.hide(slice) end
+local function showSlice(sdata, shown)
+  if sdata.barShown == shown then return end
+  sdata.barShown = shown
+  if shown then lvgl.show(sdata.object) else lvgl.hide(sdata.object) end
 end
 
 local function hideGradient(objects)
   for i = 1, #objects.gradientSlices do
-    showSlice(objects.gradientSlices[i], false)
+    showSlice(objects.sliceState[i], false)
   end
 end
 
-local function setSliceGeometry(widget, slice, x, y, w, h)
+local function setSliceGeometry(widget, sdata, x, y, w, h)
   if widget.layout.axis.orientation == "vertical" then
-    if y ~= slice.paintY then
-      slice.paintY = y; R.setProp(widget, slice, "y", y)
+    if y ~= sdata.paintY then
+      sdata.paintY = y; R.setProp(widget, sdata.object, "y", y)
     end
-    if h ~= slice.paintH then
-      slice.paintH = h; R.setProp(widget, slice, "h", h)
+    if h ~= sdata.paintH then
+      sdata.paintH = h; R.setProp(widget, sdata.object, "h", h)
     end
   else
-    if x ~= slice.paintX then
-      slice.paintX = x; R.setProp(widget, slice, "x", x)
+    if x ~= sdata.paintX then
+      sdata.paintX = x; R.setProp(widget, sdata.object, "x", x)
     end
-    if w ~= slice.paintW then
-      slice.paintW = w; R.setProp(widget, slice, "w", w)
+    if w ~= sdata.paintW then
+      sdata.paintW = w; R.setProp(widget, sdata.object, "w", w)
     end
   end
 end
@@ -513,7 +525,8 @@ end
 -- crossed slice boundary walks the pool; motion within a slice touches that
 -- one slice. This preserves the Phase 4 ordinary-frame budget.
 local function updateGradientPrefix(widget, objects, normalized)
-  local slices, frame = objects.gradientSlices, widget.frame
+  local slices, states = objects.gradientSlices, objects.sliceState
+  local frame = widget.frame
   local axis = widget.layout.activeAxis or widget.layout.axis
   local vertical = axis.orientation == "vertical"
   local count = #slices
@@ -523,80 +536,86 @@ local function updateGradientPrefix(widget, objects, normalized)
   if whole ~= oldWhole then
     frame.gradientWhole = whole
     for i = 1, count do
-      local slice = slices[i]
+      local sdata = states[i]
       if i <= whole then
         if vertical then
-          if slice.paintY ~= slice.baseY then
-            slice.paintY = slice.baseY
-            R.setProp(widget, slice, "y", slice.baseY)
+          if sdata.paintY ~= sdata.baseY then
+            sdata.paintY = sdata.baseY
+            R.setProp(widget, sdata.object, "y", sdata.baseY)
           end
-          if slice.paintH ~= slice.baseH then
-            slice.paintH = slice.baseH
-            R.setProp(widget, slice, "h", slice.baseH)
+          if sdata.paintH ~= sdata.baseH then
+            sdata.paintH = sdata.baseH
+            R.setProp(widget, sdata.object, "h", sdata.baseH)
           end
         else
-          if slice.paintW ~= slice.baseW then
-            slice.paintW = slice.baseW
-            R.setProp(widget, slice, "w", slice.baseW)
+          if sdata.paintW ~= sdata.baseW then
+            sdata.paintW = sdata.baseW
+            R.setProp(widget, sdata.object, "w", sdata.baseW)
           end
         end
-        showSlice(slice, true)
-      elseif i == current and normalized > slice.fromPosition then
+        showSlice(sdata, true)
+      elseif i == current and normalized > sdata.fromPosition then
         local position = pointAt(axis, normalized)
         local length
         if vertical then
-          length = slice.baseY + slice.baseH - position
+          length = sdata.baseY + sdata.baseH - position
           if length > 0 then
-            if position ~= slice.paintY then
-              slice.paintY = position; R.setProp(widget, slice, "y", position)
+            if position ~= sdata.paintY then
+              sdata.paintY = position
+              R.setProp(widget, sdata.object, "y", position)
             end
-            if length ~= slice.paintH then
-              slice.paintH = length; R.setProp(widget, slice, "h", length)
+            if length ~= sdata.paintH then
+              sdata.paintH = length
+              R.setProp(widget, sdata.object, "h", length)
             end
           end
         else
-          length = position - slice.baseX
-          if length > 0 and length ~= slice.paintW then
-            slice.paintW = length; R.setProp(widget, slice, "w", length)
+          length = position - sdata.baseX
+          if length > 0 and length ~= sdata.paintW then
+            sdata.paintW = length
+            R.setProp(widget, sdata.object, "w", length)
           end
         end
         if length > 0 then
-          showSlice(slice, true)
+          showSlice(sdata, true)
         else
-          showSlice(slice, false)
+          showSlice(sdata, false)
         end
       else
-        showSlice(slice, false)
+        showSlice(sdata, false)
       end
     end
   elseif current then
-    local slice = slices[current]
-    if normalized > slice.fromPosition then
+    local sdata = states[current]
+    if normalized > sdata.fromPosition then
       local position = pointAt(axis, normalized)
       local length
       if vertical then
-        length = slice.baseY + slice.baseH - position
+        length = sdata.baseY + sdata.baseH - position
         if length > 0 then
-          if position ~= slice.paintY then
-            slice.paintY = position; R.setProp(widget, slice, "y", position)
+          if position ~= sdata.paintY then
+            sdata.paintY = position
+            R.setProp(widget, sdata.object, "y", position)
           end
-          if length ~= slice.paintH then
-            slice.paintH = length; R.setProp(widget, slice, "h", length)
+          if length ~= sdata.paintH then
+            sdata.paintH = length
+            R.setProp(widget, sdata.object, "h", length)
           end
         end
       else
-        length = position - slice.baseX
-        if length > 0 and length ~= slice.paintW then
-          slice.paintW = length; R.setProp(widget, slice, "w", length)
+        length = position - sdata.baseX
+        if length > 0 and length ~= sdata.paintW then
+          sdata.paintW = length
+          R.setProp(widget, sdata.object, "w", length)
         end
       end
       if length > 0 then
-        showSlice(slice, true)
+        showSlice(sdata, true)
       else
-        showSlice(slice, false)
+        showSlice(sdata, false)
       end
     else
-      showSlice(slice, false)
+      showSlice(sdata, false)
     end
   end
 end
@@ -608,21 +627,21 @@ local function spanIndices(lo, hi, count)
   return first, last
 end
 
-local function updateGradientIndex(widget, slices, axis, index, lo, hi)
+local function updateGradientIndex(widget, states, axis, index, lo, hi)
   if not index then return end
-  local slice = slices[index]
-  local a, b = max(lo, slice.fromPosition), min(hi, slice.toPosition)
+  local sdata = states[index]
+  local a, b = max(lo, sdata.fromPosition), min(hi, sdata.toPosition)
   if b <= a then
-    showSlice(slice, false)
+    showSlice(sdata, false)
     return
   end
   local x, y, w, h = spanAt(axis, a, b)
   if w <= 0 or h <= 0 then
-    showSlice(slice, false)
+    showSlice(sdata, false)
     return
   end
-  setSliceGeometry(widget, slice, x, y, w, h)
-  showSlice(slice, true)
+  setSliceGeometry(widget, sdata, x, y, w, h)
+  showSlice(sdata, true)
 end
 
 -- Retained arbitrary-span path for numeric-zero origin. The original version
@@ -631,7 +650,8 @@ end
 -- slices plus the old/new boundary slices. A full walk now happens only on
 -- first paint or a genuine sign-crossing transition.
 local function updateGradientSpan(widget, objects, fromT, toT)
-  local slices, frame = objects.gradientSlices, widget.frame
+  local slices, states = objects.gradientSlices, objects.sliceState
+  local frame = widget.frame
   local axis = widget.layout.activeAxis or widget.layout.axis
   local lo, hi = fromT, toT
   if lo > hi then lo, hi = hi, lo end
@@ -639,42 +659,42 @@ local function updateGradientSpan(widget, objects, fromT, toT)
   local oldFirst, oldLast = frame.gradientFirst, frame.gradientLast
 
   if oldFirst and not first then
-    for i = oldFirst, oldLast do showSlice(slices[i], false) end
+    for i = oldFirst, oldLast do showSlice(states[i], false) end
   elseif first and not oldFirst then
     for i = first, last do
-      updateGradientIndex(widget, slices, axis, i, lo, hi)
+      updateGradientIndex(widget, states, axis, i, lo, hi)
     end
   elseif first then
     if first > oldFirst then
       for i = oldFirst, min(first - 1, oldLast) do
-        showSlice(slices[i], false)
+        showSlice(states[i], false)
       end
     elseif first < oldFirst then
       for i = first, min(oldFirst - 1, last) do
-        updateGradientIndex(widget, slices, axis, i, lo, hi)
+        updateGradientIndex(widget, states, axis, i, lo, hi)
       end
     end
     if last < oldLast then
       for i = max(last + 1, oldFirst), oldLast do
-        showSlice(slices[i], false)
+        showSlice(states[i], false)
       end
     elseif last > oldLast then
       for i = max(oldLast + 1, first), last do
-        updateGradientIndex(widget, slices, axis, i, lo, hi)
+        updateGradientIndex(widget, states, axis, i, lo, hi)
       end
     end
 
     -- A former partial boundary becomes a full interior slice when its index
     -- changes. Restore it before painting the new partial boundary.
     if oldFirst ~= first and oldFirst >= first and oldFirst <= last then
-      updateGradientIndex(widget, slices, axis, oldFirst, lo, hi)
+      updateGradientIndex(widget, states, axis, oldFirst, lo, hi)
     end
     if oldLast ~= last and oldLast >= first and oldLast <= last then
-      updateGradientIndex(widget, slices, axis, oldLast, lo, hi)
+      updateGradientIndex(widget, states, axis, oldLast, lo, hi)
     end
-    updateGradientIndex(widget, slices, axis, first, lo, hi)
+    updateGradientIndex(widget, states, axis, first, lo, hi)
     if last ~= first then
-      updateGradientIndex(widget, slices, axis, last, lo, hi)
+      updateGradientIndex(widget, states, axis, last, lo, hi)
     end
   end
   frame.gradientFirst, frame.gradientLast = first, last
@@ -772,30 +792,33 @@ local function continuousPalette(widget, objects, palette, state)
   if objects.rails then
     for i = 1, #objects.rails do
       local rail = objects.rails[i]
+      local meta = objects.railMeta[i]
       R.setProp(widget, rail, "color",
-                T.stateColor(rail.role, widget.accent, palette))
+                T.stateColor(meta.role, widget.accent, palette))
       R.setProp(widget, rail, "opacity",
                 (state.colorKey == "muted") and T.opacity.muted
-                  or rail.baseOpacity)
+                  or meta.baseOpacity)
     end
   end
   local fill = state.visualColor or R.resolveColor(widget, state.colorKey, palette)
   if objects.gradientSlices then
     if state.paletteChanged then
       local sliceCount = #objects.gradientSlices
+      local states = objects.sliceState
       for i = 1, #objects.gradientSlices do
         local slice = objects.gradientSlices[i]
-        if slice.gradientT == nil then
+        local sdata = states[i]
+        if sdata.gradientT == nil then
           local sample = (i == 1) and 0
             or (i == sliceCount) and 1
-            or ((slice.fromPosition + slice.toPosition) * 0.5)
-          slice.gradientT = M.gradientPosition(widget.config, sample)
+            or ((sdata.fromPosition + sdata.toPosition) * 0.5)
+          sdata.gradientT = M.gradientPosition(widget.config, sample)
         end
         local sliceColor
-        if slice.gradientT <= 0 then sliceColor = palette.critical
-        elseif slice.gradientT >= 1 then sliceColor = palette.normal
-        elseif slice.gradientT == 0.5 then sliceColor = palette.warning
-        else sliceColor = T.paletteColor(palette, slice.gradientT, 24) end
+        if sdata.gradientT <= 0 then sliceColor = palette.critical
+        elseif sdata.gradientT >= 1 then sliceColor = palette.normal
+        elseif sdata.gradientT == 0.5 then sliceColor = palette.warning
+        else sliceColor = T.paletteColor(palette, sdata.gradientT, 24) end
         R.setProp(widget, slice, "color",
                   sliceColor)
       end
@@ -1491,6 +1514,7 @@ local function dualBuild(widget, _geometry, style)
   local radius = (style.ends == "round") and floor(axis.crossLength / 2) or 0
   ui.faceKind = "dual-rail"
   ui.dualTracks = {}
+  ui.dualTrackNeg = {}
   for i = 1, 2 do
     local fromT, toT = (i == 1) and 0 or axis.originT,
       (i == 1) and axis.originT or 1
@@ -1502,7 +1526,8 @@ local function dualBuild(widget, _geometry, style)
       color = negative and palette.critical or palette.normal,
       opacity = T.opacity.rail, filled = 1, rounded = radius,
     }
-    track.negative = negative
+    -- LVGL objects are opaque userdata on the radio (no __newindex).
+    ui.dualTrackNeg[i] = negative
     ui.dualTracks[i] = track
   end
   local x, y, w, h = G.axisSpan(active, active.originT, active.originT)
@@ -1526,7 +1551,7 @@ local function dualPalette(widget, objects, palette, state)
   for i = 1, #objects.dualTracks do
     local track = objects.dualTracks[i]
     R.setProp(widget, track, "color",
-      track.negative and palette.critical or palette.normal)
+      objects.dualTrackNeg[i] and palette.critical or palette.normal)
     R.setProp(widget, track, "opacity", trackOpacity)
   end
   local negative = state.smoothValue ~= nil and state.smoothValue < 0

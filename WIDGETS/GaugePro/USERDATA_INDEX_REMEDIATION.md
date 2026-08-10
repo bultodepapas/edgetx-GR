@@ -1,6 +1,6 @@
 # GaugePro — `attempt to index a userdata value` remediation plan
 
-Status: **root cause confirmed, tested, not yet fixed in code**
+Status: **root cause confirmed, fixed and validated** (all suites + luacheck green)
 Affected: bar style (Continuous + Dual-rail faces) and, in the same class, the dial's
 Sections mode and the bar's threshold marks.
 Firmware: EdgeTX (this repo). Widget: `WIDGETS/GaugePro`.
@@ -204,20 +204,26 @@ palette pass (the two arrays always have the same length).
    - `:1068` — `mark.role` → `w.ui.markRoles[i]`
    - `:3752` — `s.role` → section role array
    - `:3764` — `m.role` → rail role array
-3. Keep the `repro_gaugepro_bar.lua` userdata harness in `dev/` so a CI/radio
-   check can run the Continuous build against userdata objects on demand.
+3. Keep the userdata harness in `dev/repro_userdata_bar.lua` (added; runs
+   build + overlay + update for Continuous Rail/Sections/Gradient and
+   Dual-rail against userdata objects) so a CI/radio check can exercise the
+   widget against the real object contract on demand.
 
 ## 8. Validation
 
+Implemented and verified:
+
 1. `lua5.3 tests/run_tests.lua ./` — 70/70.
 2. `lua5.3 tests/smoke_test.lua ./` — 200/200, now including the hardened mock
-   (fails before the fix, passes after).
-3. `lua5.3 dev/repro_gaugepro_bar.lua` (userdata lvgl) — no error for Rail,
-   Sections, Gradient, and Dual-rail configurations.
-4. Manual on-radio: place the widget in bar style, cycle colour mode
+   (the guard fails any future object-field write).
+3. `lua5.3 dev/repro_userdata_bar.lua` — no error for Continuous
+   (Rail, Sections, Gradient) and Dual-rail builds, overlays and updates.
+4. `luacheck bar_faces.lua bar.lua renderer.lua tests/mock_env.lua
+   tests/smoke_test.lua dev/repro_userdata_bar.lua` — 0 warnings / 0 errors.
+5. Manual on-radio: place the widget in bar style, cycle colour mode
    Static → Rail → Sections → Gradient, and both origins; confirm no
    `ERROR in refresh()` overlay.
-5. Object-budget suites (`smoke_test` census, `bar_faces` estimates) unchanged:
+6. Object-budget suites (`smoke_test` census, `bar_faces` estimates) unchanged:
    the parallel arrays add no LVGL objects.
 
 ## 9. Alternatives considered (and rejected)

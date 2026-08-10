@@ -158,6 +158,7 @@ local function buildTrack(widget)
   -- Static at any value inside the normal band (AUDIT.md G-2).
   if cfg.colorMode == M.COLOR_SECTIONS then
     ui.sections = {}
+    ui.sectionRoles = {}
     for i = 1, #widget.ranges do
       local r = widget.ranges[i]
       local a1, a2 = bandSpan(widget, r)
@@ -170,11 +171,12 @@ local function buildTrack(widget)
           color = c, bgColor = c, bgOpacity = 255, opacity = 0,
           thickness = L.railThickness, rounded = 0,
         }
-        -- role rides on the object so the repaint path can recolor the
-        -- accent-bearing normal band without pairing by index (degenerate
-        -- bands are skipped at build, so sections[i] is not ranges[i])
-        sec.role = r.role
+        -- LVGL objects are opaque userdata on the radio (no __newindex), so
+        -- the role the repaint path needs rides in a parallel array instead
+        -- of on the object (degenerate bands are skipped at build, so
+        -- sections[i] is not ranges[i]).
         ui.sections[#ui.sections + 1] = sec
+        ui.sectionRoles[#ui.sections] = r.role
       end
     end
   end
@@ -547,8 +549,10 @@ local function applyColors(widget, key)
     -- Accent edit repaints here without a rebuild, so it must be recolored
     -- in place (Tanda 6 F-5). The warn/crit bands are fixed colours and
     -- resolve to the same colour as before - setProp filters the no-ops.
-    for _, sec in ipairs(ui.sections) do
-      setProp(widget, sec, "color", T.stateColor(sec.role, widget.accent))
+    for i = 1, #ui.sections do
+      local sec = ui.sections[i]
+      setProp(widget, sec, "color",
+              T.stateColor(ui.sectionRoles[i], widget.accent))
       -- F2: the reference bands used to keep full opacity while the gauge
       -- itself was muted, so a widget announcing NO LINK still had three
       -- fully saturated bands on it - one of them red - and they were the

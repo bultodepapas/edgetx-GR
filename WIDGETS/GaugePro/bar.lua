@@ -107,6 +107,7 @@ function M.build(widget)
   local showEnds = marksMode == "ends" or marksMode == "full"
   if showThresholds then
     ui.marks = {}
+    ui.markRoles = {}
     for i = 1, #widget.ranges do
       local r = widget.ranges[i]
       local t = G.normalize(r.to, cfg.min, cfg.max)
@@ -118,10 +119,11 @@ function M.build(widget)
         local m = axisLine(axis, markPosition(widget, r.to), cross1, cross2,
           L.markThickness, T.stateColor(r.role, widget.accent,
                                        widget.barPalette))
-        -- role rides on the object so an accent edit can recolor the
-        -- normal-boundary mark without pairing by index (Tanda 6 F-5)
-        m.role = r.role
+        -- LVGL objects are opaque userdata on the radio (no __newindex), so
+        -- the role the repaint path needs rides in a parallel array instead
+        -- of on the object (Tanda 6 F-5).
         ui.marks[#ui.marks + 1] = m
+        ui.markRoles[#ui.marks] = r.role
       end
     end
   end
@@ -381,9 +383,10 @@ function M.update(widget)
       -- mark carries the accent and must follow an accent edit (F-5).
       -- F2: and they follow the fill into the muted state, so a bar with no
       -- data does not keep three fully saturated threshold marks on it.
-      for _, m in ipairs(ui.marks) do
+      for i = 1, #ui.marks do
+        local m = ui.marks[i]
         R.setProp(widget, m, "color",
-                  T.stateColor(m.role, widget.accent, palette))
+                  T.stateColor(ui.markRoles[i], widget.accent, palette))
         R.setProp(widget, m, "opacity", state.opacity)
         local assist = palette and palette.assist
         local thickness = widget.layout.markThickness
