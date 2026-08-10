@@ -100,14 +100,8 @@ M.NON_VISUAL = {
   Delay   = "retardo de arranque de alertas",
   Vibrate = "haptic",
   ResetSw = "accion, no estado",
-  -- Contracts whose drawing phases have not landed yet. They resolve
-  -- deterministically and are unit/smoke tested, but deliberately use the
-  -- Continuous production fallback in this milestone.
-  BarFace   = "contrato Phase 1; caras visuales llegan en Phase 4",
   BarDir    = "contrato Phase 1; eje vertical llega en Phase 5",
   BarOrigin = "contrato Phase 1; origen cero llega en Phase 5",
-  Segments  = "contrato Phase 1; caras segmentadas llegan en Phase 4",
-  SegGap    = "contrato Phase 1; caras segmentadas llegan en Phase 4",
 }
 
 -- ---------------------------------------------------------------- harness --
@@ -210,6 +204,8 @@ function M.facts(ctx)
     objects = census,
     barFamily = w.barVisual and w.barVisual.profile.family,
     barFace = w.barFaceName,
+    barFaceVariant = w.barVisual and w.barVisual.faceVariant,
+    barSegments = w.barVisual and w.barVisual.renderedSegments,
     barPreset = w.barVisual and w.barVisual.preset,
     barDirection = w.barVisual and w.barVisual.direction,
     barThickness = w.barVisual and w.barVisual.thickness,
@@ -239,6 +235,89 @@ local function zoneMatrix()
       value = 78, history = { 31, 92 },
     }
   end
+  return out
+end
+
+-- Phase 4 is deliberately a matrix, not a beauty shot. Every production
+-- segmented face must keep a distinct reading model in every colour mode.
+-- Extra edge cases then exercise compact degradation, authored density and
+-- source-aware preset selection.
+local function phase4FaceMatrix()
+  local out = {}
+  local faces = { "Blocks", "Hex", "Ticks", "Steps" }
+  local modes = { "Static", "Threshold", "Rail", "Gradient", "Sections" }
+  for _, face in ipairs(faces) do
+    for _, mode in ipairs(modes) do
+      out[#out + 1] = {
+        name = "f4-" .. string.lower(face) .. "-" .. string.lower(mode),
+        title = face .. " / " .. mode,
+        zone = { 360, 100 }, source = "Thr", opts = {
+          Style = "Bar", BarFace = face, ColorMode = mode,
+          Scale = "Manual", Min = 0, Max = 100, Warn = 55, Crit = 35,
+          Damping = 0,
+        }, value = 40,
+      }
+    end
+  end
+
+  local edges = {
+    { name = "f4-blocks-soft", title = "Blocks / soft / 6 wide",
+      zone = { 300, 86 }, opts = {
+        Style = "Bar", BarFace = "Blocks", BarEnds = "Round",
+        Segments = "6", SegGap = "Wide",
+      }, value = 67 },
+    { name = "f4-blocks-dense", title = "Blocks / 24 / partial cell",
+      zone = { 480, 110 }, source = "Thr", opts = {
+        Style = "Bar", BarFace = "Blocks", BarEnds = "Square",
+        Segments = "24", SegGap = "Tight", Scale = "Manual",
+        Min = 0, Max = 100, Damping = 0,
+      }, value = 52 },
+    { name = "f4-hex-rich", title = "True hex / authored seams",
+      zone = { 420, 110 }, opts = {
+        Style = "Bar", BarFace = "Hex", Segments = "10",
+        SegGap = "Normal", Surface = "Theme panel",
+      }, value = 73 },
+    { name = "f4-hex-compact", title = "Hex / honest compact fallback",
+      zone = { 160, 44 }, opts = {
+        Style = "Bar", BarFace = "Hex", Segments = "10",
+        SegGap = "Tight",
+      }, value = 73 },
+    { name = "f4-ticks-compact", title = "Ticks / compact 8",
+      zone = { 160, 44 }, opts = {
+        Style = "Bar", BarFace = "Ticks", Segments = "8",
+      }, value = 45 },
+    { name = "f4-ticks-dense", title = "Ticks / 24 / exact thresholds",
+      zone = { 480, 110 }, opts = {
+        Style = "Bar", BarFace = "Ticks", Segments = "24",
+        SegGap = "Tight", ColorMode = "Threshold",
+      }, value = 45 },
+    { name = "f4-steps-compact", title = "Steps / compact 5",
+      zone = { 160, 52 }, opts = {
+        Style = "Bar", BarFace = "Steps", Segments = "6",
+      }, value = 45 },
+    { name = "f4-steps-signal", title = "Steps / RSSI glance pattern",
+      zone = { 360, 100 }, opts = {
+        Style = "Bar", BarFace = "Steps", Segments = "10",
+        SegGap = "Normal", ColorMode = "Sections",
+      }, value = 78 },
+    { name = "f4-preset-hex", title = "Preset Hex Tech",
+      zone = { 360, 100 }, opts = {
+        Style = "Bar", BarPreset = "Hex",
+      }, value = 78 },
+    { name = "f4-preset-blocks", title = "Preset Blocks Soft",
+      zone = { 360, 100 }, opts = {
+        Style = "Bar", BarPreset = "Blocks",
+      }, value = 45 },
+    { name = "f4-preset-ticks", title = "Preset Signal Ticks",
+      zone = { 360, 100 }, opts = {
+        Style = "Bar", BarPreset = "Ticks",
+      }, value = 78 },
+    { name = "f4-auto-rssi", title = "Auto Source / RSSI -> Steps",
+      zone = { 360, 100 }, opts = {
+        Style = "Bar", BarPreset = "Auto",
+      }, value = 78 },
+  }
+  for _, c in ipairs(edges) do out[#out + 1] = c end
   return out
 end
 
@@ -511,7 +590,7 @@ M.sections = {
       { name = "pal-preset-auto", title = "Auto Source / RSSI",
         zone = { 300, 70 },
         opts = { Style = "Bar", BarPreset = "Auto" }, value = 78,
-        note = "Ticks solicitado; Continuous es fallback explicito de Phase 1" },
+        note = "RSSI selecciona Steps: lectura instantanea tipo enlace RC" },
       { name = "pal-custom3-normal", title = "Custom 3 / purple normal",
         zone = { 300, 70 }, opts = {
           Style = "Bar", Palette = "Custom 3",
@@ -714,8 +793,16 @@ M.sections = {
     },
   },
   {
+    key = "caras4",
+    title = "11 - Caras segmentadas Phase 4",
+    note = "Blocks, Hex, Ticks y Steps son caras de produccion. La matriz"
+      .. " cruza cada lectura con los cinco modos de color y luego fuerza"
+      .. " densidad, huecos, compactacion y presets Auto.",
+    cases = phase4FaceMatrix(),
+  },
+  {
     key = "zonas",
-    title = "11 - Matriz de zonas",
+    title = "12 - Matriz de zonas",
     note = "La misma configuracion en cada tamano de hueco que un layout de"
       .. " EdgeTX puede dar. Ningun texto puede desbordar ni cruzar el aro.",
     cases = zoneMatrix(),

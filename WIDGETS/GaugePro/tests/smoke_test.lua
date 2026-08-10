@@ -297,15 +297,33 @@ test("Phase 1: custom track recolours in place with no rebuild", function()
   assertEq(w.ui.track.props.color, second)
 end)
 
-test("Phase 1: future faces use an explicit retained Continuous fallback", function()
-  local w = newWidget({ x = 0, y = 0, w = 300, h = 70 },
-    { Source = ID_RSSI, Style = "Bar", BarFace = "Hex" })
-  assertEq(w.barVisual.face, "hex", "requested contract remains visible")
-  assertEq(w.barFaceName, "continuous", "production fallback")
-  assertTrue(string.find(w.barVisual.faceFallback, "face%-phase%-pending") ~= nil)
-  local before = mock.objectCount()
-  refresh(w, 10)
-  assertEq(mock.objectCount(), before, "fallback remains retained")
+test("Phase 4: alternate faces are production; Dual Rail stays honest", function()
+  for _, case in ipairs{
+    { "Blocks", "blocks" }, { "Hex", "hex" },
+    { "Ticks", "ticks" }, { "Steps", "steps" },
+  } do
+    local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+      Source = ID_RSSI, Style = "Bar", BarFace = case[1], Segments = "10",
+    })
+    assertEq(w.barVisual.face, case[2])
+    assertEq(w.barFaceName, case[2], case[1] .. " production renderer")
+    assertEq(w.barVisual.faceFallback, nil)
+    assertTrue(w.ui.faceCells and #w.ui.faceCells >= 5,
+      case[1] .. " retained cells")
+    local before = mock.objectCount()
+    refresh(w, 10)
+    assertEq(mock.objectCount(), before, case[1] .. " remains retained")
+    assertTrue(before <= w.barFace.hardCeiling,
+      case[1] .. " object ceiling")
+  end
+
+  local pending = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_STICK, Style = "Bar", BarFace = "Dual rail",
+  })
+  assertEq(pending.barVisual.face, "dual-rail")
+  assertEq(pending.barFaceName, "continuous")
+  assertTrue(string.find(pending.barVisual.faceFallback,
+    "face%-phase%-pending") ~= nil)
 end)
 
 test("Phase 2: descending bar keeps ghost, min and max at authored positions",
@@ -667,6 +685,162 @@ test("Phase 3: color-independent WARN and CRIT survive monochrome", function()
   assertEq(w.ui.stateLabel.visible, true)
   refresh(w, 10)
   assertEq(w.frame.pulse, true, "critical adds a periodic non-color signal")
+end)
+
+test("Phase 4: Blocks preserve partial-cell truth and exact position", function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_STICK, Style = "Bar", BarFace = "Blocks",
+    BarEnds = "Round", Segments = "10", Scale = "Manual",
+    Min = 0, Max = 100, Damping = 0,
+  })
+  mock.setValue(ID_STICK, 25); refresh(w)
+  local cells = w.ui.faceCells
+  assertEq(#cells, 10)
+  assertEq(cells[1].variant, "soft")
+  assertEq(cells[2].fraction, 1)
+  assertTrue(cells[3].fraction > 0 and cells[3].fraction < 1,
+    "the current block is partial")
+  assertEq(cells[4].fraction, 0)
+  assertTrue(cells[3].primary.props.opacity
+    > cells[4].primary.props.opacity, "partial opacity is above inactive")
+  assertTrue(cells[3].primary.props.opacity
+    < cells[2].primary.props.opacity, "partial opacity is below full")
+  assertEq(w.frame.headX, w.layout.barAxis.x
+    + w.mods.geometry.barFill(w.layout.barAxis.w, 25, 0, 100))
+end)
+
+test("Phase 4: true Hex seams are static at every LCD scale", function()
+  for _, scale in ipairs{ 0.8, 1.0, 1.375 } do
+    local w = newWidget({ x = 0, y = 0, w = 360, h = 100 }, {
+      Source = ID_RSSI, Style = "Bar", BarFace = "Hex",
+      BarSize = "Medium", Segments = "8", Damping = 0,
+    }, nil, false, scale)
+    refresh(w)
+    assertEq(w.barFaceName, "hex")
+    assertEq(#w.ui.faceCells, 8)
+    for i, cell in ipairs(w.ui.faceCells) do
+      assertEq(cell.variant, "hex", "scale " .. scale .. " cell " .. i)
+      assertEq(#cell.parts, 3)
+      local rect, left, right = cell.parts[1], cell.parts[2], cell.parts[3]
+      assertEq(left.props.pts[1][1], rect.props.x, "left top seam")
+      assertEq(left.props.pts[2][1], rect.props.x, "left bottom seam")
+      assertEq(right.props.pts[1][1], rect.props.x + rect.props.w,
+        "right top seam")
+      assertEq(right.props.pts[3][1], rect.props.x + rect.props.w,
+        "right bottom seam")
+    end
+    local pts = w.ui.faceCells[1].parts[2].props.pts
+    local count = mock.objectCount()
+    mock.setValue(ID_RSSI, 42); refresh(w, 5)
+    assertTrue(w.ui.faceCells[1].parts[2].props.pts == pts,
+      "triangle points stay retained")
+    assertEq(mock.objectCount(), count)
+    assertTrue(count <= 40, "hex whole tree stays below 40")
+  end
+  lvgl.LCD_SCALE = 1
+end)
+
+test("Phase 4: tiny Hex uses the documented block compact fallback", function()
+  local w = newWidget({ x = 0, y = 0, w = 160, h = 44 }, {
+    Source = ID_RSSI, Style = "Bar", BarFace = "Hex",
+    BarSize = "Thin", Segments = "6",
+  }, nil, false, 0.8)
+  refresh(w)
+  assertEq(w.barFaceName, "hex", "the chosen reading model remains Hex")
+  assertEq(w.barVisual.faceVariant, "blocks-compact")
+  for _, cell in ipairs(w.ui.faceCells) do assertEq(cell.variant, "block") end
+  lvgl.LCD_SCALE = 1
+end)
+
+test("Phase 4: Fine Ticks align major ticks to exact thresholds", function()
+  local w = newWidget({ x = 0, y = 0, w = 360, h = 100 }, {
+    Source = ID_STICK, Style = "Bar", BarFace = "Ticks",
+    Segments = "24", Scale = "Manual", Min = 0, Max = 100,
+    Warn = 55, Crit = 35, Damping = 0,
+  })
+  mock.setValue(ID_STICK, 62); refresh(w)
+  local found = {}
+  for _, tick in ipairs(w.ui.faceCells) do
+    if tick.thresholdRole then
+      found[tick.thresholdRole] = tick
+      assertEq(tick.major, true)
+    end
+  end
+  assertTrue(found.warning and found.critical, "both threshold ticks exist")
+  assertEq(found.critical.position, 0.35)
+  assertEq(found.warning.position, 0.55)
+  local markX = {}
+  for _, mark in ipairs(w.ui.marks) do markX[mark.role] = mark.props.pts[1][1] end
+  assertEq(found.critical.centerX, markX.critical)
+  assertEq(found.warning.centerX, markX.warning)
+  assertTrue(w.ui.pulseTargets[1] == w.ui.head,
+    "critical pulse belongs to the exact current head")
+end)
+
+test("Phase 4: Stepped Signal grows upward and keeps the numeric reading", function()
+  local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+    Source = ID_RSSI, Style = "Bar", BarFace = "Steps",
+    Segments = "8", Damping = 0,
+  })
+  refresh(w)
+  assertEq(#w.ui.faceCells, 8)
+  for i = 2, #w.ui.faceCells do
+    assertTrue(w.ui.faceCells[i].primary.props.h
+      > w.ui.faceCells[i - 1].primary.props.h,
+      "step " .. i .. " is taller")
+    assertEq(w.ui.faceCells[i].primary.props.y
+      + w.ui.faceCells[i].primary.props.h,
+      w.ui.faceCells[1].primary.props.y
+      + w.ui.faceCells[1].primary.props.h,
+      "steps share a baseline")
+  end
+  assertEq(w.ui.valueLabel.visible, true)
+  assertEq(w.frame.valueStr, "70")
+end)
+
+test("Phase 4: every production face keeps five distinct Colour modes", function()
+  local modes = { "Static", "Threshold", "Rail", "Gradient", "Sections" }
+  local faces = { "Blocks", "Hex", "Ticks", "Steps" }
+  for _, face in ipairs(faces) do
+    local signatures = {}
+    for _, mode in ipairs(modes) do
+      local w = newWidget({ x = 0, y = 0, w = 360, h = 100 }, {
+        Source = ID_STICK, Style = "Bar", BarFace = face,
+        Segments = "10", ColorMode = mode, Scale = "Manual",
+        Min = 0, Max = 100, Warn = 55, Crit = 35, Damping = 0,
+      })
+      mock.setValue(ID_STICK, 40); refresh(w)
+      local fields = {}
+      for i, cell in ipairs(w.ui.faceCells) do
+        fields[i] = tostring(cell.primary.props.color) .. "/"
+          .. tostring(cell.primary.props.opacity)
+      end
+      local signature = table.concat(fields, ":")
+      assertEq(signatures[signature], nil,
+        face .. " " .. mode .. " collapsed onto "
+        .. tostring(signatures[signature]))
+      signatures[signature] = mode
+    end
+  end
+end)
+
+test("Phase 4: rich alternate faces respect whole-tree ceilings", function()
+  for _, face in ipairs{ "Blocks", "Hex", "Ticks", "Steps" } do
+    local w = newWidget({ x = 0, y = 0, w = 480, h = 120 }, {
+      Source = ID_RSSI, Style = "Bar", BarFace = face,
+      Segments = "24", Surface = "Theme panel",
+      ShowMinMax = "Markers + text", ColorMode = "Sections", Damping = 0,
+    })
+    refresh(w)
+    assertTrue(mock.objectCount() <= w.barFace.hardCeiling,
+      face .. " retained objects " .. mock.objectCount()
+      .. " <= " .. w.barFace.hardCeiling)
+    assertTrue(w.barVisual.renderedSegments <= w.barVisual.segments,
+      face .. " responsive budget only reduces count")
+    local count = mock.objectCount()
+    mock.setValue(ID_RSSI, 20); refresh(w, 20)
+    assertEq(mock.objectCount(), count, face .. " creates no live objects")
+  end
 end)
 
 -- ---- build ---------------------------------------------------------------

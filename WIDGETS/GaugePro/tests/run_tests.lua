@@ -394,14 +394,20 @@ end)
 test("Auto Source uses stable semantic hints only for appearance", function()
   local signal = barStyle.resolve(visualWidget("RSSI"),
                                   visualConfig{ barPreset = 1 })
+  local fastSignal = barStyle.resolve(visualWidget("SNR"),
+                                      visualConfig{ barPreset = 1 })
   local battery = barStyle.resolve(visualWidget("Cels"),
                                    visualConfig{ barPreset = 1 })
+  local capacity = barStyle.resolve(visualWidget("Capacity"),
+                                    visualConfig{ barPreset = 1 })
   local control = barStyle.resolve(visualWidget("Thr"),
                                    visualConfig{ barPreset = 1 })
-  assertEq(signal.face, "ticks")
+  assertEq(signal.face, "steps")
   assertEq(signal.sourceHint, "signal")
+  assertEq(fastSignal.face, "ticks")
   assertEq(battery.face, "hex")
   assertEq(battery.sourceHint, "battery")
+  assertEq(capacity.face, "blocks")
   assertEq(control.face, "dual-rail")
   assertEq(control.origin, "zero")
   -- The sensor preset remains the owner of range truth.
@@ -414,7 +420,7 @@ test("compact variants cap detail and report the downgrade", function()
     visualConfig{ barPreset = 6, segments = 7, surface = 3 })
   assertEq(visual.profile.family, "micro")
   assertEq(visual.face, "ticks")
-  assertEq(visual.segments, 10)
+  assertEq(visual.segments, 8)
   assertEq(visual.surface, "transparent")
   assertTrue(#visual.downgrades >= 2, "segment and surface downgrades reported")
   assertTrue(visual.compactDescription ~= "", "preset compact form documented")
@@ -673,18 +679,43 @@ test("every bar face exposes the retained interface and a hard ceiling", functio
   end
 end)
 
-test("pending faces select the explicit Continuous production fallback", function()
-  local face, reason = barFaces.select("hex", {}, { segments = 8 })
-  assertEq(face.name, "continuous")
+test("Phase 4 faces select production renderers and Phase 5 stays explicit", function()
+  for _, name in ipairs{ "blocks", "hex", "ticks", "steps" } do
+    local face, reason = barFaces.select(name, {}, {
+      segments = 8, direction = "horizontal", origin = "scale-low",
+    })
+    assertEq(face.name, name)
+    assertEq(face.implemented, true)
+    assertEq(reason, nil)
+  end
+  local pending, reason = barFaces.select("dual-rail", {}, {
+    segments = 8, direction = "horizontal", origin = "zero",
+  })
+  assertEq(pending.name, "continuous")
   assertTrue(string.find(reason, "face%-phase%-pending") ~= nil)
   local ready, noReason = barFaces.select("continuous", {}, {})
   assertEq(ready.name, "continuous")
   assertEq(noReason, nil)
-  local vertical, verticalReason = barFaces.select("continuous", {}, {
+  local vertical, verticalReason = barFaces.select("blocks", {}, {
     direction = "vertical", origin = "scale-low",
   })
   assertEq(vertical.name, "continuous")
   assertTrue(string.find(verticalReason, "orientation%-phase%-pending") ~= nil)
+end)
+
+test("Phase 4 segmented progress preserves partial-cell truth", function()
+  local whole, partial = barFaces.segmentProgress(10, 0.01, true)
+  assertEq(whole, 0)
+  assertNear(partial, 0.1, 0.0001)
+  whole, partial = barFaces.segmentProgress(10, 0.25, true)
+  assertEq(whole, 2)
+  assertNear(partial, 0.5, 0.0001)
+  whole, partial = barFaces.segmentProgress(10, 0.25, false)
+  assertEq(whole, 2)
+  assertEq(partial, 0)
+  whole, partial = barFaces.segmentProgress(10, 1, true)
+  assertEq(whole, 10)
+  assertEq(partial, 0)
 end)
 
 -- ---- format --------------------------------------------------------------

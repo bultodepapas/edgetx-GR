@@ -65,7 +65,7 @@ local PRESETS = {
     key = "signal-ticks", label = "Signal Ticks",
     face = "ticks", palette = "theme", direction = "auto",
     origin = "scale-low", thickness = "medium", ends = "square",
-    segments = 24, gap = "tight", surface = "transparent",
+    segments = 20, gap = "tight", surface = "transparent",
     contrast = "auto", motion = "refined",
     compact = "ten high-contrast ticks",
   },
@@ -95,6 +95,19 @@ local PRESETS = {
   },
 }
 M.PRESETS = PRESETS
+
+-- Auto Source may choose the signal-strength reading model without adding a
+-- tenth user-facing preset. It is immutable resolver data like PRESETS: RSSI
+-- and link-quality values get the familiar rising bars, while SNR and other
+-- genuinely fast signed/noisy signal metrics retain Fine Ticks.
+local AUTO_SIGNAL_STEPS = {
+  key = "auto-signal-steps", label = "Stepped Signal",
+  face = "steps", palette = "classic", direction = "auto",
+  origin = "scale-low", thickness = "medium", ends = "square",
+  segments = 8, gap = "normal", surface = "transparent",
+  contrast = "auto", motion = "refined",
+  compact = "five rising signal steps",
+}
 
 local FACE = { [2] = "continuous", [3] = "blocks", [4] = "hex",
                [5] = "ticks", [6] = "steps", [7] = "dual-rail" }
@@ -153,18 +166,41 @@ local function autoDirection(profile)
   return (profile.ratio < 0.8) and "vertical" or "horizontal"
 end
 
-local function sourcePreset(kind)
-  if kind == "signal" then return PRESETS[6] end
-  if kind == "battery" or kind == "capacity" then return PRESETS[4] end
+local function sourcePreset(kind, source)
+  if kind == "signal" then
+    local name = (SENSOR_PRESETS and SENSOR_PRESETS.normName)
+      and SENSOR_PRESETS.normName(source and source.name) or ""
+    if string.find(name, "rssi", 1, true)
+       or string.find(name, "rss", 1, true)
+       or string.find(name, "qly", 1, true)
+       or string.find(name, "vfr", 1, true) then
+      return AUTO_SIGNAL_STEPS
+    end
+    return PRESETS[6]
+  end
+  if kind == "battery" then return PRESETS[4] end
+  if kind == "capacity" then return PRESETS[5] end
   if kind == "control" then return PRESETS[7] end
   return PRESETS[2]
 end
 
 local function compactCount(face, count, profile)
-  if not profile.compact then return count end
-  local cap = (profile.family == "micro") and 6 or 10
-  if face == "ticks" then cap = (profile.family == "micro") and 10 or 16 end
-  return min(count, cap)
+  if face == "blocks" then
+    if profile.compact then count = min(count,
+      (profile.family == "micro") and 6 or 10) end
+    return max(6, min(24, count))
+  elseif face == "hex" then
+    if profile.compact then count = min(count, 6) end
+    return max(6, min(10, count))
+  elseif face == "ticks" then
+    if profile.compact then count = min(count,
+      (profile.family == "micro") and 8 or 12) end
+    return max(8, min(28, count))
+  elseif face == "steps" then
+    if profile.compact then count = min(count, 5) end
+    return max(5, min(10, count))
+  end
+  return count
 end
 
 local function signature(parts)
@@ -302,7 +338,8 @@ function M.resolve(widget, cfg)
   local selected = PRESETS[cfg.barPreset] or PRESETS[2]
   local hint = (SENSOR_PRESETS and SENSOR_PRESETS.kind)
     and SENSOR_PRESETS.kind(widget and widget.source) or "generic"
-  local inherited = selected.sourceAware and sourcePreset(hint) or selected
+  local inherited = selected.sourceAware
+    and sourcePreset(hint, widget and widget.source) or selected
 
   local visual = {
     preset = selected.key,
@@ -314,6 +351,7 @@ function M.resolve(widget, cfg)
     thickness = pick(cfg.barSize, THICKNESS, inherited.thickness),
     ends = pick(cfg.barEnds, ENDS, inherited.ends),
     segments = pick(cfg.segments, SEGMENTS, inherited.segments),
+    segmentsAuto = SEGMENTS[cfg.segments] == nil,
     gap = pick(cfg.segGap, GAP, inherited.gap),
     palette = pick(cfg.palette, PALETTE, inherited.palette),
     surface = pick(cfg.surface, SURFACE, inherited.surface),
@@ -326,14 +364,20 @@ function M.resolve(widget, cfg)
   visual.face = visual.requestedFace
   if visual.direction == "auto" then visual.direction = autoDirection(profile) end
 
-  if visual.face == "hex" and visual.segments > 10 then
-    visual.segments = 10
-    visual.downgrades[#visual.downgrades + 1] = "segments-object-budget"
+  if visual.face == "ticks" and visual.segmentsAuto
+     and profile.family == "large" then
+    visual.segments = 28
   end
   local requestedCount = visual.segments
   visual.segments = compactCount(visual.face, visual.segments, profile)
   if visual.segments ~= requestedCount then
-    visual.downgrades[#visual.downgrades + 1] = "segments-responsive"
+    local reason = (not profile.compact and visual.segments < requestedCount)
+      and "segments-object-budget" or "segments-responsive"
+    visual.downgrades[#visual.downgrades + 1] = reason
+  end
+  if visual.face == "blocks" and visual.ends == "chamfer" then
+    visual.ends = "square"
+    visual.downgrades[#visual.downgrades + 1] = "blocks-chamfer-to-square"
   end
   if profile.family == "micro" and visual.surface ~= "transparent" then
     visual.surface = "transparent"

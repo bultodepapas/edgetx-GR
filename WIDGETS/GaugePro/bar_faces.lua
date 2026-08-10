@@ -4,8 +4,8 @@
 ---- #                                                                       #
 ---- # Face code receives normalized render state. It never reads sensors,   #
 ---- # classifies alerts, owns labels/badges/history, or creates objects in  #
----- # update(). Phase 2 ships the Continuous Precision Rail; later faces     #
----- # already have explicit capability/budget contracts and fall back.      #
+---- # update(). Continuous, Blocks, Hex, Ticks, and Steps are production     #
+---- # faces. Signed Dual Rail remains explicit Phase 5 work.                 #
 ---- #                                                                       #
 ---- # License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html               #
 ---- #########################################################################
@@ -537,6 +537,503 @@ local function continuousVisible(objects, visible)
   fn(objects.head)
 end
 
+-- ------------------------------------------------------- segmented faces --
+
+local function segmentedSupports(_profile, config)
+  return (not config or not config.direction or config.direction == "horizontal")
+    and (not config or not config.origin or config.origin == "scale-low")
+end
+
+-- Whole segments plus the truthful fraction of the current segment. Ticks
+-- and Steps pass partial=false and use the exact retained head for precision.
+function M.segmentProgress(count, normalized, partial)
+  count = max(1, floor(tonumber(count) or 1))
+  normalized = max(0, min(1, tonumber(normalized) or 0))
+  if normalized >= 1 then return count, 0 end
+  local scaled = normalized * count
+  local whole = floor(scaled)
+  return whole, partial and (scaled - whole) or 0
+end
+
+local function addDowngrade(style, reason)
+  if not style or not style.downgrades then return end
+  for i = 1, #style.downgrades do
+    if style.downgrades[i] == reason then return end
+  end
+  style.downgrades[#style.downgrades + 1] = reason
+end
+
+local function buildPanel(widget, style)
+  if style.surface == "transparent" then return end
+  local L, palette = widget.layout, widget.barPalette
+  widget.ui.panel = lvgl.rectangle{
+    x = 0, y = 0, w = L.w, h = L.h,
+    color = (palette and palette.panel) or COLOR_THEME_SECONDARY3,
+    opacity = T.opacity.full, filled = 1,
+    rounded = min(T.px(8), floor(min(L.w, L.h) / 8)),
+  }
+end
+
+local function gapPixels(style)
+  if style.gap == "wide" then return T.px(5) end
+  if style.gap == "tight" then return T.px(2) end
+  return T.px(3)
+end
+
+local function budgetedCount(widget, style, ceiling, perCell,
+                              minimum, maximum, geometryCap)
+  local fixed = 1 -- exact retained head
+  if style.surface ~= "transparent" then fixed = fixed + 1 end
+  local available = ceiling - gradientSharedObjects(widget) - fixed
+  local budgetCap = max(1, floor(available / perCell))
+  local requested = max(minimum, min(maximum, style.segments or minimum))
+  local count = min(requested, budgetCap, geometryCap or maximum)
+  count = max(1, count)
+  if count < requested then addDowngrade(style, "segments-whole-tree-budget") end
+  style.renderedSegments = count
+  return count
+end
+
+local function slotGeometry(axis, index, count, gap)
+  local x1 = floor(axis.w * (index - 1) / count)
+  local x2 = floor(axis.w * index / count)
+  local trailing = (index < count) and min(gap, max(0, x2 - x1 - 1)) or 0
+  return axis.x + x1, max(1, x2 - x1 - trailing), x1, x2
+end
+
+local function roleBands(widget)
+  local bands = {}
+  for i = 1, #widget.ranges do
+    local range = widget.ranges[i]
+    local a = G.normalize(range.from, widget.config.min, widget.config.max)
+    local b = G.normalize(range.to, widget.config.min, widget.config.max)
+    if a > b then a, b = b, a end
+    local n = #bands
+    bands[n + 1], bands[n + 2], bands[n + 3] = a, b, range.role
+  end
+  return bands
+end
+
+local function roleAt(bands, position)
+  for i = 1, #bands, 3 do
+    if position >= bands[i]
+       and (position < bands[i + 1] or i == #bands - 2) then
+      return bands[i + 2]
+    end
+  end
+  return "normal"
+end
+
+local function spatialColor(widget, palette, position)
+  local t = M.gradientPosition(widget.config, position)
+  if t <= 0 then return palette.critical end
+  if t >= 1 then return palette.normal end
+  if t == 0.5 then return palette.warning end
+  return T.paletteColor(palette, t, 24)
+end
+
+local function paintCell(cell, stateOpacity)
+  local fraction = cell.fraction
+  local active = fraction > 0
+  local color = active and cell.activeColor or cell.referenceColor
+  local base = cell.baseOpacity
+  local opacity
+  if stateOpacity == T.opacity.full and fraction == 1 then
+    opacity = T.opacity.full
+  elseif stateOpacity == T.opacity.full and fraction == 0 then
+    opacity = base
+  else
+    local logical = base + floor((T.opacity.full - base) * fraction + 0.5)
+    opacity = floor(logical * stateOpacity / T.opacity.full + 0.5)
+  end
+  if cell.paintColor == color and cell.paintOpacity == opacity then return end
+  cell.paintColor, cell.paintOpacity = color, opacity
+  local props = cell.paintProps
+  props.color, props.opacity = color, opacity
+  -- Cell parts always change color and opacity together. Their retained
+  -- two-key table avoids two renderer-cache walks per part and allocates
+  -- nothing while a fast telemetry source moves.
+  for i = 1, #cell.parts do lvgl.set(cell.parts[i], props) end
+end
+
+local function setCellFraction(cell, fraction, stateOpacity, force)
+  if not force and cell.fraction == fraction then return end
+  cell.fraction = fraction
+  paintCell(cell, stateOpacity)
+end
+
+local function baseOpacity(widget, cell, palette)
+  local mode = widget.config.colorMode
+  local opacity
+  if mode == R.COLOR_RAIL and cell.role ~= "normal" then
+    opacity = (cell.role == "critical")
+      and T.opacity.railBandCrit or T.opacity.railBand
+  elseif mode == R.COLOR_SECTIONS or mode == R.COLOR_GRADIENT then
+    opacity = T.opacity.ghost
+  else
+    opacity = T.opacity.rail
+  end
+  if palette.assist == "strong" then
+    opacity = max(28, floor(opacity * 0.55))
+  elseif palette.assist == "needed" then
+    opacity = max(36, floor(opacity * 0.75))
+  end
+  return opacity
+end
+
+local function colorsForCell(widget, cell, palette, fill)
+  local mode = widget.config.colorMode
+  local semantic = T.stateColor(cell.role, widget.accent, palette)
+  if mode == R.COLOR_GRADIENT then
+    local spatial = spatialColor(widget, palette, cell.position)
+    return spatial, spatial
+  elseif mode == R.COLOR_SECTIONS then
+    return semantic, semantic
+  elseif mode == R.COLOR_RAIL and cell.role ~= "normal" then
+    return semantic, fill
+  end
+  return palette.track, fill
+end
+
+local function segmentedPalette(widget, objects, palette, state)
+  local paletteChanged = objects.segmentPaletteSig ~= palette.signature
+  local colorChanged = objects.segmentColorKey ~= state.colorKey
+  objects.segmentPaletteSig = palette.signature
+  objects.segmentColorKey = state.colorKey
+  if objects.panel and paletteChanged then
+    R.setProp(widget, objects.panel, "color", palette.panel)
+  end
+  local fill = R.resolveColor(widget, state.colorKey, palette)
+  local stateColored = widget.config.colorMode ~= R.COLOR_GRADIENT
+    and widget.config.colorMode ~= R.COLOR_SECTIONS
+  for i = 1, #objects.faceCells do
+    local cell = objects.faceCells[i]
+    if paletteChanged then
+      cell.referenceColor, cell.activeColor = colorsForCell(
+        widget, cell, palette, fill)
+      cell.baseOpacity = baseOpacity(widget, cell, palette)
+    elseif colorChanged and stateColored then
+      cell.activeColor = fill
+    end
+  end
+  objects.repaintAll = paletteChanged
+  objects.repaintActive = colorChanged and stateColored and not paletteChanged
+  R.setProp(widget, objects.head, "color", T.labelOn(fill, palette))
+  R.setProp(widget, objects.head, "opacity", state.opacity)
+  local assisted = palette.assist == "needed" or palette.assist == "strong"
+  local headThickness = widget.layout.markThickness
+    + ((palette.assist == "strong") and T.px(2)
+       or assisted and T.px(1) or 0)
+  R.setProp(widget, objects.head, "thickness", headThickness)
+end
+
+local function segmentedBuildOverlay(widget)
+  local L, ui = widget.layout, widget.ui
+  local axis, outer = L.barAxis or L.bar, L.barOuter or L.bar
+  movingHead(ui, "head", axis.x, outer.y - T.px(1),
+             outer.y + outer.h + T.px(1), L.markThickness,
+             T.labelOn((widget.barPalette and widget.barPalette.normal)
+                         or T.color.accent, widget.barPalette), T.opacity.full)
+  -- Segments remain visible to provide their reference scale, so pulsing their
+  -- opacity would destroy partial-cell and inactive-state truth. The exact
+  -- head is the retained, color-independent critical pulse target.
+  ui.pulseTargets = { ui.head }
+  return true
+end
+
+local function updatePartialCells(widget, objects, normalized, stateOpacity)
+  local cells, frame = objects.faceCells, widget.frame
+  local scaled = normalized * #cells
+  local whole = (normalized >= 1) and #cells or floor(scaled)
+  local partial = (whole < #cells) and (scaled - whole) or 0
+  local oldWhole = frame.segmentWhole
+  if oldWhole == nil then
+    for i = 1, #cells do
+      local fraction = (i <= whole) and 1
+        or (i == whole + 1) and partial or 0
+      setCellFraction(cells[i], fraction, stateOpacity)
+    end
+  elseif whole > oldWhole then
+    for i = oldWhole + 1, whole do
+      setCellFraction(cells[i], 1, stateOpacity)
+    end
+  elseif whole < oldWhole then
+    local last = oldWhole + 1
+    if last > #cells then last = #cells end
+    for i = whole + 2, last do
+      setCellFraction(cells[i], 0, stateOpacity)
+    end
+  end
+  if whole < #cells then
+    setCellFraction(cells[whole + 1], partial, stateOpacity)
+  end
+  frame.segmentWhole = whole
+end
+
+local function updatePointCells(widget, objects, normalized, stateOpacity)
+  local cells, frame = objects.faceCells, widget.frame
+  local active = frame.segmentActive or 0
+  while active < #cells and normalized >= cells[active + 1].position do
+    active = active + 1
+    setCellFraction(cells[active], 1, stateOpacity)
+  end
+  while active > 0 and normalized < cells[active].position do
+    setCellFraction(cells[active], 0, stateOpacity)
+    active = active - 1
+  end
+  frame.segmentActive = active
+end
+
+local function updateWholeCells(widget, objects, normalized, stateOpacity)
+  local cells, frame = objects.faceCells, widget.frame
+  local whole = (normalized >= 1) and #cells or floor(normalized * #cells)
+  local oldWhole = frame.segmentWhole or 0
+  if whole > oldWhole then
+    for i = oldWhole + 1, whole do
+      setCellFraction(cells[i], 1, stateOpacity)
+    end
+  elseif whole < oldWhole then
+    for i = oldWhole, whole + 1, -1 do
+      setCellFraction(cells[i], 0, stateOpacity)
+    end
+  end
+  frame.segmentWhole = whole
+end
+
+local function segmentedUpdate(widget, objects, state)
+  local cells, frame = objects.faceCells, widget.frame
+  local opacityChanged = frame.segmentOpacity ~= state.opacity
+  frame.segmentOpacity = state.opacity
+  if not state.valid then
+    for i = 1, #cells do
+      setCellFraction(cells[i], 0, state.opacity)
+    end
+    if objects.repaintAll or opacityChanged then
+      for i = 1, #cells do paintCell(cells[i], state.opacity) end
+    end
+    objects.repaintAll, objects.repaintActive = false, false
+    frame.segmentWhole, frame.segmentActive = 0, 0
+    if frame.headShown then
+      frame.headShown = false
+      lvgl.hide(objects.head)
+    end
+    return
+  end
+
+  local normalized = state.smoothNormalized
+  if objects.activation == "partial" then
+    updatePartialCells(widget, objects, normalized, state.opacity)
+  elseif objects.activation == "points" then
+    updatePointCells(widget, objects, normalized, state.opacity)
+  else -- whole increasing steps
+    updateWholeCells(widget, objects, normalized, state.opacity)
+  end
+
+  if objects.repaintAll or opacityChanged then
+    for i = 1, #cells do paintCell(cells[i], state.opacity) end
+  elseif objects.repaintActive then
+    for i = 1, #cells do
+      if (cells[i].fraction or 0) > 0 then
+        paintCell(cells[i], state.opacity)
+      end
+    end
+  end
+  objects.repaintAll, objects.repaintActive = false, false
+
+  local axis = widget.layout.barAxis or widget.layout.bar
+  local rawW = floor(axis.w * normalized + 0.5)
+  local x = axis.x + rawW
+  if x ~= frame.headX then
+    frame.headX = x
+    moveHead(objects, "head", x)
+    frame.headShown = true
+  elseif not frame.headShown then
+    frame.headShown = true
+    lvgl.show(objects.head)
+  end
+end
+
+local function segmentedVisible(objects, visible)
+  local fn = visible and lvgl.show or lvgl.hide
+  if objects.panel then fn(objects.panel) end
+  for i = 1, #objects.faceCells do
+    local parts = objects.faceCells[i].parts
+    for j = 1, #parts do fn(parts[j]) end
+  end
+  fn(objects.head)
+end
+
+local function beginSegmented(widget, style, kind)
+  buildPanel(widget, style)
+  local ui = widget.ui
+  ui.faceKind = kind
+  ui.faceCells = {}
+  ui.faceRoleBands = roleBands(widget)
+  return widget.layout.barAxis or widget.layout.bar, ui.faceCells,
+    ui.faceRoleBands
+end
+
+local function appendCell(cells, primary, parts, position, role, variant)
+  local cell = {
+    primary = primary, parts = parts, position = position, role = role,
+    fraction = 0, baseOpacity = T.opacity.rail,
+    referenceColor = T.color.rail, activeColor = T.color.accent,
+    variant = variant, paintProps = {},
+  }
+  cells[#cells + 1] = cell
+  return cell
+end
+
+local function blocksBuild(widget, _geometry, style)
+  local axis, cells, bands = beginSegmented(widget, style, "blocks")
+  local gap = gapPixels(style)
+  local minCell = T.px(3)
+  local geometryCap = max(6, floor((axis.w + gap) / (minCell + gap)))
+  local count = budgetedCount(widget, style, 38, 1, 6, 24, geometryCap)
+  local radius = (style.ends == "round") and min(T.px(3), floor(axis.h / 3)) or 0
+  local variant = (radius > 0) and "soft" or "square"
+  for i = 1, count do
+    local x, w = slotGeometry(axis, i, count, gap)
+    local rect = lvgl.rectangle{
+      x = x, y = axis.y, w = w, h = axis.h,
+      color = widget.barPalette.track, opacity = T.opacity.rail,
+      filled = 1, rounded = radius,
+    }
+    local position = (i - 0.5) / count
+    appendCell(cells, rect, { rect }, position,
+               roleAt(bands, position), variant)
+  end
+  widget.ui.fill = cells[1] and cells[1].primary or nil
+  widget.ui.activation = "partial"
+  return true
+end
+
+local function hexBuild(widget, _geometry, style)
+  local axis, cells, bands = beginSegmented(widget, style, "hex")
+  local gap = gapPixels(style)
+  local tip = min(floor(axis.h / 2), T.px(6))
+  local compactBlock = tip < T.px(2) or axis.h < T.px(5)
+  local perCell = compactBlock and 1 or 3
+  local minimumWidth = compactBlock and T.px(3) or (tip * 2 + T.px(2))
+  local geometryCap = max(6, floor((axis.w + gap) / (minimumWidth + gap)))
+  local count = budgetedCount(widget, style, 40, perCell, 6, 10, geometryCap)
+  if compactBlock then
+    style.faceVariant = "blocks-compact"
+    addDowngrade(style, "hex-compact-blocks")
+  else
+    style.faceVariant = "true-hex"
+  end
+  for i = 1, count do
+    local x, w = slotGeometry(axis, i, count, gap)
+    local position = (i - 0.5) / count
+    if compactBlock or w < tip * 2 + 1 then
+      local rect = lvgl.rectangle{
+        x = x, y = axis.y, w = w, h = axis.h,
+        color = widget.barPalette.track, opacity = T.opacity.rail,
+        filled = 1, rounded = 0,
+      }
+      appendCell(cells, rect, { rect }, position,
+                 roleAt(bands, position), "block")
+      style.faceVariant = "blocks-compact"
+    else
+      local localTip = min(tip, floor((w - 1) / 2))
+      local centerX = x + localTip
+      local centerW = max(1, w - localTip * 2)
+      local center = lvgl.rectangle{
+        x = centerX, y = axis.y, w = centerW, h = axis.h,
+        color = widget.barPalette.track, opacity = T.opacity.rail,
+        filled = 1, rounded = 0,
+      }
+      local midY = axis.y + floor(axis.h / 2)
+      local left = lvgl.triangle{
+        pts = {
+          { centerX, axis.y }, { centerX, axis.y + axis.h }, { x, midY },
+        },
+        color = widget.barPalette.track, opacity = T.opacity.rail,
+      }
+      local rightX = centerX + centerW
+      local right = lvgl.triangle{
+        pts = {
+          { rightX, axis.y }, { x + w, midY },
+          { rightX, axis.y + axis.h },
+        },
+        color = widget.barPalette.track, opacity = T.opacity.rail,
+      }
+      appendCell(cells, center, { center, left, right }, position,
+                 roleAt(bands, position), "hex")
+    end
+  end
+  widget.ui.fill = cells[1] and cells[1].primary or nil
+  widget.ui.activation = "partial"
+  return true
+end
+
+local function thresholdTicks(widget, count)
+  local forced = {}
+  for i = 1, #widget.ranges do
+    local range = widget.ranges[i]
+    local position = G.normalize(range.to, widget.config.min, widget.config.max)
+    if position > 0 and position < 1 then
+      local index = floor(position * (count - 1) + 1.5)
+      index = max(2, min(count - 1, index))
+      forced[index] = { position = position, role = range.role }
+    end
+  end
+  return forced
+end
+
+local function ticksBuild(widget, _geometry, style)
+  local axis, cells, bands = beginSegmented(widget, style, "ticks")
+  local geometryCap = max(8, floor(axis.w / T.px(4)) + 1)
+  local count = budgetedCount(widget, style, 40, 1, 8, 28, geometryCap)
+  local forced = thresholdTicks(widget, count)
+  local thickness = max(1, T.px(1))
+  for i = 1, count do
+    local info = forced[i]
+    local position = info and info.position or ((i - 1) / (count - 1))
+    local major = info ~= nil or i == 1 or i == count or ((i - 1) % 5 == 0)
+    local h = major and axis.h or max(1, floor(axis.h * 0.55))
+    local centerX = axis.x + floor(axis.w * position + 0.5)
+    local x = max(axis.x, min(axis.x + axis.w - thickness,
+                              centerX - floor(thickness / 2)))
+    local rect = lvgl.rectangle{
+      x = x, y = axis.y + axis.h - h, w = thickness, h = h,
+      color = widget.barPalette.track, opacity = T.opacity.rail,
+      filled = 1, rounded = major and 1 or 0,
+    }
+    local cell = appendCell(cells, rect, { rect }, position,
+      roleAt(bands, position), major and "major" or "minor")
+    cell.major, cell.centerX = major, centerX
+    cell.thresholdRole = info and info.role or nil
+  end
+  widget.ui.fill = cells[1] and cells[1].primary or nil
+  widget.ui.activation = "points"
+  return true
+end
+
+local function stepsBuild(widget, _geometry, style)
+  local axis, cells, bands = beginSegmented(widget, style, "steps")
+  local gap = gapPixels(style)
+  local geometryCap = max(5, floor((axis.w + gap) / (T.px(4) + gap)))
+  local count = budgetedCount(widget, style, 32, 1, 5, 10, geometryCap)
+  local bottom = axis.y + axis.h
+  for i = 1, count do
+    local x, w = slotGeometry(axis, i, count, gap)
+    local h = floor((axis.h - 1) * (i - 1) / max(1, count - 1)) + 1
+    local position = (i - 0.5) / count
+    local rect = lvgl.rectangle{
+      x = x, y = bottom - h, w = w, h = h,
+      color = widget.barPalette.track, opacity = T.opacity.rail,
+      filled = 1, rounded = min(T.px(2), floor(w / 3)),
+    }
+    appendCell(cells, rect, { rect }, position,
+               roleAt(bands, position), "step")
+  end
+  widget.ui.fill = cells[1] and cells[1].primary or nil
+  widget.ui.activation = "steps"
+  return true
+end
+
 local function descriptor(name, targetLow, targetHigh, hardCeiling, estimate)
   return {
     name = name,
@@ -557,13 +1054,13 @@ end
 local REGISTRY = {
   continuous = descriptor("continuous", 12, 38, 38, continuousEstimate),
   blocks = descriptor("blocks", 16, 32, 38,
-    function(_profile, config) return (config.segments or 10) + 8 end),
+    function(_profile, config) return min(config.segments or 10, 24) + 12 end),
   hex = descriptor("hex", 22, 35, 40,
-    function(_profile, config) return (config.segments or 8) * 3 + 8 end),
+    function(_profile, config) return min(config.segments or 8, 10) * 3 + 10 end),
   ticks = descriptor("ticks", 18, 34, 40,
-    function(_profile, config) return (config.segments or 16) + 8 end),
+    function(_profile, config) return min(config.segments or 20, 28) + 12 end),
   steps = descriptor("steps", 12, 24, 32,
-    function(_profile, config) return (config.segments or 8) + 8 end),
+    function(_profile, config) return min(config.segments or 8, 10) + 12 end),
   ["dual-rail"] = descriptor("dual-rail", 16, 28, 36,
     function() return 18 end),
 }
@@ -578,6 +1075,21 @@ continuous.update = continuousUpdate
 continuous.applyPalette = continuousPalette
 continuous.setVisible = continuousVisible
 
+local function installSegmented(face, build)
+  face.implemented = true
+  face.supports = segmentedSupports
+  face.build = build
+  face.buildOverlay = segmentedBuildOverlay
+  face.update = segmentedUpdate
+  face.applyPalette = segmentedPalette
+  face.setVisible = segmentedVisible
+end
+
+installSegmented(REGISTRY.blocks, blocksBuild)
+installSegmented(REGISTRY.hex, hexBuild)
+installSegmented(REGISTRY.ticks, ticksBuild)
+installSegmented(REGISTRY.steps, stepsBuild)
+
 M.REGISTRY = REGISTRY
 M.ORDER = { "continuous", "blocks", "hex", "ticks", "steps", "dual-rail" }
 
@@ -589,11 +1101,11 @@ function M.select(name, profile, config)
   if requested and requested.supports(profile, config) then
     return requested, nil
   end
-  if name == "continuous" and config and config.direction
+  if requested and requested.implemented and config and config.direction
      and config.direction ~= "horizontal" then
     return continuous, "orientation-phase-pending:" .. tostring(config.direction)
   end
-  if name == "continuous" and config and config.origin
+  if requested and requested.implemented and config and config.origin
      and config.origin ~= "scale-low" then
     return continuous, "origin-phase-pending:" .. tostring(config.origin)
   end

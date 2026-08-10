@@ -143,6 +143,18 @@ local SCENES = {
   { name = "bar 480x120 gradient", zone = { x = 0, y = 0, w = 480, h = 120 },
     ov = { Style = 4, ColorMode = 4, Precision = 4, Damping = 0,
            Surface = 3, BarEnds = 4, ShowMinMax = 3 } },
+  { name = "bar blocks-24", zone = { x = 0, y = 0, w = 480, h = 120 },
+    ov = { Style = "Bar", BarFace = "Blocks", Segments = "24",
+           ColorMode = "Sections", Surface = "Theme panel", Damping = 0 } },
+  { name = "bar true-hex-10", zone = { x = 0, y = 0, w = 480, h = 120 },
+    ov = { Style = "Bar", BarFace = "Hex", Segments = "10",
+           ColorMode = "Sections", Surface = "Theme panel", Damping = 0 } },
+  { name = "bar ticks-24", zone = { x = 0, y = 0, w = 480, h = 120 },
+    ov = { Style = "Bar", BarFace = "Ticks", Segments = "24",
+           ColorMode = "Sections", Surface = "Theme panel", Damping = 0 } },
+  { name = "bar steps-10", zone = { x = 0, y = 0, w = 480, h = 120 },
+    ov = { Style = "Bar", BarFace = "Steps", Segments = "10",
+           ColorMode = "Sections", Surface = "Theme panel", Damping = 0 } },
 }
 
 -- ---- main --------------------------------------------------------------------

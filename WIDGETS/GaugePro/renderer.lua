@@ -46,7 +46,8 @@ M.COLOR_STATIC, M.COLOR_THRESHOLD, M.COLOR_RAIL, M.COLOR_GRADIENT,
 -- frame see the new value.
 local function setProp(widget, obj, key, value)
   if not obj then return end
-  local props = widget.frame.props
+  local frame = widget.frame
+  local props = frame.props
   local cache = props[obj]
   if not cache then
     cache = {}
@@ -54,15 +55,34 @@ local function setProp(widget, obj, key, value)
   end
   if cache[key] == value then return end
   cache[key] = value
-  local dirty = widget.frame.dirty
+  -- Keep one dirty-property table per retained LVGL object. Clearing the
+  -- table after flush makes it reusable, avoiding one table allocation for
+  -- every moving segment on every frame.
+  local dirty = frame.dirty
   if not dirty then
     dirty = {}
-    widget.frame.dirty = dirty
+    frame.dirty = dirty
   end
   local t = dirty[obj]
   if not t then
     t = {}
     dirty[obj] = t
+  end
+  local queued = frame.dirtyQueued
+  if not queued then
+    queued = {}
+    frame.dirtyQueued = queued
+  end
+  if not queued[obj] then
+    queued[obj] = true
+    local list = frame.dirtyList
+    if not list then
+      list = {}
+      frame.dirtyList = list
+    end
+    local n = (frame.dirtyCount or 0) + 1
+    frame.dirtyCount = n
+    list[n] = obj
   end
   t[key] = value
 end
@@ -71,12 +91,19 @@ M.setProp = setProp
 -- Send every queued property for each object in a single lvgl.set call.
 -- Called once at the end of each update frame (renderer and bar).
 function M.flush(widget)
-  local dirty = widget.frame.dirty
-  if not dirty then return end
-  widget.frame.dirty = nil
-  for obj, t in pairs(dirty) do
+  local frame = widget.frame
+  local count = frame.dirtyCount or 0
+  if count == 0 then return end
+  local dirty, list, queued = frame.dirty, frame.dirtyList,
+    frame.dirtyQueued
+  for i = 1, count do
+    local obj = list[i]
+    local t = dirty[obj]
     lvgl.set(obj, t)
+    for key in pairs(t) do t[key] = nil end
+    queued[obj] = nil
   end
+  frame.dirtyCount = 0
 end
 
 -- ---------------------------------------------------------------- angles --

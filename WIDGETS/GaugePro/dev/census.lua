@@ -82,6 +82,23 @@ local w7 = build({ x = 0, y = 0, w = 480, h = 120 },
 mock.setValue(ID_RSSI, 22)
 mock.advance(50); w7.mod.refresh(w7)
 census(w7, "bar 480x120 gradient/panel/chamfer/markers")
+local faceRows = {
+  { "Blocks", "24", "blocks 24" },
+  { "Hex", "10", "true hex 10" },
+  { "Ticks", "24", "fine ticks 24" },
+  { "Steps", "10", "signal steps 10" },
+}
+for _, row in ipairs(faceRows) do
+  local wf = build({ x = 0, y = 0, w = 480, h = 120 }, {
+    Style = "Bar", BarFace = row[1], Segments = row[2],
+    ColorMode = "Sections", Surface = "Theme panel", Damping = 0,
+  })
+  census(wf, "bar 480x120 " .. row[3] .. "/Sections/panel")
+end
+local wh = build({ x = 0, y = 0, w = 160, h = 44 }, {
+  Style = "Bar", BarFace = "Hex", Segments = "10", Damping = 0,
+})
+census(wh, "bar 160x44 hex compact block fallback")
 print("")
 print("DOCS.md 5.4 uses the first row (worst case); the counts above are")
 print("the reproducible source for the table.")
