@@ -69,12 +69,13 @@ set_property(TARGET simu_drivers PROPERTY POSITION_INDEPENDENT_CODE ON)
 if(WIDGET_STUDIO)
   # The simu Lua module lives in radiolib_native (lua/api_simu.cpp); it must
   # see the capture/override helpers declared in targets/simu/simulib.h.
+  # simu_drivers (simulib.cpp) only needs the arm/notify bookkeeping here -
+  # the stb_image_write PNG encoder is deliberately kept out of this object
+  # library (see simu_capture.cpp) since it is also linked into gtests-radio
+  # and wasi-module, which must not pull in a second stb implementation.
   target_compile_definitions(radiolib_native PUBLIC WIDGET_STUDIO)
   target_compile_definitions(simu_drivers PUBLIC WIDGET_STUDIO)
   target_include_directories(radiolib_native PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-  # stb_image_write for the PNG capture in simulib.cpp
-  set(STB_DIR ${RADIO_SRC_DIR}/thirdparty/stb)
-  target_include_directories(simu_drivers PRIVATE ${STB_DIR})
 endif()
 
 if(SIMU_AUX)
@@ -159,7 +160,10 @@ else()
   if(WIDGET_STUDIO)
     # The SDL main loop (sdl_simu.cpp) owns the --pipe steering channel and
     # the reset-request consumption; it lives in the simu executable target.
+    # simu_capture.cpp (the stb_image_write PNG encoder) is here rather than
+    # in simu_drivers for the same reason - see the comment above.
     target_compile_definitions(simu PUBLIC WIDGET_STUDIO)
+    target_sources(simu PRIVATE simu_capture.cpp)
   endif()
 
   add_png_target(image_assets "assets/images/*.png")

@@ -321,41 +321,23 @@ bool simuGetAnalogOverride(uint8_t idx, uint16_t* value)
   return true;
 }
 
-#if defined(WIDGET_STUDIO) && !defined(__wasm__)
+static simuCaptureDumpFn capture_dump_fn = nullptr;
 
-#include <vector>
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-
-static bool captureDump()
+void simuSetCaptureDumpFn(simuCaptureDumpFn fn)
 {
-#if defined(COLORLCD)
-  const int w = LCD_W;
-  const int h = LCD_H;
-  std::vector<uint8_t> rgb(w * h * 3);
-  const pixel_t* src = simuLcdBuf;
-  for (int i = 0; i < w * h; i++) {
-    uint16_t p = src[i];
-    uint8_t r5 = (p >> 11) & 0x1F;
-    uint8_t g6 = (p >> 5) & 0x3F;
-    uint8_t b5 = p & 0x1F;
-    rgb[i * 3 + 0] = (r5 << 3) | (r5 >> 2);
-    rgb[i * 3 + 1] = (g6 << 2) | (g6 >> 4);
-    rgb[i * 3 + 2] = (b5 << 3) | (b5 >> 2);
-  }
-  return stbi_write_png(capture_path.c_str(), w, h, 3, rgb.data(), w * 3) != 0;
-#else
-  return false;
-#endif
+  capture_dump_fn = fn;
 }
 
+#if defined(WIDGET_STUDIO) && !defined(__wasm__)
+
 // Native simu owns the frame-ready callback.  When a capture is armed, the
-// next frame is dumped to capture_path and the arm is consumed.
+// next frame is dumped to capture_path (via the installed encoder, see
+// simuSetCaptureDumpFn) and the arm is consumed.
 void simuLcdNotify()
 {
   if (capture_armed) {
     capture_armed = false;
-    captureDump();
+    if (capture_dump_fn) capture_dump_fn(capture_path.c_str());
   }
 }
 

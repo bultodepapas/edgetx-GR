@@ -217,6 +217,16 @@ std::string simuFatfsGetRealPath(const std::string& p);
 void simuCaptureArm(const char* path);
 bool simuConsumeCaptureRedraw();
 
+// The actual PNG encoder (stb_image_write) is deliberately NOT in simulib.cpp:
+// that file is part of the simu_drivers object library, which is also linked
+// into gtests-radio and wasi-module, and stb_image_write's single-definition
+// pattern would then collide with radio/src/tests/lcd_480x272.cpp's own copy.
+// Only the interactive `simu` executable wants capture, so it installs the
+// encoder here at startup (see targets/simu/simu_capture.cpp); other simu
+// binaries just leave the hook unset and simuLcdNotify()'s capture is a no-op.
+using simuCaptureDumpFn = bool (*)(const char* path);
+void simuSetCaptureDumpFn(simuCaptureDumpFn fn);
+
 // ADC override: lets the harness force an input (stick/pot) value in ADC range
 // (0..4096).  Returns false when no override is set for `idx`, in which case
 // the normal input path is used.  `idx` is the combined input index used by
