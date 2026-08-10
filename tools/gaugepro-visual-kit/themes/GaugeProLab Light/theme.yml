@@ -1,0 +1,19 @@
+---
+summary:
+   name: "GaugeProLab Light"
+   author: "Gauge Pro visual kit"
+   info: "High-contrast light theme for the Gauge Pro visual catalog"
+colors:
+   PRIMARY1: 0x101418
+   PRIMARY2: 0xFFFFFF
+   PRIMARY3: 0x0C3F66
+   SECONDARY1: 0x3A6EA5
+   SECONDARY2: 0xBFE0F5
+   SECONDARY3: 0xEAF3FB
+   FOCUS: 0x0FA0E0
+   EDIT: 0x128A2E
+   ACTIVE: 0xFFB000
+   WARNING: 0xD62828
+   DISABLED: 0x8A8F98
+   QM_BG: 0x101418
+   QM_FG: 0xFFFFFF

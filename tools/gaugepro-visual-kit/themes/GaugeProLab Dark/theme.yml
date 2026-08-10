@@ -1,0 +1,19 @@
+---
+summary:
+   name: "GaugeProLab Dark"
+   author: "Gauge Pro visual kit"
+   info: "Dark theme (background near #303030) for the Gauge Pro visual catalog"
+colors:
+   PRIMARY1: 0xF0F0F0
+   PRIMARY2: 0x101010
+   PRIMARY3: 0x1E1E1E
+   SECONDARY1: 0x6B93BE
+   SECONDARY2: 0x454545
+   SECONDARY3: 0x303030
+   FOCUS: 0x29B6F6
+   EDIT: 0x4CD964
+   ACTIVE: 0xFFD60A
+   WARNING: 0xFF6B35
+   DISABLED: 0x757575
+   QM_BG: 0x101010
+   QM_FG: 0xF0F0F0

@@ -12,3 +12,9 @@ dev/shots/
 
 # Written to the SD card by the firmware on first load (loadScript "bt").
 *.luac
+
+# Visual kit (tools/gaugepro-visual-kit): scratch SD tree, settings and logs
+# for the real-firmware capture run. NOT the screenshots themselves --
+# docs/visual-kit/ is deliberately excepted from this ignore, same as the
+# docs/ carve-out above, since the catalog PNGs are a permanent reference.
+dev/visual-kit-run/
