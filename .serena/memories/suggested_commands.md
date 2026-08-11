@@ -1,0 +1,3 @@
+Windows/PowerShell utilities: Get-ChildItem, Set-Location, Get-Content, rg, rg --files, git. Because this checkout may trigger dubious ownership, use a per-command exception: git -c safe.directory=C:/DEVELOPMENT/edgetx-GR status --short.
+GaugePro (run from WIDGETS/GaugePro): lua5.3 tests/run_tests.lua ./ ; lua5.3 tests/smoke_test.lua ./ ; lua5.3 dev/collide.lua ./ ; lua5.3 dev/instructions.lua ./ ; lua5.3 dev/measure_frames.lua ./ ; lua5.3 dev/motion_sequences.lua ./ ; lua5.3 dev/gallery.lua ./ --out <dir> ; lua5.3 dev/collage.lua ./ docs/.
+Visual kit (run from tools/gaugepro-visual-kit): python run.py generate|capture|report|all. Native simulator: cmake --preset simu -DWIDGET_STUDIO=ON ; cmake --build build/simu --target simu.

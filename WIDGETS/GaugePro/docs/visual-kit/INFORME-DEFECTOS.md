@@ -27,7 +27,7 @@ Clasificación:
 | [F-01](#f-01) | **P0 — RESUELTO** | Cualquier `lvgl.set()` sobre un arco/círculo ya construido lo desplaza (defecto del binding LVGL, no de Gauge Pro) | Corregido en `renderer.lua` reenviando el centro en cada `lvgl.set`; verificado en 9 configuraciones reales |
 | [H-01](#h-01) | **P0 — RESUELTO** | El arnés ignoraba el `zone` declarado por cada caso: 210 de 222 casos se renderizaban a pantalla completa | Corregido: routing por zona real + columna "Zone (real)" en CATALOG.md + `verify_dupes.py` conectado (degrada a WARN); verificado contra el simulador real |
 | [W-01](#w-01) | **P1 — RESUELTO** | Los ticks de escala se dibujaban a un radio muy superior al del anillo, en un hueco vacío | `layout.lua` reserva la banda exterior sólo en Rail/Sections; los modos sin banda vuelven a pegar sus ticks al track y no invaden la zona vecina |
-| [W-02](#w-02) | **P1** | El píldora de estado (WARN/CRIT) se recorta contra el borde inferior de la zona | Badge cortado por la mitad en layouts anchos |
+| [W-02](#w-02) | **P1 — RESUELTO** | La píldora de estado (WARN/CRIT) podía salir por el borde inferior de la zona | El layout ya reserva padding + outline a las tres escalas LCD; las capturas reales no muestran recorte |
 | [W-03](#w-03) | **P1** | La cara `continuous` pinta el track inactivo a opacidad plena (las caras segmentadas no) | El tramo vacío compite (o gana) al tramo lleno; en CRIT el vacío es lo más brillante de la barra |
 | [W-06](#w-06) | **P1** | `BarOrigin = Zero` sólo dibuja la marca de cero: el relleno sigue naciendo en el extremo bajo de la escala | La opción parece funcionar (aparece la marca) pero no cambia lo que mide la barra, en 4 de las 5 caras |
 | [W-04](#w-04) | **P2** | La aguja no arranca en el pivote y sobresale del anillo | Hueco visible entre el buje y la base de la aguja; punta fuera de la banda |
@@ -582,9 +582,48 @@ L.tickInner  = L.railRadius + tickGap
 
 ---
 
-## W-02 — La píldora de estado se recorta contra el borde de la zona {#w-02}
+## W-02 — La píldora de estado se recortaba contra el borde de la zona — RESUELTO {#w-02}
 
-**Severidad: P1.**
+**Severidad: P1 — resuelto.**
+
+### Revisión 2026-08-10 — el hallazgo ya no aplica al código actual
+
+El síntoma descrito abajo correspondía a una revisión anterior. No lo corrigió
+H-01: `git blame` sitúa la reserva vertical definitiva del chip en
+`ccfa50c46` (2026-08-07), antes de la reparación del arnés. H-01 sí hizo que
+la evidencia visual resultara interpretable: `f5-dual-h-neg` ahora se dibuja
+en su zona real `400x120 (Layout1P4 z1)`, no a pantalla completa.
+
+El arreglo vigente tiene las dos mitades necesarias:
+
+* [layout.lua](../../layout.lua) define `chipOverhang(shown, extra, outline)`
+  y reserva `extra - floor(extra / 2) + outline` debajo de la fila. El mismo
+  `L.chipOutline` se comparte con `renderer.lua` y `bar.lua`; esto evita la
+  divergencia que antes reaparecía a `LCD_SCALE = 1.375`, donde `px()` no es
+  lineal.
+* [renderer.lua](../../renderer.lua) limita además el ancho del chip, outline
+  incluido, a `0..L.w`. La matriz de contención de
+  [tests/smoke_test.lua](../../tests/smoke_test.lua) usa holgura cero, estados
+  crítico/normal, dial/bar, zonas de `60x60` a `480x272` y las tres escalas
+  LCD (`0.8`, `1.0`, `1.375`). La barrida R-4 añade tamaños patológicos desde
+  `24x20`; ambas exigen que ningún objeto pintado salga de la zona.
+
+Comprobación sobre las PNG reales actuales:
+
+* `164_ejes5_f5-dual-h-neg.png`: no hay tinta en `y=479`; dentro de la zona
+  `400x120`, el outline redondeado termina legalmente en su última fila
+  (`y=119`, columnas 745–783 globales) y no continúa en `y=120`.
+* `124_ejes5_f5-v-continuous-static.png`: la zona efectiva es
+  `400x360 (Layout4P2B z4)` y el badge WARN se ve completo. La gran separación
+  de ~500 px descrita originalmente era consecuencia del routing fullscreen
+  de H-01; con la zona real ya no existe.
+
+Por tanto, encontrar tinta en la última fila de una zona no demuestra recorte:
+la caja LVGL usa el intervalo contenido `[y, y+h)`, y el borde redondeado puede
+ocupar legítimamente el último píxel. El criterio correcto es que la extensión
+geométrica no supere `zone.h`, que es exactamente lo que verifican las pruebas.
+
+El análisis original se conserva debajo como registro histórico.
 
 ### Evidencia
 
