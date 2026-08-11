@@ -28,7 +28,7 @@ Clasificación:
 | [H-01](#h-01) | **P0 — RESUELTO** | El arnés ignoraba el `zone` declarado por cada caso: 210 de 222 casos se renderizaban a pantalla completa | Corregido: routing por zona real + columna "Zone (real)" en CATALOG.md + `verify_dupes.py` conectado (degrada a WARN); verificado contra el simulador real |
 | [W-01](#w-01) | **P1 — RESUELTO** | Los ticks de escala se dibujaban a un radio muy superior al del anillo, en un hueco vacío | `layout.lua` reserva la banda exterior sólo en Rail/Sections; los modos sin banda vuelven a pegar sus ticks al track y no invaden la zona vecina |
 | [W-02](#w-02) | **P1 — RESUELTO** | La píldora de estado (WARN/CRIT) podía salir por el borde inferior de la zona | El layout ya reserva padding + outline a las tres escalas LCD; las capturas reales no muestran recorte |
-| [W-03](#w-03) | **P1** | La cara `continuous` pinta el track inactivo a opacidad plena (las caras segmentadas no) | El tramo vacío compite (o gana) al tramo lleno; en CRIT el vacío es lo más brillante de la barra |
+| [W-03](#w-03) | **P1 — RESUELTO** | La cara `continuous` pintaba una base opaca debajo del track inactivo | El casing ahora es un borde real sin relleno; captura nativa: tramo vacío `(16,93,156)` → `(99,150,189)` |
 | [W-06](#w-06) | **P1** | `BarOrigin = Zero` sólo dibuja la marca de cero: el relleno sigue naciendo en el extremo bajo de la escala | La opción parece funcionar (aparece la marca) pero no cambia lo que mide la barra, en 4 de las 5 caras |
 | [W-04](#w-04) | **P2** | La aguja no arranca en el pivote y sobresale del anillo | Hueco visible entre el buje y la base de la aguja; punta fuera de la banda |
 | [H-02](#h-02) | **P2 — parcialmente resuelto** | `layouts.nearest_zone()` calculaba sobre 480×272 mientras el simulador es 800×480 | El fix de H-01 corrigió el tamaño de pantalla en el único sitio que lo usaba; sigue abierto revisar la lista de objetivos de `zonas` (ver nota en H-02) |
@@ -673,10 +673,46 @@ la barra vertical que describe; leído en la radio no se asocia con nada.
 
 ---
 
-## W-03 — La cara `continuous` pinta el track inactivo a opacidad plena {#w-03}
+## W-03 — La cara `continuous` pintaba el track inactivo a opacidad plena — RESUELTO {#w-03}
 
-**Severidad: P1.** El defecto está **acotado a la cara `continuous`**: las cuatro
-caras segmentadas lo hacen bien.
+**Severidad: P1 — resuelto.** El defecto estaba **acotado a la cara
+`continuous`**: las cuatro caras segmentadas ya lo hacían bien.
+
+### Revisión 2026-08-10 — causa raíz, arreglo y verificación nativa
+
+W-03 seguía vigente después de H-01. H-01 sólo cambió `br-normal` de
+fullscreen a su zona real `400x120 (Layout1P4 z1)`; el tramo vacío seguía
+siendo exactamente `#105d9c` en la captura regenerada.
+
+La premisa original «ningún camino pide 255» era incompleta porque miraba sólo
+`ui.track`. La causa real era la composición de dos primitivas:
+
+1. `continuousBuild()` creaba `ui.casing` como un rectángulo **relleno** sobre
+   `barOuter`, debajo del track translúcido.
+2. `continuousPalette()` eleva ese casing a `T.opacity.full` cuando
+   `Contrast=Auto` determina que hace falta asistencia.
+3. En el tema stock, `palette.border` y `palette.track` resuelven ambos a
+   `COLOR_THEME_SECONDARY1` (`#105d9c`). El casing opaco cubría todo el canal;
+   pintar encima el mismo color con opacidad 90/150 no podía aclararlo.
+
+La corrección mantiene el mismo objeto retenido y el mismo presupuesto, pero
+lo construye como borde LVGL real: `filled=0`, `thickness=L.barEdge`. El
+contraste fuerte sigue pudiendo llevar el contorno a 255 sin volver opaco el
+interior. El test de anatomía Classic fija ahora ambos invariantes: casing sin
+relleno y grosor igual al inset reservado por layout.
+
+Verificación con `build/simu/simu.exe`, el modelo real de `br-normal` y los Lua
+modificados copiados al SD temporal por el visual kit:
+
+* el simulador cargó y compiló `layout.lua`/`bar_faces.lua` sin error;
+* captura focalizada completada por el pipe nativo;
+* píxel del tramo vacío en `(750,64)`: antes `(16,93,156)`, después
+  **`(99,150,189)`**; el canal queda visiblemente detrás del relleno;
+* el contorno oscuro de un píxel permanece completo y el número de objetos no
+  cambia.
+
+La captura oficial `060_barra_br-normal.png` de abajo es la evidencia previa al
+arreglo y se conserva hasta la próxima regeneración completa del catálogo.
 
 ### Evidencia
 

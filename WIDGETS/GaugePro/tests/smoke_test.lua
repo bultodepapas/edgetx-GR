@@ -205,6 +205,10 @@ test("Phase 2: Classic resolves to the retained Precision Rail anatomy", functio
   assertEq(w.barPalette.mode, "classic")
   assertEq(w.ui.track.props.color,
     w.mods.theme.resolveColor(w.mods.theme.color.rail))
+  assertEq(w.ui.casing.props.filled, 0,
+    "the casing is an outline, never an opaque body behind the track")
+  assertEq(w.ui.casing.props.thickness, w.layout.barEdge,
+    "the casing outline consumes exactly the reserved inset")
   refresh(w)
   assertEq(w.ui.fill.props.color, w.mods.theme.color.accent)
   local visible = 0

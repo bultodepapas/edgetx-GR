@@ -1237,7 +1237,9 @@ function M.applyBarVisual(L, visual, cfg)
   L.barOuter = vertical and box(outerX, outerY, wanted, railSlot.h)
     or box(outerX, outerY, railSlot.w, wanted)
 
-  -- A retained filled rectangle behind the track supplies a real casing. The
+  -- A retained outline around the track supplies a real casing. The outline
+  -- must not be filled: it can become fully opaque under contrast assist and
+  -- would otherwise defeat the inactive track's reduced opacity (W-03). The
   -- inset is surrendered on extremely small rails so the data channel never
   -- collapses to zero pixels.
   local primaryLength = vertical and slot.h or slot.w

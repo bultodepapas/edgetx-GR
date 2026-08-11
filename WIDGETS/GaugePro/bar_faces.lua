@@ -267,13 +267,22 @@ local function continuousBuild(widget, _geometry, style)
     }
   end
 
-  -- Round/square bodies use a separate one-pixel casing. A true chamfer
-  -- already needs three retained track primitives; omitting its redundant
-  -- second three-piece silhouette keeps the worst surface+sections variant
-  -- inside the approved 24-object Continuous budget.
+  -- Round/square bodies use a separate one-pixel casing. It must be a REAL
+  -- border, not a filled silhouette behind the translucent track: Contrast
+  -- Auto can raise the casing to full opacity and, on the stock theme, border
+  -- and track resolve to the same colour. A filled casing therefore makes the
+  -- entire inactive channel visually opaque even though the track itself is
+  -- correctly set to T.opacity.rail (W-03).
+  --
+  -- A true chamfer already needs three retained track primitives; omitting
+  -- its redundant second three-piece outline keeps the worst
+  -- surface+sections variant inside the approved 24-object Continuous budget.
   if (L.barEdge or 0) > 0 and bevel == 0 then
-    shape(ui, "casing", outer, border, T.opacity.railBand,
-          L.barOuterRadius, bevel + L.barEdge, L.axis.orientation)
+    ui.casing = lvgl.rectangle{
+      x = outer.x, y = outer.y, w = outer.w, h = outer.h,
+      color = border, opacity = T.opacity.railBand, filled = 0,
+      thickness = L.barEdge, rounded = L.barOuterRadius,
+    }
   end
   shape(ui, "track", b, track, T.opacity.rail, L.barRadius, bevel,
         L.axis.orientation)
