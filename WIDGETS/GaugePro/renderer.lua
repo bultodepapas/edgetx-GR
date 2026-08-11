@@ -90,20 +90,63 @@ M.setProp = setProp
 
 -- Send every queued property for each object in a single lvgl.set call.
 -- Called once at the end of each update frame (renderer and bar).
+--
+-- F-01 (docs/visual-kit/INFORME-DEFECTOS.md): on the radio,
+-- LvglWidgetRoundObject::refresh() - which EVERY lvgl.set on an arc or
+-- circle triggers, whichever property changed - recomputes the object's
+-- screen position from its OWN cached x/y, and that recompute lands wrong
+-- for any arc that has already been shown once. Confirmed empirically with
+-- an isolated repro against this exact build (not a Gauge Pro bug): a
+-- freshly built arc paints correctly; the moment ANY property on it is
+-- rewritten with lvgl.set - endAngle, colour, opacity, doesn't matter which
+-- - it jumps off-centre. Reaffirming radius.coord does not help (the radio
+-- clamps back to the SAME wrong spot). The one fix that reproducibly holds,
+-- confirmed across four consecutive updates at the dial's real radius, is
+-- resending the UNCONVERTED centre as x/y in that SAME lvgl.set call, every
+-- time, forever - so every batched write to a round object carries it here,
+-- rather than patching each call site (and rather than the corner-coordinate
+-- correction floated in the original writeup, which measured no better than
+-- doing nothing).
 function M.flush(widget)
   local frame = widget.frame
   local count = frame.dirtyCount or 0
   if count == 0 then return end
   local dirty, list, queued = frame.dirty, frame.dirtyList,
     frame.dirtyQueued
+  -- On widget.ui, NOT widget.frame: M.build() below unconditionally replaces
+  -- widget.frame wholesale (a fresh per-build animation-state table) AFTER
+  -- every arc in this file has already been built and marked, so a registry
+  -- kept on frame would be thrown away before its first flush ever runs.
+  -- widget.ui is the retained object tree and is only ever added to, never
+  -- replaced, once M.build() starts - the correct home for "which of these
+  -- retained objects need this treatment".
+  local round, L = widget.ui.roundCenters, widget.layout
   for i = 1, count do
     local obj = list[i]
     local t = dirty[obj]
+    if round and round[obj] then
+      t.x, t.y = L.cx, L.cy
+    end
     lvgl.set(obj, t)
     for key in pairs(t) do t[key] = nil end
     queued[obj] = nil
   end
   frame.dirtyCount = 0
+end
+
+-- Registers `obj` (an arc or circle whose centre is the dial's own L.cx/L.cy)
+-- so every future setProp-batched write to it re-sends that centre - see the
+-- F-01 note on M.flush above. Objects that are never updated after build
+-- (the track) do not need this: the bug only shows up on a SUBSEQUENT
+-- lvgl.set, and a freshly built arc is already correct.
+local function markRoundCenter(widget, obj)
+  local ui = widget.ui
+  local round = ui.roundCenters
+  if not round then
+    round = {}
+    ui.roundCenters = round
+  end
+  round[obj] = true
 end
 
 -- ---------------------------------------------------------------- angles --
@@ -177,6 +220,7 @@ local function buildTrack(widget)
         -- sections[i] is not ranges[i]).
         ui.sections[#ui.sections + 1] = sec
         ui.sectionRoles[#ui.sections] = r.role
+        markRoundCenter(widget, sec)
       end
     end
   end
@@ -195,13 +239,15 @@ local function buildTrack(widget)
         local a1, a2 = bandSpan(widget, r)
         if a2 > a1 then
           local c = T.stateColor(r.role, widget.accent)
-          ui.rails[#ui.rails + 1] = lvgl.arc{
+          local rail = lvgl.arc{
             x = L.cx, y = L.cy, radius = L.railRadius,
             startAngle = a1, endAngle = a2,
             bgStartAngle = a1, bgEndAngle = a2,
             color = c, bgColor = c, bgOpacity = T.opacity.railBand, opacity = 0,
             thickness = L.railThickness, rounded = 0,
           }
+          ui.rails[#ui.rails + 1] = rail
+          markRoundCenter(widget, rail)
         end
       end
     end
@@ -326,6 +372,7 @@ function M.build(widget)
       thickness = L.ghostThickness, rounded = 1,
     }
     lvgl.hide(ui.ghost)
+    markRoundCenter(widget, ui.ghost)
   end
 
   ui.valueArc = lvgl.arc{
@@ -335,6 +382,7 @@ function M.build(widget)
     bgOpacity = 0, color = T.color.accent,
     thickness = L.arcThickness, rounded = 1,
   }
+  markRoundCenter(widget, ui.valueArc)
 
   if L.showNeedle then buildNeedle(widget) end
 

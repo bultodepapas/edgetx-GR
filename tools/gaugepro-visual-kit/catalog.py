@@ -33,7 +33,11 @@ import json
 from defs import Defs
 import layouts
 
-SCREEN_W, SCREEN_H = 480, 272
+# The simu build this tool drives captures at 800x480 (confirmed by measuring
+# every screenshot in a full run -- see docs/visual-kit/INFORME-DEFECTOS.md
+# H-02); it does NOT run at the 480x272 this constant held before, which
+# silently fed the wrong screen into every layouts.nearest_zone() call.
+SCREEN_W, SCREEN_H = 800, 480
 MAX_CUSTOM_SCREENS = 10
 
 # Empirically observed, deterministic (raw-ADC-independent, see catalog.py's
@@ -134,12 +138,17 @@ def load_scenes(path="scenes.json"):
 
 class Track1Screen:
     def __init__(self, case, overrides, layout_id="Layout1x1", zone_index=0,
-                 model_note=""):
+                 model_note="", real_rect=None):
         self.case = case
         self.overrides = overrides
         self.layout_id = layout_id
         self.zone_index = zone_index
         self.model_note = model_note
+        # (x, y, w, h) pixels of the REAL zone this screen renders into, when
+        # known (layouts.nearest_zone's own return value -- see
+        # build_track1_screens). None for a plain fullscreen Layout1x1 case
+        # that never asked for a specific zone.
+        self.real_rect = real_rect
 
     @property
     def name(self):
@@ -153,24 +162,32 @@ class Track1Screen:
 def build_track1_screens(scenes_data, defs: Defs):
     """One Track1Screen per non-skipped case, in scenes.json's own order
     (grouped by section already, since scenes_dump.lua flattens M.sections
-    in order). Every case renders full-screen (Layout1x1) EXCEPT the
-    `zonas` section, whose entire purpose is showing the same
-    configuration at different real EdgeTX zone sizes -- those get the
-    real (LayoutId, zone_index) whose size best matches the case's
-    original target via layouts.nearest_zone() (built in Sec B but not
-    wired in until this pass: every zonas case was rendering fullscreen,
-    i.e. all 12 identically, which defeated the section's own point)."""
+    in order).
+
+    Every case that declares a `zone` renders into the real (LayoutId,
+    zone_index) whose size best matches it, via layouts.nearest_zone() --
+    NOT only the `zonas` section (docs/visual-kit/INFORME-DEFECTOS.md H-01:
+    210 of 222 cases declare a zone and were still rendering fullscreen,
+    which is a size no real widget zone has except Layout1x1 itself, so
+    cases whose whole point IS their size -- e.g. `tx-prec2-micro` at
+    60x60, or the `br-narrow`/`br-short`/`br-nochip` trio at 300x44/160x44/
+    300x70 -- never actually exercised the layout code paths gated on small
+    zones, and several collapsed into byte-identical screenshots that still
+    reported PASS). Only a case with NO declared zone keeps the previous
+    plain fullscreen Layout1x1 behaviour."""
     out = []
     for case in scenes_data["cases"]:
         name = case["name"]
         if name in SKIPPED_CASES:
             continue
         overrides = track1_gauge_options(case, defs)
-        if case["section"] == "zonas" and case.get("zone"):
-            target_w, target_h = case["zone"]
-            layout_id, zone_index, _rect = layouts.nearest_zone(target_w, target_h)
+        zone = case.get("zone")
+        if zone:
+            target_w, target_h = zone
+            layout_id, zone_index, rect = layouts.nearest_zone(
+                target_w, target_h, SCREEN_W, SCREEN_H)
             out.append(Track1Screen(case, overrides, layout_id=layout_id,
-                                     zone_index=zone_index))
+                                     zone_index=zone_index, real_rect=rect))
         else:
             out.append(Track1Screen(case, overrides))
     return out

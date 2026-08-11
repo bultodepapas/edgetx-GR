@@ -22,23 +22,30 @@ Clasificación:
 
 | ID | Sev | Título | Impacto |
 |---|---|---|---|
-| [F-01](#f-01) | **P0** | Todos los `lvgl.arc` del dial salvo el track se dibujan centrados en su esquina superior izquierda | El dial **no tiene arco de valor**; Sections y Rail son invisibles; `ColorMode` no hace nada en el dial |
-| [H-01](#h-01) | **P0** | El arnés ignora el `zone` declarado por cada caso: 210 de 222 casos se renderizan a pantalla completa | Buena parte de la cobertura del CATALOG es ficticia; 24 capturas son byte-idénticas entre casos distintos y todas reportan PASS |
+| [F-01](#f-01) | **P0 — RESUELTO** | Cualquier `lvgl.set()` sobre un arco/círculo ya construido lo desplaza (defecto del binding LVGL, no de Gauge Pro) | Corregido en `renderer.lua` reenviando el centro en cada `lvgl.set`; verificado en 9 configuraciones reales |
+| [H-01](#h-01) | **P0 — RESUELTO** | El arnés ignoraba el `zone` declarado por cada caso: 210 de 222 casos se renderizaban a pantalla completa | Corregido: routing por zona real + columna "Zone (real)" en CATALOG.md + `verify_dupes.py` conectado (degrada a WARN); verificado contra el simulador real |
 | [W-01](#w-01) | **P1** | Los ticks de escala se dibujan a un radio muy superior al del anillo, en un hueco vacío | Ticks "flotando" desconectados del dial; en zonas reales se salen de la zona y pisan al widget vecino |
 | [W-02](#w-02) | **P1** | El píldora de estado (WARN/CRIT) se recorta contra el borde inferior de la zona | Badge cortado por la mitad en layouts anchos |
 | [W-03](#w-03) | **P1** | La cara `continuous` pinta el track inactivo a opacidad plena (las caras segmentadas no) | El tramo vacío compite (o gana) al tramo lleno; en CRIT el vacío es lo más brillante de la barra |
 | [W-06](#w-06) | **P1** | `BarOrigin = Zero` sólo dibuja la marca de cero: el relleno sigue naciendo en el extremo bajo de la escala | La opción parece funcionar (aparece la marca) pero no cambia lo que mide la barra, en 4 de las 5 caras |
 | [W-04](#w-04) | **P2** | La aguja no arranca en el pivote y sobresale del anillo | Hueco visible entre el buje y la base de la aguja; punta fuera de la banda |
-| [H-02](#h-02) | **P2** | `layouts.nearest_zone()` calcula sobre 480×272 mientras el simulador es 800×480 | Los 12 casos `zonas` colapsan en 6 zonas reales, todas ≥ 400×120 |
+| [H-02](#h-02) | **P2 — parcialmente resuelto** | `layouts.nearest_zone()` calculaba sobre 480×272 mientras el simulador es 800×480 | El fix de H-01 corrigió el tamaño de pantalla en el único sitio que lo usaba; sigue abierto revisar la lista de objetivos de `zonas` (ver nota en H-02) |
 | [W-05](#w-05) | **P3** | El modo Static pinta con el verde de acento, el mismo RGB que la banda "normal" | La barra dice "todo bien" mientras la píldora dice WARN |
 | [H-03](#h-03) | **P3** | Colisión de numeración, tema `stock` redundante y casos que fijan el valor por defecto | `017` duplicado; 16 capturas `__stock` idénticas a la base; `br-medium` ≡ `br-end-round` ≡ `br-normal` |
 
 ---
 
-## F-01 — Todos los arcos del dial salvo el track se dibujan con el centro desplazado (−R, −R) {#f-01}
+## F-01 — Todos los arcos del dial salvo el track se dibujan con el centro desplazado — RESUELTO {#f-01}
 
-**Severidad: P0 (bloqueante).** Es la causa raíz de la mayoría de duplicados
-de la tanda y de que el dial no muestre progreso.
+**Severidad: P0 (bloqueante).** Era la causa raíz de la mayoría de duplicados
+de la tanda y de que el dial no mostrara progreso.
+
+**Estado: corregido en `renderer.lua` (`M.flush`/`markRoundCenter`) y verificado
+contra el binario real del simulador (`build/simu/simu.exe`), no sólo contra el
+mock.** La sección de abajo queda como registro histórico del diagnóstico
+(incluida la hipótesis inicial, que la reproducción in-simulador **descartó**);
+la causa raíz confirmada y el fix aplicado están en
+[Causa raíz confirmada (revisión)](#f-01-revision).
 
 ### Evidencia
 
@@ -139,68 +146,161 @@ El desplazamiento medido es exactamente igual a `R`, no acumulativo entre
 frames (el arco de valor recibe un `lvgl.set{endAngle}` por frame y no deriva),
 lo que encaja con **una única** resta extra en la vida del objeto.
 
-> **Pendiente de cerrar:** por qué el primer arco se libra. Requiere un repro
-> mínimo en el simulador (ver remediación, paso 1). No lo doy por cerrado.
-
-### Remediación propuesta
-
-**Paso 1 — repro mínimo (media hora, cierra la causa raíz).**
-Script Lua de una pantalla que cree dos arcos idénticos consecutivos con el
-mismo `x,y,radius` y los pinte de colores distintos. Si el segundo aparece
-desplazado, es el binding y no Gauge Pro. Colocarlo en
-`WIDGETS/GaugePro/dev/repro_arc_offset.lua` junto al `repro_userdata_bar.lua`
-existente.
-
-**Paso 2 — corrección defensiva en el widget (robusta, no espera al firmware).**
-
-Centralizar la creación de arcos en un helper que **reafirme la posición en
-coordenadas de esquina inmediatamente después de crear el objeto**:
-
-```lua
--- renderer.lua
--- LvglWidgetArc::build() interpreta x/y como CENTRO, pero LvglWidgetRoundObject
--- guarda la esquina y vuelve a restar el radio en cada setPos(). Un arco que
--- pase dos veces por esa conversión queda dibujado sobre su propia esquina
--- (medido: desplazamiento exactamente -radius en ambos ejes; ver
--- docs/visual-kit/INFORME-DEFECTOS.md, F-01).
---
--- Reafirmar la posición EN ESQUINA a través de lvgl.set la deja correcta
--- venga como venga del constructor, y es IDEMPOTENTE: la ruta de set parsea
--- x -> setRadius() re-centra -> setPos() vuelve a esquina, de modo que un arco
--- ya correcto no se mueve. Coste: un lvgl.set extra por arco, sólo en build.
-local function arc(params)
-  local obj = lvgl.arc(params)
-  lvgl.set(obj, { x = params.x - params.radius,
-                  y = params.y - params.radius })
-  return obj
-end
-```
-
-y sustituir las cinco llamadas `lvgl.arc{...}` de `renderer.lua` por `arc{...}`.
-
-Por qué es idempotente (traza sobre el binding):
-
-| Estado previo de `x` | `parseParam("x")` | `setRadius()` | `setPos()` | Resultado |
-|---|---|---|---|---|
-| `cx − 2R` (roto) | `cx − R` | `+R → cx` | `cx − R` | **correcto** |
-| `cx − R` (sano) | `cx − R` | `+R → cx` | `cx − R` | **correcto, sin mover** |
-
-**Paso 3 — protección de regresión.**
-Añadir al arnés una aserción geométrica, no sólo un PNG: para cada caso de
-dial, comprobar que el número de píxeles del color de acento sobre la banda del
-track es coherente con la fracción del valor (`003` al 19.5 % debe tener ~4×
-menos tinta de acento que `001` al 79.5 %). Hoy el arnés marca PASS con el arco
-de valor *ausente*.
-
-**Paso 4 — reporte upstream.** Si el paso 1 confirma el binding, abrir issue en
-EdgeTX con el repro: `LvglWidgetArc::build()` no es reentrante respecto a la
-conversión centro↔esquina de `LvglWidgetRoundObject`.
+> **Pendiente de cerrar (histórico):** la hipótesis de arriba ("doble resta de
+> esquina dentro de `build()`") quedó descartada al reproducirla — ver la
+> revisión inmediatamente abajo. Se deja el análisis original sin borrar
+> porque documenta el camino de descarte, pero **no describe el mecanismo
+> real**.
 
 ---
 
-## H-01 — El arnés ignora el `zone` declarado por cada caso {#h-01}
+## F-01 — Causa raíz confirmada (revisión tras repro en simulador real) {#f-01-revision}
+
+El análisis original de arriba asumía que el desplazamiento se originaba
+DENTRO de `LvglWidgetArc::build()` (una doble conversión centro↔esquina). Un
+repro aislado contra el binario real (`build/simu/simu.exe`, no el mock)
+**descarta esa hipótesis** y, con ella, la corrección que se había propuesto
+(reafirmar la esquina `x=cx-radius` tras construir el arco): esa corrección
+se probó explícitamente y **no cambia nada** — el arco cae exactamente en el
+mismo sitio, roto, con o sin ella.
+
+### Método
+
+Widget Lua mínimo (`WIDGETS/<nombre>/main.lua`), sin ninguna dependencia de
+Gauge Pro, que crea un arco de fondo (nunca tocado después) y un segundo arco
+al mismo `x,y,radius`, sondeado de formas distintas: construido y dejado en
+paz; construido degenerado y actualizado un frame después; actualizado con
+sólo un cambio de color (sin tocar ángulo ni x/y); corregido con `lvgl.set`
+justo tras construirse. Cada variante se botó en `simu.exe` de verdad (vía
+`tools/gaugepro-visual-kit`'s `SimuDriver`, el mismo driver que genera esta
+tanda) y se capturó por separado, con marcadores de referencia (un rectángulo
+negro en el centro exacto pedido) para no depender de ajustar círculos a ojo.
+
+### Resultado
+
+* Un arco construido **una sola vez**, con el span final ya correcto en el
+  propio `lvgl.arc{...}` inicial, **siempre queda bien colocado** — sea cual
+  sea su radio (probado de 12 a 190 px).
+* El **primer** `lvgl.set()` que se le hace a ese mismo arco después de
+  construido — **cualquiera**, aunque sólo cambie `color` u `opacity` y no
+  toque `endAngle` ni `x`/`y` — lo saca de sitio. Confirmado con un
+  rectángulo de control (mismo patrón "construir, luego `lvgl.set` con sólo
+  color"): el rectángulo **no se mueve**. El defecto es específico de
+  `LvglWidgetRoundObject` (arcos y círculos), no general a `lvgl.set`.
+* Reafirmar `x = cx - radius, y = cy - radius` (la corrección "de esquina"
+  que proponía la versión original de este hallazgo) en ese mismo `lvgl.set`
+  **no corrige nada**: el arco cae exactamente en el mismo sitio roto que sin
+  la corrección.
+* Reafirmar en cambio `x = cx, y = cy` — el **centro sin convertir**, tal
+  cual se le pasa a `lvgl.arc{}` la primera vez — **sí corrige la posición**,
+  de forma reproducible, en cada variante probada (color-solo, ángulo-solo,
+  degenerado-y-actualizado-después, corrección-doble). Probado también con
+  cuatro actualizaciones sucesivas al radio real del dial (190 px): la
+  posición se mantiene correcta en las cuatro, siempre que **cada** llamada a
+  `lvgl.set` (no sólo la primera) incluya `x,y`.
+* Esto encaja con el único caso del propio Gauge Pro que YA funcionaba sin
+  tocar nada: `ui.pivotRing` (un círculo) y la cabeza "Dot" de la barra
+  (`bar_faces.lua`) — esta última mueve su círculo con `lvgl.set(ui.head,
+  {x = position})`, y `position` ya es la coordenada CENTRO sin convertir, no
+  una esquina. Coincidencia, no diseño deliberado, pero confirma el patrón.
+
+El mecanismo exacto dentro de `LvglWidgetRoundObject::refresh()` /
+`lv_arc_set_*` que hace que reenviar el centro sin convertir sea lo que
+corrige la posición no se terminó de rastrear dentro de LVGL en sí (harían
+falta las fuentes de LVGL, no sólo el wrapper de EdgeTX) — pero el
+comportamiho es determinista, reproducible en un repro que no toca ni una
+línea de Gauge Pro, y **verificado además contra el widget real** (ver
+Remediación aplicada). El comportamiento es un defecto del binding/LVGL sobre
+el que Gauge Pro no tiene control; lo único accionable desde Lua es no dejar
+que un arco reciba nunca un `lvgl.set()` sin su centro dentro.
+
+### Remediación aplicada
+
+`renderer.lua`: cada arco/círculo del dial que se actualiza después de
+construido (`ui.sections[i]`, `ui.rails[i]`, `ui.ghost`, `ui.valueArc`; NO
+`ui.track`, que nunca se toca tras `build()` y por eso no lo necesita) se
+registra en `widget.ui.roundCenters` en el momento de crearse
+(`markRoundCenter`). `M.flush()` — el único sitio del archivo donde se llama
+`lvgl.set` sobre estos objetos, dado que todas las actualizaciones pasan por
+`setProp`/`flush`, nunca por un `lvgl.set` suelto — inyecta `x = L.cx, y =
+L.cy` en la tabla de propiedades ya pendiente de cualquier objeto registrado,
+justo antes de enviarla:
+
+```lua
+-- renderer.lua (M.flush)
+local round, L = widget.ui.roundCenters, widget.layout
+for i = 1, count do
+  local obj = list[i]
+  local t = dirty[obj]
+  if round and round[obj] then
+    t.x, t.y = L.cx, L.cy
+  end
+  lvgl.set(obj, t)
+  ...
+```
+
+Por qué en `widget.ui` y no en `widget.frame` (donde vivía la primera versión
+de este registro, y no funcionaba): `M.build()` **reemplaza** `widget.frame`
+entero al final de la construcción (una tabla nueva de estado de animación
+por-frame), después de que todos los arcos ya se hubieran registrado — así
+que el registro se perdía antes de que corriera el primer `flush()` real.
+`widget.ui` es el árbol de objetos retenidos y sólo se le añaden campos
+durante `M.build()`, nunca se reemplaza — es el sitio correcto para "qué
+objetos retenidos necesitan este tratamiento".
+
+Por qué en `flush()` y no en cada punto de llamada (`applyColors`,
+`updateArc`, `updateHistory`): porque el defecto se dispara con
+**cualquier** propiedad, no sólo con el ángulo — parchear sólo `updateArc`
+habría dejado roto `applyColors` (que sólo toca color/opacidad en
+`ui.sections`/`ui.rails`/`ui.valueArc`). Centralizarlo en `flush()` cubre las
+tres rutas de una vez y no depende de que cada futura ruta de actualización
+se acuerde de incluirlo.
+
+### Verificación
+
+Contra el widget real (no el repro aislado), con las cuatro combinaciones que
+antes fallaban de forma distinta — Rail/Threshold/Gradient/Sections, en
+normal/warn/crítico, barrido 270°/360°, con marcadores min/max, needle y bar
+style — el arco de valor y las bandas de referencia quedan concéntricos con
+el track en las nueve configuraciones probadas. El estilo `bar` (que no pasa
+por este código) se confirmó sin regresión.
+
+### Trabajo pendiente
+
+* **Portar el repro aislado al repo** como
+  `WIDGETS/GaugePro/dev/repro_arc_offset.lua` + un runner en
+  `tools/gaugepro-visual-kit/`, para que la próxima regresión de este tipo
+  (en Gauge Pro o en cualquier otro widget LVGL de este repo) se detecte sin
+  repetir la investigación desde cero.
+* **Aserción geométrica en el arnés** (seguía pendiente, ver Paso 3 del
+  análisis original): el arnés debe verificar que hay tinta de acento sobre
+  la banda del track proporcional al valor, no sólo capturar el PNG y marcar
+  PASS. Con el fix aplicado esto ya se cumple, pero nada en el arnés lo
+  hubiera cazado si se rompe de nuevo.
+* **Reporte upstream a EdgeTX**, con el repro aislado como adjunto: un
+  `lvgl.set()` sobre un arco o círculo ya construido lo desplaza, y el
+  desplazamiento sólo se corrige reenviando el centro sin convertir en la
+  misma llamada. El mock de pruebas de este repo (`tests/mock_env.lua`) no
+  modela ninguna semántica de conversión centro/esquina para objetos
+  redondos, así que la suite headless existente no habría cazado esto ni
+  puede servir de regresión contra el binding real — sólo una corrida contra
+  el simulador real (como la de esta verificación) lo hace.
+
+---
+
+## H-01 — El arnés ignora el `zone` declarado por cada caso — RESUELTO {#h-01}
 
 **Severidad: P0 para la validez de la tanda.**
+
+**Estado: corregido en `tools/gaugepro-visual-kit/{catalog.py,layouts.py,
+run.py,report.py,verify_dupes.py}`, verificado contra el binario real del
+simulador (no sólo lógica Python).** Las tres remediaciones que proponía este
+hallazgo están aplicadas (routing por zona real, columna "Zone (real)" en
+`CATALOG.md`, y `verify_dupes.py` conectado a `cmd_report()`). El análisis y
+el diagnóstico originales de abajo quedan como registro; el resultado de la
+verificación — incluida una precisión importante sobre qué duplicados
+desaparecen y cuáles no — está en
+[Verificación (revisión)](#h-01-verificacion) al final de la sección.
 
 `scenes.json` declara un `zone` (ancho×alto para el que el escenario fue
 diseñado) en **210 de los 222 casos**. Pero
@@ -234,7 +334,7 @@ no aparece en ninguna radio real como zona de widget salvo el layout 1×1.
 * En total, **24 PNG son byte-idénticos a los de otro caso** y los 24 figuran
   como PASS en `CATALOG.md` / `RUN_SUMMARY.md` (`262 pass, 0 warn, 0 fail`).
 
-### Remediación propuesta
+### Remediación propuesta (las tres, aplicadas)
 
 1. **Honrar `zone` en todos los casos**, no sólo en `zonas`:
 
@@ -261,6 +361,91 @@ no aparece en ninguna radio real como zona de widget salvo el layout 1×1.
    comprobación (`tools/gaugepro-visual-kit/verify_dupes.py`) pero **no está
    conectado**. Un grupo de duplicados entre casos con overrides distintos debe
    degradar el estado a `WARN` en `RUN_SUMMARY.md`, no quedarse en PASS.
+
+---
+
+## H-01 — Verificación (revisión tras corrida real) {#h-01-verificacion}
+
+### Cambios aplicados
+
+* **`catalog.py`** — `SCREEN_W, SCREEN_H` pasa de `480, 272` (el valor
+  incorrecto que también describe [H-02](#h-02)) a `800, 480`, el tamaño real
+  del simulador. `build_track1_screens` ya no restringe el enrutado por zona
+  a `section == "zonas"`: **cualquier** caso con `zone` en `scenes.json` pasa
+  por `layouts.nearest_zone(w, h, SCREEN_W, SCREEN_H)`, y el rectángulo real
+  devuelto (`(x, y, w, h)`) se guarda en el nuevo campo
+  `Track1Screen.real_rect`.
+* **`run.py`** — `_run_track1` y `_run_theme_subset` propagan
+  `layout=s.layout_id, zone_index=s.zone_index, zone_rect=s.real_rect` a cada
+  fila del `runlog`. `_run_theme_subset` tenía su **propio** bug de la misma
+  familia — construía sus escenas con `Screen("Layout1x1", [(0, ...)])`
+  a fuego, ignorando `s.layout_id`/`s.zone_index` incluso para los casos de
+  `estado`/`color` que sí declaran zona — corregido al mismo patrón que
+  Track 1.
+* **`report.py`** — nueva columna "Zone (real)" en `CATALOG.md`
+  (`_fmt_zone`), y `flag_cross_case_duplicates(rows, shots_dir)`: agrupa las
+  capturas por hash SHA-1 y degrada a `WARN` cualquier fila `PASS` cuyo grupo
+  de duplicados contenga **más de un `name` de caso distinto** (un duplicado
+  entre capturas del mismo caso bajo temas distintos, H-03, se deja como
+  está — es lo esperado). `run.py cmd_report()` la invoca antes de escribir
+  los tres artefactos, así que tanto `CATALOG.md` como los conteos de
+  `RUN_SUMMARY.md` reflejan la degradación.
+* **`verify_dupes.py`** — refactorizado para exponer
+  `find_duplicate_groups(shots_dir)` como función reutilizable (antes sólo
+  tenía un `main()` de CLI); `report.py` la importa.
+
+### Verificación contra el simulador real
+
+`build_track1_screens` sobre el `scenes.json`/`defs.json` reales: los 206
+casos no-skipped que declaran zona (eran 210 sobre 222 totales; los otros 4
+están en `SKIPPED_CASES`) pasan ahora por `nearest_zone` con el tamaño de
+pantalla correcto — cero casos caen ya en el fallback fullscreen sin zona
+declarada.
+
+Corrida real (vía `SimuDriver`, el mismo driver que usa `run.py`) de diez
+casos que antes eran duplicados byte-idénticos, incluyendo los que cita el
+hallazgo original:
+
+| Caso | Zona pedida | Zona real asignada | Resultado |
+|---|---|---|---|
+| `br-tall` | 100×220 | `Layout2P1 z1` → 400×240 | **distinto** de los demás (antes idéntico a `br-normal`) |
+| `tx-prec2-micro` | 60×60 | `Layout1P4 z1` → 400×120 | **distinto** de todos (antes idéntico al resto a 800×480) |
+| `f4-ticks-compact` | 160×44 | `Layout1P4 z1` → 400×120 | **distinto** de todos |
+| `br-narrow` / `br-short` / `br-crit` | 300×44 / 160×44 / 300×70 | los tres → `Layout1P4 z1` (400×120) | **siguen idénticos entre sí** |
+| `br-normal` / `br-medium` / `br-end-round` | 300×70 / 320×90 / 320×90 | los tres → `Layout1P4 z1` (400×120) | **siguen idénticos entre sí** |
+
+El primer grupo de "siguen idénticos" **no es un fallo del enrutado**: los
+tres casos comparten exactamente el mismo Min/Max/Warn/Crit (fueron
+diseñados para probar un mismo valor crítico a tres anchos distintos) y
+**no existe ninguna zona real más pequeña que 400×120 a 800×480** — el
+catálogo `ZMAP` de EdgeTX no baja de ahí a esta resolución. Es la limitación
+que ya describe [H-02](#h-02) ("ningún caso baja de 400×120"), no algo que el
+enrutado de H-01 pueda resolver por sí solo: el enrutado ahora es *correcto*
+(manda cada caso a la zona real más cercana), sólo que la zona real más
+cercana sigue siendo la misma para varios objetivos pequeños distintos.
+
+El segundo grupo ("br-normal/br-medium/br-end-round") es el hallazgo ya
+catalogado en [H-03](#h-03) punto 3 (casos cuyo único override es el propio
+valor por defecto de la opción) — confirmado sin cambios, no relacionado con
+la zona.
+
+**Con `flag_cross_case_duplicates` conectado**, estos dos grupos residuales
+pasarán a `WARN` en la próxima corrida completa (`python run.py all`) en vez
+de `PASS` silencioso, con la razón anotada en `RUN_SUMMARY.md` — que es
+exactamente el comportamiento que pedía la remediación #3: ya no hace falta
+leer duplicados "a ojo" para notar que un grupo de casos no se está
+diferenciando.
+
+### Trabajo pendiente
+
+* **Corrida completa** (`python run.py all`, ~262 capturas) para regenerar
+  `CATALOG.md`/`INDEX.md`/`RUN_SUMMARY.md`/`screenshots/` con el fix — esta
+  verificación usó un `sdcard` de scratch y una selección de 10 casos, no la
+  tanda oficial. Los artefactos publicados en este directorio siguen siendo
+  los de la corrida anterior (pre-fix) hasta la próxima ejecución real.
+* Los duplicados residuales de la tabla de arriba no se resuelven solos con
+  H-01; requieren [H-02](#h-02) (una lista de tamaños objetivo para `zonas`
+  que sean alcanzables a 800×480) para reducirse más.
 
 ---
 
@@ -629,7 +814,19 @@ L.needleOuter = L.radius - floor(L.trackThickness / 2) - T.px(1)
 
 ## H-02 — `nearest_zone()` calcula sobre 480×272 y el simulador es 800×480 {#h-02}
 
-**Severidad: P2.**
+**Severidad: P2 — parcialmente resuelto como efecto colateral de [H-01](#h-01-verificacion).**
+El fix de H-01 cambió `catalog.py`'s `SCREEN_W, SCREEN_H` de `480, 272` a
+`800, 480` y lo pasa explícitamente a **todas** las llamadas a
+`layouts.nearest_zone()`, incluida la de la sección `zonas` (que antes de
+H-01 era la única que llamaba a esta función, y lo hacía sin pasar el
+tamaño, cayendo en el default incorrecto de `layouts.py`). Eso corrige el
+bug técnico que describe esta sección. Lo que **sigue sin resolver** es la
+observación de fondo: a 800×480 el catálogo `ZMAP` de EdgeTX no tiene
+ninguna zona real por debajo de 400×120, así que los objetivos pequeños de
+la sección `zonas` (60×60 … 128×96) y de varios casos de `barra`/`caras4`
+siguen sin ser alcanzables — confirmado en la verificación de H-01. Los
+puntos 1 y 2 de la remediación de abajo están aplicados; el punto 3 (revisar
+la lista de objetivos de `zonas`) sigue abierto.
 
 [layouts.py:83](../../../../tools/gaugepro-visual-kit/layouts.py#L83) declara
 `def nearest_zone(target_w, target_h, screen_w=480, screen_h=272)` y

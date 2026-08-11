@@ -233,7 +233,9 @@ def _run_track1(driver, defs, batches, runlog, file_counter, seq_start=1):
             status = "PASS" if ok else "FAIL"
             runlog.add(seq=seq, name=s.name, section=s.section, file=fname,
                        status=status, ms=int((time.time() - t0) * 1000),
-                       overrides={k: v for k, v in s.overrides.items()})
+                       overrides={k: v for k, v in s.overrides.items()},
+                       layout=s.layout_id, zone_index=s.zone_index,
+                       zone_rect=list(s.real_rect) if s.real_rect else None)
             print(("  [%s] %03d %-10s %s" % (status, seq, s.section, s.name)))
             seq += 1
             if i < len(batch) - 1:
@@ -301,7 +303,14 @@ def _run_theme_subset(driver, defs, t1_screens, gallery, runlog, file_counter, s
         # cases) needs 2+ model files, same constraint as Track 1's batches.
         for chunk_start in range(0, len(t1_screens), MAX_CUSTOM_SCREENS):
             chunk = t1_screens[chunk_start:chunk_start + MAX_CUSTOM_SCREENS]
-            model_screens = [Screen("Layout1x1", [(0, s.overrides)]) for s in chunk]
+            # Honor each case's own (layout_id, zone_index) instead of a
+            # hardcoded fullscreen Layout1x1 -- same H-01 fix as
+            # _run_track1's model_screens: t1_screens carries the estado/
+            # color cases, which declare a zone like every other Track 1
+            # case, and there is no reason the theme comparison should be
+            # the one place that still ignores it.
+            model_screens = [Screen(s.layout_id, [(s.zone_index, s.overrides)])
+                              for s in chunk]
             m1_name = "GPVKTh%s1%d" % (code, chunk_start // MAX_CUSTOM_SCREENS)
             m1_file = "model%d.yml" % next(file_counter)
             driver.stop()
@@ -316,7 +325,9 @@ def _run_theme_subset(driver, defs, t1_screens, gallery, runlog, file_counter, s
                 ok = driver.capture(out, settle_s=1.5 if i == 0 else 0.5)
                 status = "PASS" if ok else "FAIL"
                 runlog.add(seq=seq, name=s.name, section="themes", file=fname,
-                           status=status, theme=theme, title="%s [%s]" % (s.name, theme))
+                           status=status, theme=theme, title="%s [%s]" % (s.name, theme),
+                           layout=s.layout_id, zone_index=s.zone_index,
+                           zone_rect=list(s.real_rect) if s.real_rect else None)
                 print("  [%s] theme=%s %s" % (status, theme, s.name))
                 seq += 1
                 if i < len(chunk) - 1:
@@ -401,8 +412,15 @@ def cmd_capture(args, defs, batches, t2):
 
 
 def cmd_report():
-    from report import load_runlog, write_catalog_md, write_index_md, write_run_summary
+    from report import (load_runlog, write_catalog_md, write_index_md,
+                         write_run_summary, flag_cross_case_duplicates)
     rows = load_runlog(RUNLOG_PATH)
+    # H-01 remediation #3: downgrade PASS -> WARN in-memory, BEFORE any of
+    # the three files below are written, so CATALOG.md's per-row status and
+    # RUN_SUMMARY.md's counts both reflect it -- a duplicate group across
+    # different cases is not something a rerun of just the writers should be
+    # able to silently miss again.
+    flag_cross_case_duplicates(rows, SHOTS_DIR)
     os.makedirs(DOCS_DIR, exist_ok=True)
     write_catalog_md(os.path.join(DOCS_DIR, "CATALOG.md"), rows, SKIPPED_CASES)
     write_index_md(os.path.join(DOCS_DIR, "INDEX.md"), rows)

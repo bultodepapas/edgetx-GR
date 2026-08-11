@@ -8,6 +8,8 @@ import json
 import os
 import time
 
+from verify_dupes import find_duplicate_groups
+
 
 def load_runlog(path):
     rows = []
@@ -17,6 +19,22 @@ def load_runlog(path):
             if line:
                 rows.append(json.loads(line))
     return rows
+
+
+def _fmt_zone(row):
+    """The REAL (LayoutId, zone_index) -> WxH px a screen rendered into, when
+    known -- docs/visual-kit/INFORME-DEFECTOS.md H-01: CATALOG.md used to say
+    nothing about the zone a screen was captured at, which is exactly the
+    fact that would have caught the harness ignoring every case's declared
+    `zone` and rendering fullscreen instead."""
+    rect = row.get("zone_rect")
+    if not rect:
+        return ""
+    _x, _y, w, h = rect
+    layout = row.get("layout") or ""
+    zi = row.get("zone_index")
+    zi_s = ("z%d" % zi) if zi is not None else ""
+    return "%dx%d (%s %s)" % (w, h, layout, zi_s)
 
 
 def _fmt_overrides(overrides):
@@ -32,6 +50,33 @@ def _fmt_overrides(overrides):
             continue
         parts.append("%s=%s" % (k, v))
     return ", ".join(parts)
+
+
+def flag_cross_case_duplicates(rows, shots_dir):
+    """Downgrades PASS -> WARN in place for any row whose screenshot is
+    byte-identical to a DIFFERENT case's screenshot.
+
+    docs/visual-kit/INFORME-DEFECTOS.md H-01 remediation #3: a duplicate
+    across cases with different names is either the batch-boundary reset
+    race verify_dupes.py's docstring describes, or (the class this was
+    actually catching before it was wired in here) the harness silently
+    defeating the point of one or both cases -- e.g. four different bar
+    cases rendering at the same wrong fullscreen size instead of their own
+    declared zone. Either way that is not a PASS. A duplicate group where
+    every screenshot belongs to the SAME case (a theme capture identical to
+    its stock baseline, H-03) is left alone -- expected, not a defect."""
+    groups = find_duplicate_groups(shots_dir)
+    by_file = {r["file"]: r for r in rows if r.get("file")}
+    for files in groups.values():
+        present = [by_file[f] for f in files if f in by_file]
+        if len({r["name"] for r in present}) <= 1:
+            continue
+        for r in present:
+            if r.get("status") != "PASS":
+                continue
+            r["status"] = "WARN"
+            r["warn_reason"] = "byte-identical to %s" % ", ".join(
+                f for f in files if f != r["file"])
 
 
 def write_catalog_md(path, rows, skipped):
@@ -51,16 +96,17 @@ def write_catalog_md(path, rows, skipped):
     for section, items in sections.items():
         lines.append("## %s" % section)
         lines.append("")
-        lines.append("| # | Case | Status | Options (non-default) | Screenshot |")
-        lines.append("|---:|---|---|---|---|")
+        lines.append("| # | Case | Status | Options (non-default) | Zone (real) | Screenshot |")
+        lines.append("|---:|---|---|---|---|---|")
         for r in items:
             seq = r.get("seq")
             seq_s = ("%03d" % seq) if seq is not None else ""
             opts = _fmt_overrides(r.get("overrides") or {})
+            zone = _fmt_zone(r)
             title = r.get("title") or r["name"]
             img = ("[%s](screenshots/%s)" % (r["file"], r["file"])) if r.get("file") else ""
-            lines.append("| %s | %s | %s | %s | %s |"
-                          % (seq_s, title, r["status"], opts, img))
+            lines.append("| %s | %s | %s | %s | %s | %s |"
+                          % (seq_s, title, r["status"], opts, zone, img))
         lines.append("")
 
     if skipped:
@@ -133,6 +179,15 @@ def write_run_summary(path, rows, simu_build=""):
             if r.get("status") == "FAIL":
                 lines.append("- %s (%s): %s" % (r["name"], r.get("section", ""),
                                                  r.get("error", "capture failed")))
+        lines.append("")
+
+    if warned:
+        lines.append("## Warnings")
+        lines.append("")
+        for r in rows:
+            if r.get("status") == "WARN":
+                lines.append("- %s (%s): %s" % (r["name"], r.get("section", ""),
+                                                 r.get("warn_reason", "")))
         lines.append("")
 
     with open(path, "w", encoding="utf-8") as f:
