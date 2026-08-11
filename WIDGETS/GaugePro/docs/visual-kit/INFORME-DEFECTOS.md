@@ -26,7 +26,7 @@ Clasificación:
 |---|---|---|---|
 | [F-01](#f-01) | **P0 — RESUELTO** | Cualquier `lvgl.set()` sobre un arco/círculo ya construido lo desplaza (defecto del binding LVGL, no de Gauge Pro) | Corregido en `renderer.lua` reenviando el centro en cada `lvgl.set`; verificado en 9 configuraciones reales |
 | [H-01](#h-01) | **P0 — RESUELTO** | El arnés ignoraba el `zone` declarado por cada caso: 210 de 222 casos se renderizaban a pantalla completa | Corregido: routing por zona real + columna "Zone (real)" en CATALOG.md + `verify_dupes.py` conectado (degrada a WARN); verificado contra el simulador real |
-| [W-01](#w-01) | **P1** | Los ticks de escala se dibujan a un radio muy superior al del anillo, en un hueco vacío | Ticks "flotando" desconectados del dial; en zonas reales se salen de la zona y pisan al widget vecino |
+| [W-01](#w-01) | **P1 — RESUELTO** | Los ticks de escala se dibujaban a un radio muy superior al del anillo, en un hueco vacío | `layout.lua` reserva la banda exterior sólo en Rail/Sections; los modos sin banda vuelven a pegar sus ticks al track y no invaden la zona vecina |
 | [W-02](#w-02) | **P1** | El píldora de estado (WARN/CRIT) se recorta contra el borde inferior de la zona | Badge cortado por la mitad en layouts anchos |
 | [W-03](#w-03) | **P1** | La cara `continuous` pinta el track inactivo a opacidad plena (las caras segmentadas no) | El tramo vacío compite (o gana) al tramo lleno; en CRIT el vacío es lo más brillante de la barra |
 | [W-06](#w-06) | **P1** | `BarOrigin = Zero` sólo dibuja la marca de cero: el relleno sigue naciendo en el extremo bajo de la escala | La opción parece funcionar (aparece la marca) pero no cambia lo que mide la barra, en 4 de las 5 caras |
@@ -509,9 +509,27 @@ son ruido esperado y no repita esta misma investigación.
 
 ---
 
-## W-01 — Los ticks de escala se dibujan muy por fuera del anillo {#w-01}
+## W-01 — Los ticks de escala se dibujaban muy por fuera del anillo — RESUELTO {#w-01}
 
-**Severidad: P1.**
+**Severidad: P1 — corregido en `layout.lua` y verificado con el simulador real de EdgeTX.**
+
+### Revisión 2026-08-10 — confirmación, arreglo y verificación
+
+W-01 **seguía siendo un defecto** en la segunda tanda: Static, Threshold y Gradient no dibujan banda de referencia pero mantenían su hueco. El cálculo de `outerReserve`, `railOut` y `railRadius` descontaba `railThickness + railGap` incondicionalmente.
+
+El arreglo introduce `L.hasReferenceBand`: sólo Rail (3) y Sections (5) reservan esa franja. El mismo `referenceBandReserve` gobierna tanto el radio del dial como la contención y la posición de los ticks.
+
+Medición sobre los PNG regenerados, a lo largo del radio vertical superior del dial 400×160 (centro `(480,80)`):
+
+| Caso | Tinta de tick | Banda exterior / track | Resultado |
+|---|---|---|---|
+| Static (`005`) | y=9…12 | track y=21…31 | sólo el `tickGap` intencional (8 filas rasterizadas), frente al hueco de ~15 px anterior |
+| Threshold (`007`) | y=9…12 | track y=21…31 | igual que Static |
+| Gradient (`011`) | y=9…12 | track y=21…31 | igual que Static |
+| Rail (`009`) | y=9…12 | banda y=16…18, track y=25…35 | conserva la separación necesaria para la banda pintada |
+| Sections (`013`) | y=9…12 | banda y=16…18, track y=25…35 | conserva la separación necesaria para la banda pintada |
+
+En la captura regenerada de `L05_layout2p3_dial_vs_bar.png`, el píxel superior de tick del dial inferior izquierdo es ahora **y=252**, dentro de su zona `y=240…479`; el caso histórico que alcanzaba y=247 y pisaba la zona superior ya no se reproduce. La regresión `W-01` en `tests/smoke_test.lua` comprueba los tres modos sin banda, los dos con banda y la contención en todos ellos.
 
 ### Evidencia
 
@@ -544,30 +562,23 @@ inferior izquierdo tiene los ticks a r≈101…119 con el borde exterior del ani
 en r≈90 — y el tick superior cae en **y=247**, dentro de los 240 px de la zona
 de arriba: **pisa el widget vecino**.
 
-### Remediación propuesta
+### Remediación aplicada
 
 En [layout.lua:502-505](../../layout.lua#L502), reservar el anillo de rail sólo
 cuando se va a usar, y acercar los ticks al anillo:
 
 ```lua
--- El hueco de la banda de rail sólo existe si hay banda que dibujar; en los
--- modos sin banda los ticks se pegan al anillo en lugar de quedar flotando a
--- 15 px de él (INFORME-DEFECTOS.md W-01).
-local hasBand = (cfg.colorMode == M.COLOR_RAIL)
-             or (cfg.colorMode == M.COLOR_SECTIONS)
-L.railRadius = L.radius + floor(L.trackThickness / 2)
-             + (hasBand and (L.railThickness + L.railGap) or 0)
+local hasBand = cfg.colorMode == M.COLOR_RAIL
+             or cfg.colorMode == M.COLOR_SECTIONS
+local referenceBandReserve = hasBand
+  and (L.railThickness + L.railGap) or 0
+local outerReserve = floor(L.trackThickness / 2) + referenceBandReserve
+  + tickGap + tickLength + 1
+L.railRadius = L.radius + floor(L.trackThickness / 2) + referenceBandReserve
 L.tickInner  = L.railRadius + tickGap
 ```
 
-Ojo: `outerReserve` ([layout.lua:462](../../layout.lua#L462)) usa el mismo
-presupuesto para *elegir* el radio, así que debe consultar el mismo `hasBand`;
-si no, el dial se encoge para reservar sitio que ya no usa. Conviene extraer
-`hasBand` **antes** del cálculo de `outerReserve` y usarlo en los dos sitios.
-
-Verificación: los ticks deben quedar en `[radius + trackThickness/2 + gap,
-+ tickLength]` y `L.tickOuter <= edgeReach` debe seguir cumpliéndose (la
-aserción de contención de [layout.lua:492](../../layout.lua#L492) ya existe).
+`railOut` usa el mismo `referenceBandReserve` durante la contención. Así los ticks de los modos sin banda quedan en `[radius + trackThickness/2 + tickGap, + tickLength]`, mientras que `L.tickOuter <= edgeReach` sigue cubierto por la regresión.
 
 ---
 

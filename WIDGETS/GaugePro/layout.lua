@@ -29,6 +29,7 @@ end
 
 M.STYLE_AUTO, M.STYLE_NEEDLE, M.STYLE_ARC, M.STYLE_BAR = 1, 2, 3, 4
 M.SWEEP_270, M.SWEEP_180, M.SWEEP_360 = 1, 2, 3
+M.COLOR_RAIL, M.COLOR_SECTIONS = 3, 5
 
 -- Sweep option -> { startAngle, sweep }. LVGL angles: 0 = 3 o'clock, clockwise.
 local SWEEPS = {
@@ -459,7 +460,17 @@ local function dialLayout(widget, cfg, L, w, h)
   -- three ticks from the rail and leaves their endpoints inside the zone;
   -- larger faces keep the full xs rhythm.
   local tickGap = (mode == "micro") and T.px(1) or T.px(T.space.xs)
-  local outerReserve = floor(L.trackThickness / 2) + L.railThickness
+  -- Only Rail and Sections actually paint a reference band outside the track.
+  -- Reserving that band in Static, Threshold and Gradient left a visibly empty
+  -- annulus between the dial and its scale ticks (INFORME-DEFECTOS.md W-01).
+  -- Keep this fact here, before every radial budget is derived, so the dial
+  -- grows into the released room instead of merely moving the ticks outward.
+  L.hasReferenceBand = cfg.colorMode == M.COLOR_RAIL
+    or cfg.colorMode == M.COLOR_SECTIONS
+  L.railGap = T.px(1)
+  local referenceBandReserve = L.hasReferenceBand
+    and (L.railThickness + L.railGap) or 0
+  local outerReserve = floor(L.trackThickness / 2) + referenceBandReserve
     + tickGap + tickLength + 1
   local half = floor(min(dial.w, dial.h) / 2)
   L.radius = max(half - outerReserve, T.px(8))
@@ -467,8 +478,6 @@ local function dialLayout(widget, cfg, L, w, h)
   -- the value is critical both layers are red at adjacent radii, and touching
   -- them read as one bevelled blob (review P-E). The 1 px band gap keeps the
   -- red->amber transition a clean range boundary.
-  L.railGap = T.px(1)
-
   -- CONTAINMENT. `radius` above has a px(8) FLOOR, so in a zone smaller than
   -- the ring's own outer furniture the subtraction goes negative, the floor
   -- wins, and everything derived from the radius is then pushed OUTSIDE the
@@ -488,7 +497,7 @@ local function dialLayout(widget, cfg, L, w, h)
   -- from the dial centre to the nearest zone edge - the real budget, which
   -- the dial BOX alone does not capture once the box has been centred.
   local edgeReach = min(L.cx, L.cy, w - L.cx, h - L.cy) - 1
-  local railOut = floor(L.trackThickness / 2) + L.railThickness + L.railGap
+  local railOut = floor(L.trackThickness / 2) + referenceBandReserve
   if L.radius + railOut + tickGap + tickLength > edgeReach then
     local r = edgeReach - railOut - tickGap - tickLength
     if r >= T.px(8) then
@@ -499,8 +508,8 @@ local function dialLayout(widget, cfg, L, w, h)
     end
   end
 
-  L.railRadius = L.radius + floor(L.trackThickness / 2) + L.railThickness
-    + L.railGap
+  L.railRadius = L.radius + floor(L.trackThickness / 2)
+    + referenceBandReserve
   L.tickInner = L.railRadius + tickGap
   L.tickOuter = L.tickInner + tickLength
   -- Radial span of the min/max history marks. LAYOUT data, like the bar's

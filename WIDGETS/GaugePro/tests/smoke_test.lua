@@ -4266,6 +4266,46 @@ test("R-1b: the catalogue zones are untouched by the containment clamp",
     end
   end)
 
+test("W-01: ticks reserve a reference band only when one is rendered",
+  function()
+    -- Static, Threshold and Gradient have no outer reference band. Their
+    -- ticks must start after the track's outer edge plus the intentional tick
+    -- gap, not after an invisible Rail/Sections band. Rail and Sections keep
+    -- that band and therefore their existing separation.
+    local zone = { x = 0, y = 0, w = 400, h = 160 }
+    local noBand = {}
+    for _, mode in ipairs({ "Static", "Threshold", "Gradient" }) do
+      local w = newWidget(zone, { Source = ID_RSSI, Style = "Needle",
+                                  ColorMode = mode })
+      local L = w.layout
+      local tickGap = w.mods.theme.px(w.mods.theme.space.xs)
+      assertEq(L.hasReferenceBand, false, mode .. " has no reference band")
+      assertEq(L.railRadius, L.radius + math.floor(L.trackThickness / 2),
+        mode .. " rail radius ends at the track")
+      assertEq(L.tickInner, L.railRadius + tickGap,
+        mode .. " ticks follow the track by only tickGap")
+      assertTrue(L.tickOuter <= math.min(L.cx, L.cy),
+        mode .. " ticks remain contained")
+      noBand[#noBand + 1] = L
+    end
+    assertEq(noBand[1].radius, noBand[2].radius,
+      "all no-band modes share the released radial budget")
+    assertEq(noBand[2].radius, noBand[3].radius,
+      "all no-band modes share the released radial budget")
+
+    for _, mode in ipairs({ "Rail", "Sections" }) do
+      local w = newWidget(zone, { Source = ID_RSSI, Style = "Needle",
+                                  ColorMode = mode })
+      local L = w.layout
+      assertEq(L.hasReferenceBand, true, mode .. " paints a reference band")
+      assertEq(L.railRadius, L.radius + math.floor(L.trackThickness / 2)
+        + L.railThickness + L.railGap,
+        mode .. " retains its painted band clearance")
+      assertTrue(L.tickOuter <= math.min(L.cx, L.cy),
+        mode .. " ticks remain contained")
+    end
+  end)
+
 test("R-2: a non-finite reading is refused, never rendered", function()
   -- NaN and +-inf are contagious: geometry.normalize maps NaN to NaN (neither
   -- comparison in clamp() is true), smoothing.step turns +-inf into NaN on
