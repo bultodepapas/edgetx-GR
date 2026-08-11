@@ -1,5 +1,8 @@
 # Gauge Pro — Research Notes
 
+> **Histórico pre-split:** conserve estos hallazgos como contexto de firmware. Para el contrato
+> actual de frentes/core, consulte [`../DOCUMENTATION.md`](../DOCUMENTATION.md).
+
 Findings from the web/ecosystem investigations that shaped the widget, with the
 firmware-verified facts behind each improvement (2026-08-04).
 

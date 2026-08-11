@@ -143,6 +143,6 @@ end
 -- Its only caller was renderer.needleReach, which shortened the needle so it
 -- would not be drawn through the state chip - work the paint order already
 -- does, since the chip is opaque and created after the needle. Both went
--- together; see the comment above updateArc in renderer.lua.
+-- together; see the comment above updateArc in dial_renderer.lua.
 
 return M

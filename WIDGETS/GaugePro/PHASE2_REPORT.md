@@ -1,5 +1,8 @@
 # Gauge Pro Bar v2 — Phase 2 report
 
+> **Histórico:** evidencia pre-split de Bar, hoy `GaugeBarPro`/`BarPro`. Consulte
+> [`DOCUMENTATION.md`](DOCUMENTATION.md) para la arquitectura vigente.
+
 **Completed:** 2026-08-09  
 **Scope:** Perfect the flagship horizontal Continuous default without pulling
 the Phase 3 gradient renderer, Phase 4 faces, Phase 5 axis/origin work, or Phase

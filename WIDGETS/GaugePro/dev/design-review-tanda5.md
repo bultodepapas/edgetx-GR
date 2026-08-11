@@ -1,5 +1,8 @@
 # GaugePro — Respuesta al 2.º informe del diseñador (modo-Rail-crit)
 
+> **Histórico pre-split:** se conserva como evidencia visual. Consulte
+> [`../DOCUMENTATION.md`](../DOCUMENTATION.md) para la estructura vigente.
+
 **Revisor:** diseñador gráfico (2.º informe, 5 de agosto de 2026, medidas sobre la
 captura `mode-Rail-crit-v2.svg` a 300×240).
 **Preparado por:** desarrollo de GaugePro.

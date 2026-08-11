@@ -215,7 +215,10 @@ test("Phase 2: Classic resolves to the retained Precision Rail anatomy", functio
   for _, obj in ipairs(mock.objects()) do
     if obj.visible ~= false then visible = visible + 1 end
   end
-  assertEq(visible, 16, "Precision Rail visible-object anatomy")
+  -- The normal-state census is 14 visible / 17 retained. The quiet status
+  -- pill stays retained but hidden, as does geometry whose live state has no
+  -- value to show; dev/census.lua is the reproducible source for this scene.
+  assertEq(visible, 14, "Precision Rail visible-object anatomy")
 end)
 
 test("Phase 1: resolving visuals never mutates the stored option table", function()

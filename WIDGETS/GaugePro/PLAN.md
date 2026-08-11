@@ -1,5 +1,8 @@
 # EdgeTX Gauge Pro — Reality-Adjusted Development Plan
 
+> **Histórico:** este plan describe el GaugePro monolítico anterior al split. Para nombres,
+> instalación y arquitectura vigentes, consulte [`DOCUMENTATION.md`](DOCUMENTATION.md).
+
 **Document version:** 0.3 (supersedes design draft 0.2)
 **Status:** Senior-dev plan validated against the local repo (`bultodepapas/edgetx-GR`)
 **Target:** Gauge Pro prototype 0.1 — Lua LVGL widget

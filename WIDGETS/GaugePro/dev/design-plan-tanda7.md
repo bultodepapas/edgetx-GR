@@ -1,5 +1,8 @@
 # GaugePro — Tanda 7 design plan: three changes
 
+> **Historical pre-split plan:** its results feed the shared core and family renderers, but it does
+> not define current packaging. See [`../DOCUMENTATION.md`](../DOCUMENTATION.md).
+
 **Author role:** senior developer, final production review pass.
 **Baseline:** `feat/gauge-v2`, working tree after the Tanda 7 robustness fixes
 (38 unit + 128 lifecycle + 18 collision zones + 77 gallery scenes green,

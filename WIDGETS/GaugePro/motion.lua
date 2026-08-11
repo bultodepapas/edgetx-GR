@@ -247,7 +247,7 @@ segmentedFace = function(widget)
     or name == "ticks" or name == "steps"
 end
 
-local function segmentMotion(widget, state, m, effect, now, allowTrigger)
+local function segmentMotion(_widget, state, m, effect, now, allowTrigger)
   state.settleIndex, state.settleLevel = nil, 0
   if effect.settleTicks <= 0 or not state.valid or not m.settleAllowed then
     m.settleIndex = false

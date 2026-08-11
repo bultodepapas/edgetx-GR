@@ -3,6 +3,7 @@
 Usage (from tools/gaugepro-visual-kit, matching this repo's other tools/*.py
 invocation style):
   python run.py all
+  python run.py check        # split contracts + generated YAML, no simu
   python run.py generate     # defs+scenes dump, catalog build, model YAML only
   python run.py capture      # boot simu, drive the already-generated batch
 """
@@ -11,6 +12,8 @@ import argparse
 import itertools
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import time
@@ -18,19 +21,22 @@ import time
 from defs import Defs
 from catalog import (load_scenes, build_track1_screens, batch_by_section,
                       build_track2_screens, SKIPPED_CASES)
-from modelgen import Screen, write_model, MAX_CUSTOM_SCREENS
+from modelgen import Screen, render_model, write_model, MAX_CUSTOM_SCREENS
 from driver import SimuDriver, CaptureTimeout
 
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(TOOL_DIR, "..", ".."))
-WIDGET_DIR = os.path.join(REPO_ROOT, "WIDGETS", "GaugePro")
-RUN_DIR = os.path.join(WIDGET_DIR, "dev", "visual-kit-run")
+CORE_SOURCE_DIR = os.path.join(REPO_ROOT, "WIDGETS", "GaugePro")
+DIAL_SOURCE_DIR = os.path.join(REPO_ROOT, "WIDGETS", "GaugeDialPro")
+BAR_SOURCE_DIR = os.path.join(REPO_ROOT, "WIDGETS", "GaugeBarPro")
+RUN_DIR = os.path.join(CORE_SOURCE_DIR, "dev", "visual-kit-run")
 SD_DIR = os.path.join(RUN_DIR, "sdcard")
 PIPE_PATH = os.path.join(RUN_DIR, "pipe.txt")
 LOG_PATH = os.path.join(RUN_DIR, "simu.log")
 RUNLOG_PATH = os.path.join(RUN_DIR, "run.log.jsonl")
+RUNLOG_SCHEMA = 2  # split frontends; schema 1 rows belong to GaugePro legacy
 
-DOCS_DIR = os.path.join(WIDGET_DIR, "docs", "visual-kit")
+DOCS_DIR = os.path.join(CORE_SOURCE_DIR, "docs", "visual-kit")
 SHOTS_DIR = os.path.join(DOCS_DIR, "screenshots")
 
 SIMU_EXE = os.path.join(REPO_ROOT, "build", "simu", "simu.exe")
@@ -42,10 +48,11 @@ THEME_STOCK_NAME = "EdgeTX Default"
 THEMES = ["stock", "GaugeProLab Light", "GaugeProLab Dark"]
 THEME_SECTIONS = {"estado", "color"}
 
-GAUGEPRO_FILES = [
-    "main.lua", "app.lua", "options.lua", "theme.lua", "geometry.lua",
+CORE_FILES = [
+    "app.lua", "options.lua", "theme.lua", "geometry.lua",
     "ranges.lua", "presets.lua", "format.lua", "smoothing.lua",
-    "motion.lua", "telemetry.lua", "layout.lua", "renderer.lua",
+    "motion.lua", "telemetry.lua", "layout_common.lua", "ui_core.lua",
+    "dial_layout.lua", "dial_renderer.lua", "bar_layout.lua",
     "bar_style.lua", "bar_faces.lua", "bar.lua", "alerts.lua",
 ]
 
@@ -58,9 +65,35 @@ def _copy(src, dst):
 
 
 def seed_sdcard():
-    for name in GAUGEPRO_FILES:
-        _copy(os.path.join(WIDGET_DIR, name),
-              os.path.join(SD_DIR, "WIDGETS", "GaugePro", name))
+    # RUN_DIR is tool-owned disposable state. Remove only the obsolete legacy
+    # frontend so the simulator exposes the same two widgets as a fresh
+    # default package; never apply this cleanup to a user-supplied SD card.
+    legacy_dir = os.path.abspath(os.path.join(SD_DIR, "WIDGETS", "GaugePro"))
+    widgets_root = os.path.abspath(os.path.join(SD_DIR, "WIDGETS"))
+    if os.path.commonpath([legacy_dir, widgets_root]) != widgets_root:
+        raise RuntimeError("refusing unsafe visual-kit legacy cleanup")
+    if os.path.isdir(legacy_dir):
+        shutil.rmtree(legacy_dir)
+
+    runtime_targets = [
+        os.path.join(SD_DIR, "SCRIPTS", "TOOLS", "GaugeCore"),
+        os.path.join(SD_DIR, "WIDGETS", "GaugeDialPro"),
+        os.path.join(SD_DIR, "WIDGETS", "GaugeBarPro"),
+    ]
+    for target in runtime_targets:
+        os.makedirs(target, exist_ok=True)
+        for name in os.listdir(target):
+            path = os.path.join(target, name)
+            if name.lower().endswith(".luac") and os.path.isfile(path):
+                os.remove(path)
+
+    for name in CORE_FILES:
+        _copy(os.path.join(CORE_SOURCE_DIR, name),
+              os.path.join(SD_DIR, "SCRIPTS", "TOOLS", "GaugeCore", name))
+    _copy(os.path.join(DIAL_SOURCE_DIR, "main.lua"),
+          os.path.join(SD_DIR, "WIDGETS", "GaugeDialPro", "main.lua"))
+    _copy(os.path.join(BAR_SOURCE_DIR, "main.lua"),
+          os.path.join(SD_DIR, "WIDGETS", "GaugeBarPro", "main.lua"))
     _copy(os.path.join(TOOL_DIR, "sd_extra", "WIDGETS", "TeleInject", "main.lua"),
           os.path.join(SD_DIR, "WIDGETS", "TeleInject", "main.lua"))
     _copy(os.path.join(TOOL_DIR, "sd_extra", "SCRIPTS", "gpvk_telemetry.lua"),
@@ -71,6 +104,19 @@ def seed_themes():
     for name in ("GaugeProLab Light", "GaugeProLab Dark"):
         _copy(os.path.join(TOOL_DIR, "themes", name, "theme.yml"),
               os.path.join(SD_DIR, "THEMES", name, "theme.yml"))
+
+
+def clear_generated_models():
+    """Remove only model<digits>.yml from the tool-owned scratch SD tree."""
+    models_dir = os.path.abspath(os.path.join(SD_DIR, "MODELS"))
+    if os.path.commonpath([models_dir, os.path.abspath(RUN_DIR)]) != os.path.abspath(RUN_DIR):
+        raise RuntimeError("refusing unsafe visual-kit model cleanup")
+    os.makedirs(models_dir, exist_ok=True)
+    for name in os.listdir(models_dir):
+        if re.fullmatch(r"model\d+\.yml", name, flags=re.IGNORECASE):
+            path = os.path.join(models_dir, name)
+            if os.path.isfile(path):
+                os.remove(path)
 
 
 def _patch_radio_fields(string_fields):
@@ -136,9 +182,11 @@ def dump_defs_and_scenes(lua_exe="lua"):
     defs_json = os.path.join(TOOL_DIR, "defs.json")
     scenes_json = os.path.join(TOOL_DIR, "scenes.json")
     subprocess.run([lua_exe, os.path.join(TOOL_DIR, "defs_dump.lua"),
-                     WIDGET_DIR + os.sep, defs_json], check=True, cwd=WIDGET_DIR)
+                     CORE_SOURCE_DIR + os.sep, REPO_ROOT + os.sep, defs_json],
+                   check=True, cwd=CORE_SOURCE_DIR)
     subprocess.run([lua_exe, os.path.join(TOOL_DIR, "scenes_dump.lua"),
-                     WIDGET_DIR + os.sep, scenes_json], check=True, cwd=WIDGET_DIR)
+                     CORE_SOURCE_DIR + os.sep, scenes_json],
+                   check=True, cwd=CORE_SOURCE_DIR)
     return defs_json, scenes_json
 
 
@@ -152,7 +200,9 @@ class RunLog:
                 for line in f:
                     line = line.strip()
                     if line:
-                        self.rows.append(json.loads(line))
+                        row = json.loads(line)
+                        if row.get("schema") == RUNLOG_SCHEMA:
+                            self.rows.append(row)
 
     def drop_sections(self, sections):
         """Remove prior rows for `sections` before a re-run of just those
@@ -161,6 +211,7 @@ class RunLog:
         self.rows = [r for r in self.rows if r.get("section") not in sections]
 
     def add(self, **kw):
+        kw.setdefault("schema", RUNLOG_SCHEMA)
         self.rows.append(kw)
 
     def flush(self):
@@ -179,15 +230,50 @@ class RunLog:
 
 def cmd_generate(args):
     dump_defs_and_scenes(args.lua)
-    defs = Defs.load(os.path.join(TOOL_DIR, "defs.json"))
+    defs = Defs.load_catalog(os.path.join(TOOL_DIR, "defs.json"))
     scenes = load_scenes(os.path.join(TOOL_DIR, "scenes.json"))
     screens = build_track1_screens(scenes, defs)
     batches = batch_by_section(screens)
     print("Track 1: %d screens (%d skipped) in %d model batches"
           % (len(screens), len(SKIPPED_CASES), len(batches)))
-    t2 = build_track2_screens()
+    t2 = build_track2_screens(defs)
     print("Track 2: %d layout-gallery screens" % len(t2))
     return defs, batches, t2
+
+
+def cmd_check(defs, batches, t2):
+    """Fast split-contract check that does not launch the simulator."""
+    screens = [screen for batch in batches for screen in batch]
+    by_family = {family: [s for s in screens if s.family == family]
+                 for family in ("dial", "bar")}
+    if not all(by_family.values()):
+        raise RuntimeError("visual kit needs at least one scene per split family")
+    for screen in screens:
+        if "Style" in screen.overrides:
+            raise RuntimeError("legacy Style leaked into %s" % screen.name)
+        defs[screen.family].build_options(screen.overrides)
+
+    sample_screens = [
+        Screen(by_family[family][0].layout_id,
+               [(by_family[family][0].zone_index, family,
+                 by_family[family][0].overrides)])
+        for family in ("dial", "bar")
+    ]
+    yaml = render_model(defs, "GPVK Split Check", sample_screens)
+    if "widgetName: DialPro" not in yaml or "widgetName: BarPro" not in yaml:
+        raise RuntimeError("split widget IDs missing from generated model YAML")
+    if "widgetName: GaugePro" in yaml:
+        raise RuntimeError("legacy GaugePro leaked into generated model YAML")
+
+    mixed = t2[4]
+    mixed_yaml = render_model(defs, "GPVK Mixed Check",
+                              [Screen(mixed.layout_id, mixed.zones)])
+    if mixed_yaml.count("widgetName: DialPro") != 2 or \
+            mixed_yaml.count("widgetName: BarPro") != 3:
+        raise RuntimeError("mixed layout lost its 2-dial/3-bar contract")
+    print("Split check: %d DialPro + %d BarPro scenes; mixed YAML PASS"
+          % (len(by_family["dial"]), len(by_family["bar"])))
+    return 0
 
 
 def _run_track1(driver, defs, batches, runlog, file_counter, seq_start=1):
@@ -202,7 +288,7 @@ def _run_track1(driver, defs, batches, runlog, file_counter, seq_start=1):
         # name is silently skipped, which is why an earlier "t1_01.yml"
         # naming scheme never got found ("ERROR no Current Model Found").
         model_file = "model%d.yml" % next(file_counter)
-        model_screens = [Screen(s.layout_id, [(s.zone_index, s.overrides)])
+        model_screens = [Screen(s.layout_id, [(s.zone_index, s.family, s.overrides)])
                           for s in batch]
         # Stop BEFORE writing: a live process can autosave-clobber these
         # files mid-write just as easily as it clobbers them mid-reset (see
@@ -233,6 +319,7 @@ def _run_track1(driver, defs, batches, runlog, file_counter, seq_start=1):
             status = "PASS" if ok else "FAIL"
             runlog.add(seq=seq, name=s.name, section=s.section, file=fname,
                        status=status, ms=int((time.time() - t0) * 1000),
+                       family=s.family, widget=defs[s.family].widget_name,
                        overrides={k: v for k, v in s.overrides.items()},
                        layout=s.layout_id, zone_index=s.zone_index,
                        zone_rect=list(s.real_rect) if s.real_rect else None)
@@ -262,9 +349,14 @@ def _run_track2(driver, defs, screens, runlog, file_counter, seq_start):
         settle = 1.5 if i == 0 else 0.5
         ok = driver.capture(out, settle_s=settle)
         status = "PASS" if ok else "FAIL"
+        present = {family for _zi, family, _opts in s.zones}
+        families = [family for family in ("dial", "bar") if family in present]
+        family_label = families[0] if len(families) == 1 else "mixed"
+        widget_label = "+".join(defs[family].widget_name for family in families)
         runlog.add(seq=seq, name=s.key, section="layouts", file=fname,
                    status=status, ms=int((time.time() - t0) * 1000),
-                   layout=s.layout_id, title=s.title)
+                   layout=s.layout_id, title=s.title, family=family_label,
+                   widget=widget_label)
         print(("  [%s] %s %s (%s)" % (status, s.key, s.title, s.layout_id)))
         seq += 1
         if i < len(screens) - 1:
@@ -309,7 +401,7 @@ def _run_theme_subset(driver, defs, t1_screens, gallery, runlog, file_counter, s
             # color cases, which declare a zone like every other Track 1
             # case, and there is no reason the theme comparison should be
             # the one place that still ignores it.
-            model_screens = [Screen(s.layout_id, [(s.zone_index, s.overrides)])
+            model_screens = [Screen(s.layout_id, [(s.zone_index, s.family, s.overrides)])
                               for s in chunk]
             m1_name = "GPVKTh%s1%d" % (code, chunk_start // MAX_CUSTOM_SCREENS)
             m1_file = "model%d.yml" % next(file_counter)
@@ -326,6 +418,7 @@ def _run_theme_subset(driver, defs, t1_screens, gallery, runlog, file_counter, s
                 status = "PASS" if ok else "FAIL"
                 runlog.add(seq=seq, name=s.name, section="themes", file=fname,
                            status=status, theme=theme, title="%s [%s]" % (s.name, theme),
+                           family=s.family, widget=defs[s.family].widget_name,
                            layout=s.layout_id, zone_index=s.zone_index,
                            zone_rect=list(s.real_rect) if s.real_rect else None)
                 print("  [%s] theme=%s %s" % (status, theme, s.name))
@@ -346,8 +439,13 @@ def _run_theme_subset(driver, defs, t1_screens, gallery, runlog, file_counter, s
             out = os.path.join(SHOTS_DIR, fname)
             ok = driver.capture(out, settle_s=1.5 if i == 0 else 0.5)
             status = "PASS" if ok else "FAIL"
+            present = {family for _zi, family, _opts in s.zones}
+            families = [family for family in ("dial", "bar") if family in present]
+            family_label = families[0] if len(families) == 1 else "mixed"
+            widget_label = "+".join(defs[family].widget_name for family in families)
             runlog.add(seq=seq, name=s.key, section="themes", file=fname,
-                       status=status, theme=theme, title="%s [%s]" % (s.title, theme))
+                       status=status, theme=theme, title="%s [%s]" % (s.title, theme),
+                       family=family_label, widget=widget_label)
             print("  [%s] theme=%s %s" % (status, theme, s.key))
             seq += 1
             if i < len(gallery) - 1:
@@ -360,6 +458,11 @@ def _run_theme_subset(driver, defs, t1_screens, gallery, runlog, file_counter, s
 def cmd_capture(args, defs, batches, t2):
     os.makedirs(SHOTS_DIR, exist_ok=True)
     seed_sdcard()
+    # The driver appends across per-model process restarts within this one
+    # command. Start the command with a clean tool-owned log so diagnostics
+    # can never report errors from an older legacy run.
+    os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+    open(LOG_PATH, "wb").close()
     runlog = RunLog(RUNLOG_PATH)
 
     # model<digits>.yml is a hard firmware requirement (ModelsList::loadYaml,
@@ -373,6 +476,8 @@ def cmd_capture(args, defs, batches, t2):
         runlog.drop_sections({"themes"})
         driver = SimuDriver(SIMU_EXE, SD_DIR, PIPE_PATH, LOG_PATH)
         driver.start()
+        driver.stop()
+        clear_generated_models()
         print("simu started (themes only)")
         try:
             t1_screens, gallery = build_theme_subset(batches, t2)
@@ -394,6 +499,8 @@ def cmd_capture(args, defs, batches, t2):
 
     driver = SimuDriver(SIMU_EXE, SD_DIR, PIPE_PATH, LOG_PATH)
     driver.start()
+    driver.stop()
+    clear_generated_models()
     print("simu started")
     try:
         seq = 1
@@ -431,7 +538,7 @@ def cmd_report():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("action", choices=["generate", "capture", "report", "all"])
+    ap.add_argument("action", choices=["check", "generate", "capture", "report", "all"])
     ap.add_argument("--lua", default="lua")
     ap.add_argument("--track1-only", action="store_true")
     ap.add_argument("--track2-only", action="store_true")
@@ -442,6 +549,8 @@ def main():
         return cmd_report()
 
     defs, batches, t2 = cmd_generate(args)
+    if args.action == "check":
+        return cmd_check(defs, batches, t2)
     if args.action == "generate":
         return 0
     rc = cmd_capture(args, defs, batches, t2)

@@ -1,5 +1,8 @@
 # GaugePro — `attempt to index a userdata value` remediation plan
 
+> **Histórico:** remediación aplicada sobre el frontend monolítico. Se conserva para trazabilidad;
+> la arquitectura vigente está en [`DOCUMENTATION.md`](DOCUMENTATION.md).
+
 Status: **root cause confirmed, fixed and validated** (all suites + luacheck green)
 Affected: bar style (Continuous + Dual-rail faces) and, in the same class, the dial's
 Sections mode and the bar's threshold marks.

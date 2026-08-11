@@ -1,7 +1,7 @@
 # Gauge Pro — Guía de desarrollo para Dial, Bar y Core
 
 **Estado:** contrato normativo de desarrollo
-**Aplica a:** `GaugeDial`, `GaugeBar`, `GaugeCore` y `GaugePro` legacy durante la transición
+**Aplica a:** `GaugeDialPro`, `GaugeBarPro`, `GaugeCore` y `GaugePro` legacy durante la transición
 **Plan relacionado:** [`../../myplans/gaugepro-split-plan.md`](../../myplans/gaugepro-split-plan.md)
 
 ---
@@ -10,8 +10,12 @@
 
 Gauge Pro se presenta al usuario como **dos widgets separados**:
 
-- `GaugeDial`: instrumentos circulares, Needle y Arc.
-- `GaugeBar`: instrumentos lineales y sus caras de barra.
+- `GaugeDialPro`: instrumentos circulares, Needle y Arc.
+- `GaugeBarPro`: instrumentos lineales y sus caras de barra.
+
+Los nombres visibles traducidos son `Gauge Dial Pro` y `Gauge Bar Pro`. Los identificadores
+internos son `DialPro` y `BarPro` para respetar el límite EdgeTX de 10 caracteres; no deben
+alargarse ni separarse de las carpetas `GaugeDialPro` y `GaugeBarPro`.
 
 Internamente son **un solo producto con un core compartido**. No son forks ni dos copias de
 Gauge Pro. Una corrección o mejora transversal se implementa una vez en el core y queda disponible
@@ -51,9 +55,9 @@ de cierre identificada.
 Dirección permitida:
 
 ```text
-GaugeDial main ─┐
+GaugeDialPro main ─┐
                 ├─> app/composición ─> core común
-GaugeBar main ──┘                     ├─> dial layout + renderer
+GaugeBarPro main ──┘                     ├─> dial layout + renderer
                                       └─> bar layout + renderer
 ```
 
@@ -111,9 +115,10 @@ Solo posee:
 
 ### 4.4 Frentes
 
-`GaugeDial/main.lua` y `GaugeBar/main.lua` solo poseen:
+`GaugeDialPro/main.lua` y `GaugeBarPro/main.lua` solo poseen:
 
-- `NAME`, `SPEC.family`, `SPEC.coreApi` y `DEFS`;
+- `NAME` (`DialPro`/`BarPro`), label visible terminado en `Pro`, `SPEC.family`, `SPEC.coreApi`
+  y `DEFS`;
 - labels/traducción;
 - builder de la tabla de opciones;
 - `lvgl` compatibility guard;

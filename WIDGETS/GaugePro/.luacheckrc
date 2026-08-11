@@ -23,7 +23,8 @@ read_globals = {
   "MAX_SENSORS",
 
   -- ---- widget option types (main.lua option declarations) -----------------
-  "BOOL", "CHOICE", "COLOR", "SLIDER", "SOURCE", "STRING", "SWITCH", "VALUE",
+  "ALIGNMENT", "BOOL", "CHOICE", "COLOR", "FILE", "SLIDER", "SOURCE",
+  "STRING", "SWITCH", "TEXT_SIZE", "TIMER", "VALUE",
 
   -- ---- font size constants (theme.lua M.FONTS / M.RAMP) -------------------
   -- NB: these are exactly the constants F-10 is about - if the firmware does

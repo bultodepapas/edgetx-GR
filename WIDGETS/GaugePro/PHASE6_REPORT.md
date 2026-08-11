@@ -1,5 +1,8 @@
 # Gauge Pro Bar v2 — Phase 6 report
 
+> **Histórico:** evidencia pre-split de Bar, hoy `GaugeBarPro`/`BarPro`. Consulte
+> [`DOCUMENTATION.md`](DOCUMENTATION.md) para la arquitectura vigente.
+
 **Completed:** 2026-08-10  
 **Scope:** Retained motion profiles, bounded semantic colour transitions,
 truthful data-loss fade, segment activation settle, refined critical pulse,

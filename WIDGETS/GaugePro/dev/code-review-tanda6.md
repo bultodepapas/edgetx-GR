@@ -1,5 +1,8 @@
 # GaugePro — Tanda 6: barrido de funcionamiento, robustez y rendimiento
 
+> **Histórico pre-split:** las rutas y líneas citadas pertenecen al monolito auditado. Consulte
+> [`../DOCUMENTATION.md`](../DOCUMENTATION.md) para el mapa de módulos vigente.
+
 **Alcance**: sólo `WIDGETS/GaugePro/`. Revisión de código, no de diseño visual
 (la parte gráfica quedó cerrada en Tanda 5 y el audit geométrico está limpio).
 

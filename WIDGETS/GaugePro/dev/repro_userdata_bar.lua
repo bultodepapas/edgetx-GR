@@ -24,7 +24,7 @@ end
 local geometry = load("geometry")
 local ranges = load("ranges")
 local theme = load("theme")
-local renderer = load("renderer")
+local renderer = load("ui_core")
 local barFaces = load("bar_faces")
 renderer.setup(theme, geometry, nil)
 barFaces.setup(theme, geometry, renderer)

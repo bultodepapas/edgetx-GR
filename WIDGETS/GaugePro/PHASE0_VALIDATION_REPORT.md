@@ -1,5 +1,8 @@
 # Gauge Pro — Phase 0 intensive validation report
 
+> **Histórico:** validación pre-split conservada como evidencia. Consulte
+> [`DOCUMENTATION.md`](DOCUMENTATION.md) para nombres, módulos e instalación vigentes.
+
 **Status:** PASS  
 **Executed:** 2026-08-09  
 **Scope:** Rebuild and validate the complete current Gauge Pro visual system,
@@ -197,4 +200,3 @@ The following remain intentionally open under the approved roadmap:
 **Phase 0 remains PASS after intensive validation.** The evidence is stronger
 than the original narrow bar-only baseline, three concrete visual/harness
 defects were fixed, and no later-phase requirement was falsely marked done.
-

@@ -3,7 +3,7 @@
 ---- # Gauge Pro - design tokens and text metrics                             #
 ---- #                                                                       #
 ---- # Single source of truth for colour, opacity, spacing and typography.   #
----- # renderer.lua and bar.lua never name a raw constant; they ask here.    #
+---- # ui_core/dial_renderer/bar never name a raw constant; they ask here.  #
 ---- #                                                                       #
 ---- # Colours are theme roles (api_colorlcd.cpp COLOR_THEME_*) so the gauge #
 ---- # follows dark / light / high-contrast themes. The only literal is RED: #

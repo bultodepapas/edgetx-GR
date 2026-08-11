@@ -1,5 +1,8 @@
 # GaugePro — Tanda 8 plan: the colour foundation, and findings from the render review
 
+> **Historical pre-split plan:** shared colour findings remain useful; current ownership and
+> packaging are defined in [`../DOCUMENTATION.md`](../DOCUMENTATION.md).
+
 **Author role:** senior developer, visual review of the generated render set,
 then a source-level audit of the firmware's theme system.
 **Baseline:** `feat/gauge-v2` @ `d94d37d52` (Tanda 7 A/B/C shipped).

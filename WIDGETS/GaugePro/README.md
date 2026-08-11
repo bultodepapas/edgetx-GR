@@ -4,6 +4,9 @@
 > **Every option, in one image: [`docs/gauge-pro-options.png`](docs/gauge-pro-options.png)**
 > **Design & engineering plan: [`IMPROVEMENT_PLAN.md`](IMPROVEMENT_PLAN.md)**
 > **Bar experience roadmap: [`BAR_STYLE_IMPROVEMENT_PLAN.md`](BAR_STYLE_IMPROVEMENT_PLAN.md)**
+> **Dial/Bar migration: [`MIGRATION.md`](MIGRATION.md)**
+> **Development guardrails: [`DEVELOPMENT_GUIDE.md`](DEVELOPMENT_GUIDE.md)**
+> **Current vs historical docs: [`DOCUMENTATION.md`](DOCUMENTATION.md)**
 
 A modern successor to the community `GaugeRotary`: a responsive
 analog-digital instrument for EdgeTX color radios (LVGL, EdgeTX 2.11+,
@@ -13,9 +16,18 @@ developed against EdgeTX 3.0).
 option defaults all moved to `GaugePro` before release, so no model config
 carries the old name.)*
 
-`WIDGETS/GaugePro/` mirrors the SD-card layout — copy the folder to the radio's
-`WIDGETS/` directory (or into the Companion simulator SD content) and add the
-widget to a color-LCD screen.
+The product now appears as two widgets: **Gauge Dial Pro** and **Gauge Bar Pro**.
+Their EdgeTX registration IDs are `DialPro` and `BarPro` (the firmware limit is
+10 characters), while their SD folders are `GaugeDialPro` and `GaugeBarPro`. Both
+load the same versioned runtime from `/SCRIPTS/TOOLS/GaugeCore/`; they are not
+forks. Install the exact SD layout with:
+
+```powershell
+pwsh dev/sync-sd.ps1 -Destination E:\                 # installs 2 new widgets
+pwsh dev/sync-sd.ps1 -Destination E:\ -IncludeLegacy  # + GaugePro transition
+```
+
+See [`MIGRATION.md`](MIGRATION.md) before removing a legacy GaugePro folder.
 
 It is the only EdgeTX widget that draws with the **LVGL retained-object API**
 (`lvgl.arc`, `lvgl.triangle`, `lvgl.line`) rather than the legacy `lcd`
@@ -117,11 +129,16 @@ animation mock-up.
 
 ## Options
 
-Ten options on EdgeTX 2.11 (the firmware limit there, in both the radio and
-Companion), and all 44 on 2.12+. The original 24, Phase 1's 25–39 tail and
-Phase 5's 40–44 presentation tail are independently frozen append-only
-contracts; slots 45–50 remain reserved. The core ten keep fixed positions on every
-firmware, so a model can move between versions without its settings shifting.
+EdgeTX 2.11 exposes ten meaningful slots in each new widget. On 2.12+,
+GaugeDialPro exposes 24 options and GaugeBarPro 42. Their shared slots 1–9 are
+identical; slot 10 is `DialStyle` or `BarPreset`. Family-only controls never
+appear in the other settings screen. All published contracts are append-only.
+
+GaugePro legacy retains its historical 44-option contract during migration.
+On an SD that already contains `/WIDGETS/GaugePro`, the default installer leaves
+that folder untouched and emits a warning. Therefore the radio may temporarily
+show three widgets until migration is complete and the legacy folder is removed
+manually.
 
 The labels are written for the radio's settings screen, where a label gets
 about half the dialog width and wraps rather than clips. Names that used to
@@ -142,7 +159,7 @@ widget on the card, used or not. Everything else loads on first use:
 
 | File | Responsibility |
 |---|---|
-| `main.lua` | option declarations, version gate, `lvgl` guard |
+| `GaugeDialPro/main.lua`, `GaugeBarPro/main.lua` | registration IDs `DialPro`/`BarPro`, visible labels, family options, `coreApi` and fixed core path |
 | `app.lua` | lifecycle, config → ranges → layout, rebuild decisions |
 | `options.lua` | the option wire format (integers, 1-based choices, capacity) |
 | `theme.lua` | design tokens and memoized text metrics |
@@ -151,9 +168,14 @@ widget on the card, used or not. Everything else loads on first use:
 | `bar_faces.lua` | retained face interface, Continuous, Blocks, Hex, Fine Ticks, Steps and Dual Rail; horizontal/vertical/zero spans, gradients, responsive fallbacks and object ceilings |
 | `geometry.lua`, `ranges.lua`, `presets.lua`, `format.lua`, `smoothing.lua` | pure Lua domain logic |
 | `telemetry.lua` | sources, values, availability, history |
-| `layout.lua` | classification, geometry, typography, regions |
-| `renderer.lua`, `bar.lua` | retained LVGL trees, property-only updates |
+| `layout_common.lua`, `ui_core.lua` | shared classification, typography, semantic UI and retained-property batching |
+| `dial_layout.lua`, `dial_renderer.lua` | radial geometry and retained dial tree |
+| `bar_layout.lua`, `bar.lua` | linear geometry and retained bar tree |
 | `alerts.lua` | transition alerts |
+
+`app.lua` loads `common + family`: GaugeDialPro never loads Bar modules, and
+GaugeBarPro never loads Dial layout/renderer modules. GaugePro legacy composes
+both during the transition.
 
 ## Testing
 
@@ -161,7 +183,9 @@ Stock Lua 5.3, no radio needed:
 
 ```sh
 lua5.3 tests/run_tests.lua  ./          # pure modules         (70 tests)
-lua5.3 tests/smoke_test.lua ./          # lifecycle           (200 tests)
+lua5.3 tests/smoke_test.lua ./          # legacy lifecycle    (201 tests)
+lua5.3 tests/widgets_test.lua ./        # split contracts      (17 tests)
+lua5.3 dev/split_resources.lua ./       # chunks/RAM/callback gates
 lua5.3 dev/collide.lua      ./          # geometric collision audit
 lua5.3 dev/instructions.lua ./          # firmware callback budgets
 lua5.3 dev/measure_frames.lua ./        # stopped-GC allocation probe
@@ -171,6 +195,14 @@ lua5.3 dev/gallery.lua      ./ --out /tmp/g   # visual contract sheet + manifest
 lua5.3 dev/collage.lua      ./ docs/    # the official option sheet (committed)
 ```
 
+Real-firmware visual validation (from `tools/gaugepro-visual-kit/`):
+
+```sh
+python run.py check                   # contracts + split model YAML, no simu
+python run.py capture --track2-only   # 8 real-firmware Dial/Bar layouts
+python run.py all                     # full catalog + generated report
+```
+
 The mock enforces the firmware's real contract — property allow-lists per
 object type, `{x, y}` point arrays, the missing string metatable, 10 ms
 `getTime()` ticks, and the **integer option wire format with 1-based
@@ -178,6 +210,9 @@ choices**.
 
 Three tools share one catalogue (`dev/scenes.lua`) and one emitter
 (`dev/svgkit.lua`), so they cannot disagree about what the widget draws:
+
+`dev/scenes.lua` retains the audited legacy `Style` vocabulary as input, but
+selects `DialPro` or `BarPro` before building and rejects cross-family options.
 
 | Tool | Audience | Output |
 |---|---|---|

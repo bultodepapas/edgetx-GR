@@ -1,8 +1,8 @@
 # Gauge Pro — Plan corregido para dividir dial y barra
 
-**Versión:** 0.3 (revisión senior + guardrails, contra `feat/gauge-v2`, HEAD `38988a178`)
+**Versión:** 0.5 (plan ejecutado, nombres Pro y documentación consolidados sobre `feat/gauge-v2`)
 **Fecha:** 11 de agosto de 2026
-**Estado:** listo para decisión e implementación; no se modifica runtime en este documento
+**Estado:** fases 0–4 implementadas; fase 5 queda deliberadamente post-release
 **Guía normativa:** [`WIDGETS/GaugePro/DEVELOPMENT_GUIDE.md`](../WIDGETS/GaugePro/DEVELOPMENT_GUIDE.md)
 
 ---
@@ -16,11 +16,11 @@ opciones y expectativas de zona diferentes. La frontera técnica también existe
 El borrador 0.1, sin embargo, no era implementable de forma segura. Esta revisión corrige seis
 problemas:
 
-1. **Pérdida de Needle/Arc.** El borrador eliminaba `Style` de `GaugeDial`, pero
+1. **Pérdida de Needle/Arc.** El borrador eliminaba `Style` de `GaugeDialPro`, pero
    `dialLayout()` decide la aguja con `cfg.style`. El resultado habría sido un dial siempre en
-   modo Arc. `GaugeDial` conserva un selector propio `DialStyle = Auto | Needle | Arc`.
+   modo Arc. `GaugeDialPro` conserva un selector propio `DialStyle = Auto | Needle | Arc`.
 2. **Ruta de core incorrecta.** EdgeTX siempre llama `create(zone, options, widgetPath)` y el
-   tercer argumento será `/WIDGETS/GaugeDial/` o `/WIDGETS/GaugeBar/`. No puede reutilizarse como
+   tercer argumento será `/WIDGETS/GaugeDialPro/` o `/WIDGETS/GaugeBarPro/`. No puede reutilizarse como
    override del core. Los frentes deben ignorarlo para cargar módulos y usar un `CORE_PATH`
    explícito.
 3. **Caché no compartida entre tipos.** Cada `main.lua` ejecuta su propio chunk de `app.lua`; por
@@ -47,11 +47,15 @@ Crear dos widgets registrados e independientes:
 
 | Widget | Familia fija | Caras |
 |---|---|---|
-| `GaugeDial` | `dial` | Auto, Needle, Arc |
-| `GaugeBar` | `bar` | Continuous, Blocks, Hex, Ticks, Steps, Dual rail mediante presets/overrides |
+| `GaugeDialPro` | `dial` | Auto, Needle, Arc |
+| `GaugeBarPro` | `bar` | Continuous, Blocks, Hex, Ticks, Steps, Dual rail mediante presets/overrides |
 
 Cada widget tendrá nombre, carpeta y opciones propios. Compartirán una sola fuente de runtime.
 No se duplicarán renderizadores ni lógica de telemetría en el repositorio.
+
+Por el límite EdgeTX de 10 caracteres, los nombres visibles serán `Gauge Dial Pro` y
+`Gauge Bar Pro`, las factories usarán los IDs `DialPro` y `BarPro`, y las carpetas conservarán
+los nombres descriptivos `GaugeDialPro` y `GaugeBarPro`.
 
 No son objetivos de este cambio:
 
@@ -65,10 +69,11 @@ No son objetivos de este cambio:
 
 ## 3. Hechos del código actual
 
-### 3.1 Inventario real
+### 3.1 Inventario baseline
 
-Hay **17 archivos Lua de producción en total**: `main.lua`, `app.lua` y 15 módulos cargados por
-`app.lua`. No son “17 módulos + main + app”.
+Antes del split había **17 archivos Lua de producción en total**: `main.lua`, `app.lua` y 15
+módulos cargados por `app.lua`. El payload nuevo contiene 19 archivos en GaugeCore y un
+`main.lua` por frente; la diferencia corresponde a la extracción física de layouts/UI.
 
 El módulo `app.lua` carga hoy siempre:
 
@@ -96,7 +101,7 @@ La familia y la cara de dial no son la misma decisión:
 
 ```lua
 -- familia
-L.style = "dial" -- frente GaugeDial
+L.style = "dial" -- frente GaugeDialPro
 
 -- cara dentro de la familia
 L.showNeedle = (cfg.style == STYLE_NEEDLE)
@@ -136,8 +141,8 @@ Ese tercer argumento describe el frente, no el core. El diseño debe separar los
 Distribución nueva:
 
 ```text
-/WIDGETS/GaugeDial/main.lua
-/WIDGETS/GaugeBar/main.lua
+/WIDGETS/GaugeDialPro/main.lua
+/WIDGETS/GaugeBarPro/main.lua
 /SCRIPTS/TOOLS/GaugeCore/app.lua
 /SCRIPTS/TOOLS/GaugeCore/<módulos>.lua
 ```
@@ -165,7 +170,7 @@ Cada frente pasa una especificación al factory de `app.lua`:
 
 ```lua
 local SPEC = {
-  name = "GaugeDial",       -- o GaugeBar
+  name = "DialPro",         -- o BarPro; máximo 10 caracteres en EdgeTX
   family = "dial",          -- o bar
   coreApi = 1,
   defs = DEFS,
@@ -191,7 +196,7 @@ end
 
 Para tests, el chunk de `main.lua` puede recibir una configuración solo al ejecutarse (por
 ejemplo `chunk({ corePath = widgetDir })`). No se usa el tercer argumento de `create()` como
-inyección. Un test específico debe pasar `/WIDGETS/GaugeDial/` como tercer argumento y demostrar
+inyección. Un test específico debe pasar `/WIDGETS/GaugeDialPro/` como tercer argumento y demostrar
 que todos los `loadScript` apuntan al core.
 
 ### D5 — ABI/versionado del core
@@ -233,7 +238,7 @@ un presupuesto explícito. No se oculta la duplicación bajo la afirmación de q
 
 Este prefijo es byte-equivalente en ambos frentes y queda congelado.
 
-### 5.2 GaugeDial — 24 opciones
+### 5.2 GaugeDialPro — 24 opciones
 
 - **Slot 10 / since 211:** `DialStyle`, field `style`, CHOICE
   `{ Auto, Needle, Arc }`, default Auto.
@@ -244,7 +249,7 @@ Este prefijo es byte-equivalente en ambos frentes y queda congelado.
 `DialStyle` cabe en el límite de 10 caracteres y mantiene exactamente la semántica que usa
 `dialLayout`. Se elimina únicamente la alternativa Bar.
 
-### 5.3 GaugeBar — 42 opciones
+### 5.3 GaugeBarPro — 42 opciones
 
 - **Slot 10 / since 211:** `BarPreset`, default Classic (2).
 - **Slots 11–23 / since 212:** `Accent`, `Label`, `Suffix`, `Scale`, `Damping`,
@@ -258,8 +263,8 @@ widget es nuevo, no hay contrato anterior que obligue a conservar el orden 0.1.
 
 ### 5.4 Reglas de UI
 
-- `GaugeDial` no muestra opciones `Bar*`, `Motion`, paleta/surface ni posiciones lineales.
-- `GaugeBar` no muestra `DialStyle` ni `Sweep`.
+- `GaugeDialPro` no muestra opciones `Bar*`, `Motion`, paleta/surface ni posiciones lineales.
+- `GaugeBarPro` no muestra `DialStyle` ni `Sweep`.
 - Ninguno muestra el selector de familia `Style = ... Bar` del monolito.
 - En 2.11 ambos declaran exactamente 10 opciones significativas.
 
@@ -328,8 +333,8 @@ o `motion`; el frontend Bar no debe cargar `dial_renderer` ni `dial_layout`.
 
 ```text
 <SD>/SCRIPTS/TOOLS/GaugeCore
-<SD>/WIDGETS/GaugeDial
-<SD>/WIDGETS/GaugeBar
+<SD>/WIDGETS/GaugeDialPro
+<SD>/WIDGETS/GaugeBarPro
 ```
 
 Requisitos:
@@ -348,7 +353,8 @@ Paquetes documentados:
 
 | Paquete | Contenido | Widgets visibles |
 |---|---|---:|
-| nuevo | Core + Dial + Bar | 2 |
+| nuevo, SD limpia | Core + Dial + Bar | 2 |
+| nuevo sobre SD con GaugePro previo | Core + Dial + Bar; legacy conservado con advertencia | 3 |
 | transición | Core + Dial + Bar + GaugePro legacy | 3 |
 
 ### 6.5 Guardrails obligatorios de desarrollo
@@ -390,11 +396,11 @@ Tabla manual:
 
 | GaugePro actual | Destino | Ajuste |
 |---|---|---|
-| Style = Needle | GaugeDial | DialStyle = Needle |
-| Style = Arc | GaugeDial | DialStyle = Arc |
-| Style = Auto en zona no ancha | GaugeDial | DialStyle = Auto |
-| Style = Bar | GaugeBar | BarPreset y overrides equivalentes |
-| Style = Auto con `w/h > 2.6` | GaugeBar | BarPreset = Classic/Auto según decisión visual |
+| Style = Needle | GaugeDialPro | DialStyle = Needle |
+| Style = Arc | GaugeDialPro | DialStyle = Arc |
+| Style = Auto en zona no ancha | GaugeDialPro | DialStyle = Auto |
+| Style = Bar | GaugeBarPro | BarPreset y overrides equivalentes |
+| Style = Auto con `w/h > 2.6` | GaugeBarPro | BarPreset = Classic/Auto según decisión visual |
 
 Flujo recomendado:
 
@@ -426,12 +432,13 @@ correctamente o si faltan dos objetos visibles.
 
 ### 8.2 Contratos nuevos de frentes
 
-1. nombres y keys `<= 10`, traducciones completas;
+1. IDs internos `DialPro`/`BarPro` y keys `<= 10`; nombres visibles terminados en `Pro` y
+   traducciones completas;
 2. Dial 24 opciones, Bar 42; ambos exactamente 10 en 2.11;
 3. slots 1–9 idénticos y golden list completa por frente;
 4. defaults/choices 1-based y mismos tipos/rangos que el monolito;
-5. `GaugeDial` forzado a dial incluso en `400x80`;
-6. `GaugeBar` forzado a bar incluso en `200x160`;
+5. `GaugeDialPro` forzado a dial incluso en `400x80`;
+6. `GaugeBarPro` forzado a bar incluso en `200x160`;
 7. `DialStyle` Auto/Needle/Arc produce la anatomía correcta;
 8. Bar no tiene `cfg.sweep`; Dial no tiene `cfg.barPreset`;
 9. el tercer argumento `/WIDGETS/<front>/` jamás se usa para cargar core;
@@ -475,7 +482,8 @@ Gates:
 
 ### 8.5 Simulador/radio
 
-- instalación nueva muestra exactamente `GaugeDial` y `GaugeBar`;
+- instalación nueva muestra exactamente **Gauge Dial Pro** y **Gauge Bar Pro**
+  (`DialPro`/`BarPro` internamente);
 - instalación de transición muestra también `GaugePro`;
 - settings correctos en 2.11 y 2.12+;
 - reinicio en frío, cambio de tema, resize y cuatro widgets simultáneos;
@@ -485,14 +493,14 @@ Gates:
 
 ## 9. Fases y commits
 
-| Fase | Alcance | Puerta |
+| Fase | Alcance | Estado |
 |---|---|---|
-| 0 | Resolver baseline rojo; congelar métricas/manifiestos; aprobar nombres, slots y guía normativa | baseline verde; guardrails aprobados |
-| 1 | Introducir `SPEC`, `coreApi`, `family` nil-safe y `pickStyle(..., family)` en legacy | monolito pixel-equivalente; suites intactas |
-| 2 | Añadir GaugeDial/GaugeBar, tests de contrato y sync del core/frentes | dos widgets reales en simu; tests de path y opciones verdes |
-| 3 | Extraer `ui_core`, layouts/renderers por familia y `MODULES` selectivo | tests completos; paridad visual; gates de RAM/instrucciones |
-| 4 | Galerías por familia, README/DOCS, paquetes nuevo/transición y guía de migración | instalación limpia y de upgrade verificadas |
-| 5 | Tras una release de transición, dejar de distribuir legacy por defecto | ningún modelo de prueba depende de GaugePro |
+| 0 | Resolver baseline rojo; congelar contratos y guía normativa | completada |
+| 1 | Introducir `SPEC`, `coreApi`, `family` y dispatch fijo | completada; legacy 201/201 |
+| 2 | Añadir GaugeDialPro/GaugeBarPro, contratos y sync | completada; split 17/17 |
+| 3 | Extraer `ui_core`, layouts/renderers y carga selectiva | completada; gates de recursos verdes |
+| 4 | README/DOCS, paquetes nuevo/transición y migración | completada; post-copy verificado |
+| 5 | Tras una release de transición, dejar de distribuir legacy por defecto | pendiente por diseño; requiere confirmar modelos migrados |
 
 La Fase 2 es un checkpoint funcional, no un artefacto publicable. La Fase 3 es obligatoria antes
 de release.
@@ -502,7 +510,7 @@ Orden sugerido de commits:
 ```text
 test(gaugepro): restore green split baseline
 refactor(gaugepro): add frontend spec and fixed family dispatch
-feat(gaugepro): add GaugeDial and GaugeBar fronts
+feat(gaugepro): add GaugeDialPro and GaugeBarPro fronts
 test(gaugepro): pin split contracts and core path
 refactor(gaugepro): load family-specific layouts and renderers
 chore(gaugepro): deploy versioned shared core
@@ -523,14 +531,15 @@ docs(gaugepro): publish split migration guide
 | Deriva del bootstrap duplicado | Media | bloque mínimo idéntico + test estático; template si crece |
 | Ruptura de modelos legacy | Alta | paquete de transición; no auto-delete/rename |
 | Churn al separar layout/renderer | Media | después de checkpoint funcional; commits mecánicos separados |
-| Confusión entre Dial y “reloj de tiempo” | Baja | nombre técnico `GaugeDial`; evitar `GaugeClock` |
+| Confusión entre Dial y “reloj de tiempo” | Baja | label `Gauge Dial Pro`, ID `DialPro`; evitar `GaugeClock` |
 | Una mejora llega solo a una familia aunque sea compartible | Alta | regla shared-first, checklist y tests simétricos de `DEVELOPMENT_GUIDE.md` |
 
 ---
 
 ## 11. Decisiones recomendadas para cerrar
 
-1. Usar nombres `GaugeDial` y `GaugeBar`.
+1. Usar labels **Gauge Dial Pro**/**Gauge Bar Pro**, IDs `DialPro`/`BarPro` y carpetas
+   `GaugeDialPro`/`GaugeBarPro`.
 2. Mantener `DialStyle` y eliminar solo el cambio de familia.
 3. Slot 10: `DialStyle` para Dial, `BarPreset` para Bar; `Sweep` pasa al 11.
 4. Distribuir una release de transición con legacy opcional.
@@ -540,3 +549,21 @@ docs(gaugepro): publish split migration guide
 Con estas decisiones, el split deja de ser solo una separación de menús: se convierte en dos
 widgets coherentes, instalables y verificables, sin perder caras de dial ni degradar silenciosamente
 la memoria del transmisor.
+
+---
+
+## 12. Resultado de ejecución
+
+- Suites: `70/70` unit, `201/201` lifecycle legacy y `17/17` contratos split.
+- Carga selectiva observada: Dial 14 chunks; Bar 17. Dial no carga ningún módulo Bar y Bar no
+  carga `dial_layout` ni `dial_renderer`.
+- Callbacks del probe split: Dial update/build `~3800/~4800`; Bar `~7200/~4200` instrucciones;
+  steady-state `~600/~800`; movimiento `~1800/~1600`. Todos pasan los guardrails.
+- Auditoría completa: matriz de colisiones limpia; allocations conservan el baseline aprobado
+  (Dial 13–14 B/frame, Bar 32–35 B/frame ordinario; cero `linePoints` por frame).
+- RAM retenida del harness: Dial `~310 KB`, Bar `~531 KB`, estimado mixto `~841 KB`. Es una
+  medición comparativa de Lua de escritorio, no una cifra de heap garantizada para cada radio.
+- `sync-sd.ps1` verificó paquetes nuevo y de transición, orden core→frentes y `coreApi = 1`.
+- La verificación visual y de memoria en radio o Companion real queda como gate manual de release;
+  la instalación de archivos y los harnesses headless sí quedaron validados.
+- El legacy no se elimina automáticamente; su retiro permanece como la fase 5 post-release.

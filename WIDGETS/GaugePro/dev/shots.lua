@@ -40,7 +40,8 @@ local scenes = dofile(widgetDir .. "dev/scenes.lua")
 
 local cases = {}
 for _, c in ipairs(scenes.allCases()) do
-  if not only or string.find(c.name, only) or string.find(c.section, only) then
+  if not only or string.find(c.name, only, 1, true)
+     or string.find(c.section, only, 1, true) then
     cases[#cases + 1] = c
   end
 end

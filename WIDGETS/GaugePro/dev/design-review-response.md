@@ -1,5 +1,8 @@
 # GaugePro — Response to Visual/UI Review of `mode-Rail-crit.png`
 
+> **Historical pre-split review:** preserved as visual evidence. See
+> [`../DOCUMENTATION.md`](../DOCUMENTATION.md) for the current product structure.
+
 **Reviewer:** graphic designer (feedback on the rendered 300×240 PNG of the
 200×160 zone, `ColorMode = Rail`, value 22, dark theme).
 **Prepared by:** GaugePro developer.

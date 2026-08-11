@@ -1,5 +1,8 @@
  # Gauge Pro — Senior Improvement Plan (v2.0)
 
+> **Histórico:** plan y contrato del GaugePro monolítico. El split vigente y sus documentos
+> normativos están indexados en [`DOCUMENTATION.md`](DOCUMENTATION.md).
+
 **Author role:** senior Lua + front-end review
 **Baseline:** `feat/gauge-v2` @ `c6adbd3d4` (DOCS.md 1.0)
 **Verified against:** `radio/src/lua/*`, `radio/src/gui/colorlcd/mainview/*`,

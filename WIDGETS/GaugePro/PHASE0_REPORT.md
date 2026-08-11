@@ -1,5 +1,8 @@
 # Gauge Pro Bar v2 — Phase 0 execution report
 
+> **Histórico:** evidencia pre-split de la familia Bar, hoy servida por `GaugeBarPro`/`BarPro`.
+> Consulte [`DOCUMENTATION.md`](DOCUMENTATION.md) para el contrato vigente.
+
 **Status:** Complete  
 **Executed:** 2026-08-09  
 **Code baseline:** `d46102e26634cadd069e7d44d8a887e421957ee0`  

@@ -237,15 +237,22 @@ end
 
 -- ------------------------------------------------------ option coverage ----
 
--- Cross-check the catalogue against main.lua's DEFS: an option that no scene
--- ever varies is an option the sheet does not actually verify. This is what
--- stops the gallery from silently going stale when option 25 gets appended.
+-- Cross-check the catalogue against both split frontends' DEFS. The scene
+-- source still carries legacy Style; translate it to DialStyle for coverage
+-- and treat Bar as family selection, not as a current option.
 local function coverage(defs, cases)
   local seen = {}
   for _, c in ipairs(cases) do
     for k, v in pairs(c.opts or {}) do
-      seen[k] = seen[k] or {}
-      seen[k][tostring(v)] = true
+      if k == "Style" then
+        if v ~= "Bar" and not (v == "Auto" and c.zone[1] / c.zone[2] > 2.6) then
+          seen.DialStyle = seen.DialStyle or {}
+          seen.DialStyle[tostring(v)] = true
+        end
+      else
+        seen[k] = seen[k] or {}
+        seen[k][tostring(v)] = true
+      end
     end
   end
   local rows = {}
@@ -508,14 +515,22 @@ end
 
 -- ------------------------------------------------------------------- main --
 
-local mod = dofile(widgetDir .. "main.lua")
-local defs = mod.defs
+local fronts = scenes.frontContracts(widgetDir)
+local defs, known = {}, {}
+for _, family in ipairs({ "dial", "bar" }) do
+  for _, d in ipairs(fronts[family].defs) do
+    if not known[d.key] then
+      known[d.key] = true
+      defs[#defs + 1] = d
+    end
+  end
+end
 
 local allCases = scenes.allCases()
 local cases = {}
 for _, c in ipairs(allCases) do
-  if not opt.only or string.find(c.name, opt.only)
-     or string.find(c.section, opt.only) then
+  if not opt.only or string.find(c.name, opt.only, 1, true)
+     or string.find(c.section, opt.only, 1, true) then
     cases[#cases + 1] = c
   end
 end

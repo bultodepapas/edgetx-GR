@@ -1,5 +1,8 @@
 # GaugePro — Senior review of `code-review-tanda6.md`, with firmware lessons
 
+> **Historical pre-split snapshot:** cited paths and line numbers describe the reviewed monolith.
+> See [`../DOCUMENTATION.md`](../DOCUMENTATION.md) for the current module map.
+
 **Reviewer role:** senior developer, second pass over the Tanda 6 report.
 **Scope:** (A) verdict on the 17 findings, (B) critique of the repair plan,
 (C) knowledge extracted from the official EdgeTX widgets and the widget

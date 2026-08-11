@@ -1,4 +1,4 @@
-"""Model YAML generator for the Gauge Pro visual kit.
+"""Model YAML generator for the split Gauge Pro visual kit.
 
 The overall model skeleton (mixData/expoData/switchWarning/... boilerplate)
 below is copied VERBATIM from a model file the real firmware itself wrote
@@ -15,8 +15,6 @@ LayoutId / zone-count table: see myplans/gaugepro-visual-kit-plan.md Sec 2
 """
 
 import zlib
-
-from defs import Defs
 
 MAX_CUSTOM_SCREENS = 10
 
@@ -358,18 +356,18 @@ modelTelemetryDisabled: GLOBAL
 
 
 class Screen:
-    """One screenData[] entry: a layout plus a list of (zone_index, options)
-    Gauge Pro instances. `options` is the readable-override dict passed to
-    Defs.build_options (Sec 1.2 of the plan: every slot gets a real value)."""
+    """One screenData[] entry with ``(zone, family, options)`` instances."""
 
     def __init__(self, layout_id, zones, comment=""):
         if layout_id not in LAYOUT_ZONES:
             raise ValueError("modelgen: unknown LayoutId %r" % layout_id)
-        for zi, _opts in zones:
+        for zi, family, _opts in zones:
             if zi < 0 or zi >= LAYOUT_ZONES[layout_id]:
                 raise ValueError(
                     "modelgen: zone %d out of range for %s (%d zones)"
                     % (zi, layout_id, LAYOUT_ZONES[layout_id]))
+            if family not in ("dial", "bar"):
+                raise ValueError("modelgen: invalid Gauge Pro family %r" % family)
         self.layout_id = layout_id
         self.zones = zones
         self.comment = comment
@@ -385,7 +383,7 @@ def _yaml_scalar(value):
     raise TypeError("modelgen: cannot emit YAML scalar for %r" % (value,))
 
 
-def _render_options_block(defs: Defs, overrides, indent):
+def _render_options_block(defs, overrides, indent):
     pad = " " * indent
     lines = []
     for index, yaml_type, field, value in defs.build_options(overrides):
@@ -396,7 +394,7 @@ def _render_options_block(defs: Defs, overrides, indent):
     return "\n".join(lines) + "\n"
 
 
-def render_screen_data(defs: Defs, screens):
+def render_screen_data(defs_by_family, screens):
     if len(screens) > MAX_CUSTOM_SCREENS:
         raise ValueError(
             "modelgen: %d screens exceeds MAX_CUSTOM_SCREENS=%d"
@@ -410,16 +408,17 @@ def render_screen_data(defs: Defs, screens):
         out.append("      layoutData: ")
         if screen.zones:
             out.append("         zones: ")
-            for zi, overrides in screen.zones:
+            for zi, family, overrides in screen.zones:
+                defs = defs_by_family[family]
                 out.append("            %d:" % zi)
-                out.append("               widgetName: GaugePro")
+                out.append("               widgetName: %s" % defs.widget_name)
                 out.append("               widgetData: ")
                 out.append("                  options: ")
                 out.append(_render_options_block(defs, overrides, 21).rstrip("\n"))
     return "\n".join(out) + "\n"
 
 
-def render_model(defs: Defs, name, screens, regid=None):
+def render_model(defs_by_family, name, screens, regid=None):
     """Full model YAML text for one MODELS/*.yml file (<=10 screens)."""
     if regid is None:
         # zlib.crc32, not the builtin hash(): str hashing is salted per
@@ -429,13 +428,13 @@ def render_model(defs: Defs, name, screens, regid=None):
         # reproducibility gate: two consecutive runs must be byte-identical).
         regid = ("GPVK%03d" % (zlib.crc32(name.encode("utf-8")) % 1000)).ljust(8, "0")[:8]
     header = _HEADER % {"name": name}
-    body = render_screen_data(defs, screens)
+    body = render_screen_data(defs_by_family, screens)
     footer = _FOOTER % {"regid": regid}
     return header + body + footer
 
 
-def write_model(defs: Defs, path, name, screens, regid=None):
-    text = render_model(defs, name, screens, regid=regid)
+def write_model(defs_by_family, path, name, screens, regid=None):
+    text = render_model(defs_by_family, name, screens, regid=regid)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     return path

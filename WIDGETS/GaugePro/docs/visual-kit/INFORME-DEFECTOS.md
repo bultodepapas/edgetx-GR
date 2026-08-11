@@ -1,5 +1,8 @@
 # Gauge Pro — Informe de defectos detectados por análisis visual
 
+> **Histórico pre-split:** rutas, líneas y capturas corresponden al monolito analizado. Consulte
+> [`../../DOCUMENTATION.md`](../../DOCUMENTATION.md) para el mapa actual.
+
 Análisis de la tanda de capturas `docs/visual-kit/screenshots/` (262 PNG,
 generadas originalmente 2026-08-10 16:52 por `tools/gaugepro-visual-kit/run.py
 all`). Regeneradas 2026-08-10 21:10 tras aplicar los fixes de [F-01](#f-01) y

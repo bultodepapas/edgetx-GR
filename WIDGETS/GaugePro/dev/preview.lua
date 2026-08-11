@@ -24,6 +24,7 @@ mock.install(_ENV or _G)
 -- was of a radio that does not exist. Four review rounds missed a 1.13:1
 -- normal state because of exactly this (Tanda 8 F7).
 local svgkit = dofile(widgetDir .. "dev/svgkit.lua")
+local scenes = dofile(widgetDir .. "dev/scenes.lua")
 local PALETTES = {
   stock = svgkit.palette("stock"),
   dark = svgkit.palette("dark"),
@@ -167,31 +168,12 @@ end
 
 -- ---- scenarios -----------------------------------------------------------
 
-local ID_RSSI, ID_MIN, ID_MAX = 3072, 3073, 3074
-
 local function build(zone, overrides, value, history)
-  mock.reset()
-  mock.sim.version = { "3.0.0", "sim", 3, 0, 0 }
-  mock.addField(ID_RSSI, "RSSI", 17)
-  mock.addField(ID_MIN, "RSSI-", 17)
-  mock.addField(ID_MAX, "RSSI+", 17)
-  mock.sim.sensors[0] = { name = "RSSI", prec = 0, unit = 17 }
-  mock.setValue(ID_RSSI, value)
-  if history then
-    mock.setValue(ID_MIN, history[1])
-    mock.setValue(ID_MAX, history[2])
-  end
-  local mod = dofile(widgetDir .. "main.lua")
-  local o = { Source = ID_RSSI }
-  for k, v in pairs(overrides) do o[k] = v end
-  local opts = mock.makeOptions(mod.defs, o)
-  local w = mod.create(zone, opts, widgetDir)
-  mod.update(w, opts)
-  for _ = 1, 30 do            -- let the needle settle
-    mock.advance(50)
-    mod.refresh(w)
-  end
-  return w
+  local ctx = scenes.build(mock, widgetDir, {
+    name = "preview", source = "RSSI", zone = { zone.w, zone.h },
+    opts = overrides, value = value, history = history,
+  })
+  return ctx.widget
 end
 
 local CASES = {
@@ -220,7 +202,7 @@ local CASES = {
 }
 
 local html = {
-  "<!doctype html><meta charset='utf-8'><title>GaugePro preview</title>",
+  "<!doctype html><meta charset='utf-8'><title>Gauge Pro split preview</title>",
   "<style>",
   "body{font:14px system-ui,sans-serif;background:#22262b;color:#e6e6e6;",
   "margin:24px}",
@@ -231,7 +213,7 @@ local html = {
   ".pair{display:flex;gap:10px;align-items:flex-start}",
   "svg{border-radius:6px;display:block}",
   "</style>",
-  "<h1>GaugePro &mdash; rendered from the real object tree (dark / light)</h1>",
+  "<h1>Gauge Dial Pro + Gauge Bar Pro &mdash; real object trees (dark / light)</h1>",
   "<div class='grid'>",
 }
 

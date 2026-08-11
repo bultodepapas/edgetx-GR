@@ -1,5 +1,8 @@
 # Gauge Pro v2 — Ambitious Bar Experience Plan
 
+> **Histórico:** este plan originó la experiencia Bar que ahora vive en `GaugeBarPro`/`BarPro`.
+> No define el empaquetado actual; consulte [`DOCUMENTATION.md`](DOCUMENTATION.md).
+
 **Document version:** 2.0 — personalization mandate and grilling review integrated
 **Date:** 2026-08-09
 **Branch:** feat/gauge-v2

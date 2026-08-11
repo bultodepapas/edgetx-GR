@@ -1,9 +1,9 @@
-# Gauge Pro visual kit
+# Gauge Dial Pro + Gauge Bar Pro visual kit
 
-Real-firmware visual validation catalog for the Gauge Pro widget. See
+Real-firmware visual validation catalog for both split Gauge Pro widgets. See
 `myplans/gaugepro-visual-kit-plan.md` for the full design.
 
-Renders every Gauge Pro option combination worth looking at through the
+Renders the DialPro and BarPro option combinations worth looking at through the
 **actual firmware** (native `simu`, real LVGL, real Lua binding, real
 themes) and captures deterministic PNGs into
 `WIDGETS/GaugePro/docs/visual-kit/screenshots/`, with a generated
@@ -25,6 +25,7 @@ From this directory:
 
 ```
 python run.py all                     # generate + capture (track 1 + 2) + report
+python run.py check                   # split contracts + YAML, no simulator
 python run.py generate                # dump defs.json/scenes.json, print counts only
 python run.py capture                 # (re)run track 1 + 2 against the last generate
 python run.py capture --track1-only   # just the single-widget catalog
@@ -40,14 +41,26 @@ log, see `RunLog.drop_sections`) and call `report` once at the end -- `all`
 does this for track 1 + 2 automatically but not `--themes-only`, which is
 run and reported separately.
 
+## Current verification
+
+Verified on the repository's `build/simu/simu.exe` after the Pro split:
+
+- `check`: 56 DialPro + 150 BarPro Track 1 scenes; mixed YAML contract passed.
+- Track 1: 206/206 captures completed.
+- Track 2: 8/8 layouts completed, including the 2-dial/3-bar screen.
+- Runtime log: only `DialPro`, `BarPro` and the `TeleInject` helper loaded;
+  no Lua/core errors.
+- Sixteen telemetry-injection cases remain explicitly skipped below.
+
 ## How it works
 
-- `defs_dump.lua` / `scenes_dump.lua`: load the REAL `WIDGETS/GaugePro/main.lua`
-  and `dev/scenes.lua` under the widget's own test mock
-  (`tests/mock_env.lua`) and dump the option table / scenario catalog as
-  JSON. Zero hand-duplication -- this can never silently drift from the
-  widget source (see `main.lua`'s own Tanda 6 F-14 note on exactly that risk).
-- `defs.py`: translates readable option overrides (`{"Style": "Bar"}`) into
+- `defs_dump.lua`: loads the REAL `GaugeDialPro/main.lua` and
+  `GaugeBarPro/main.lua` contracts and writes the 24-slot/42-slot schema,
+  including IDs, folders, families and `coreApi`.
+- `scenes_dump.lua`: loads the audited legacy `dev/scenes.lua` catalogue.
+  `catalog.py` converts its old `Style` selector exactly once into a fixed
+  DialPro or BarPro family and rejects cross-family options.
+- `defs.py`: translates readable family-specific overrides into
   the model-YAML wire format, empirically reverse-engineered by round-tripping
   a hand-authored zone through the real firmware (see
   `myplans/widget-visual-emulator-plan.md` Sec 9a and `defs.py`'s docstring).
@@ -62,6 +75,12 @@ run and reported separately.
   filenames MUST match `model<digits>.yml` -- `ModelsList::loadYaml()`
   (`radio/src/storage/modelslist.cpp`) silently skips anything else when
   scanning `MODELS/` at boot.
+- `run.py` seeds `/SCRIPTS/TOOLS/GaugeCore/`, `/WIDGETS/GaugeDialPro/` and
+  `/WIDGETS/GaugeBarPro/`. Its disposable SD tree removes a stale GaugePro
+  legacy frontend and compiled `.luac` siblings before every run, so the
+  simulator exposes exactly the default two widgets and cannot execute stale bytecode.
+  After the one-time bootstrap it also replaces only `model<digits>.yml` files inside
+  its scratch SD tree, preventing old `widgetName: GaugePro` models from contaminating a run.
 - `catalog.py`: Track 1 (single-widget, ported from `dev/scenes.lua`) and
   Track 2 (layout galleries) screen lists.
 - `driver.py`: owns the `simu` process and the `--pipe` steering channel.

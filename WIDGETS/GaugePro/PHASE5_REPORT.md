@@ -1,5 +1,8 @@
 # Gauge Pro Bar v2 — Phase 5 report
 
+> **Histórico:** evidencia pre-split de Bar, hoy `GaugeBarPro`/`BarPro`. Consulte
+> [`DOCUMENTATION.md`](DOCUMENTATION.md) para la arquitectura vigente.
+
 **Completed:** 2026-08-09  
 **Scope:** Orientation-neutral bar axes, production vertical rendering,
 numeric-zero origin, asymmetric signed Dual Rail, conservative RC Center Auto

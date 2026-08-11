@@ -1,8 +1,16 @@
 # EdgeTX Widget Studio — Visual Radio Emulator Plan
 
+> **Gauge Pro integration update:** the current reference product is the pair
+> `GaugeDialPro`/`DialPro` and `GaugeBarPro`/`BarPro` over shared `GaugeCore`. References to a
+> single 44-option `GaugePro` instance describe the completed historical Phase 1 spike only.
+> Future phases must exercise both frontends; see
+> [`../WIDGETS/GaugePro/DOCUMENTATION.md`](../WIDGETS/GaugePro/DOCUMENTATION.md).
+> The Gauge-specific visual kit has now completed that retarget and passed 206 Track 1 plus
+> 8 Track 2 real-firmware captures; the generic Widget Studio phases remain separate work.
+
 **Document version:** 0.2 (integrates the grilled decision record from the 0.1 review)
 **Status:** Senior-dev plan validated against the local repo (`bultodepapas/edgetx-GR`, branch `feat/gauge-v2`, EdgeTX 3.0) and the design-review interview
-**Target:** A scriptable, pixel-accurate, computer-based visual emulator of the EdgeTX color-LCD radio, purpose-built for developing Lua/LVGL widgets (Gauge Pro is the reference workload), for other visual improvements, and — at contract level, without a heavy platform — for other developers.
+**Target:** A scriptable, pixel-accurate, computer-based visual emulator of the EdgeTX color-LCD radio, purpose-built for developing Lua/LVGL widgets (Gauge Dial Pro + Gauge Bar Pro are the reference workload), for other visual improvements, and — at contract level, without a heavy platform — for other developers.
 **Date:** August 10, 2026
 
 ---
@@ -49,7 +57,10 @@ Key upstream facts (verified in this repo):
 - **No sim-only Lua module exists in this fork** (no `LROT_BEGIN(simu…)` anywhere in `radio/src`). A `simu` Lua namespace guarded by `#if defined(SIMU)` must be added — this is the enabler for telemetry/switch/analog injection and for arming capture.
 - **No host→simu com channel exists either.** `arg_parser` supports only `--width/--height/--storage/--settings`; there is no `SIMU_AUX`/`SIMU_COM_PORT` in this fork. The driver's command channel must therefore be added (see §4.1).
 - `radio/src/targets/simu/simulib.cpp:701` — `simuSendTelemetry()` is already `WASM_EXPORT`ed for host-side telemetry injection (used by the WASM/web path). It does not cover sensor *registration*; the new Lua module will.
-- The Lua/LVGL widget contract is documented and verified in `WIDGETS/GaugePro/PLAN.md` §3.3: arc `endAngle`, line `pts` as function, label `text` as function, `lvgl.build/set`, `LCD_SCALE` (0.8 / 1.0 / 1.375), theme colors, the 200-instruction refresh budget, `MAX_WIDGET_OPTIONS 50`.
+- The current Lua/LVGL product contract is documented in `WIDGETS/GaugePro/DOCS.md` and
+  `DEVELOPMENT_GUIDE.md`: two boot-weight frontends, a fixed `GaugeCore` path, retained
+  `lvgl.build/set`, family-selective modules and measured callback gates. `PLAN.md` remains a
+  historical monolithic design record.
 
 ---
 
@@ -196,11 +207,11 @@ Each phase ends with a hard gate. Nothing in a later phase starts before its gat
 |---|---|---|---|
 | 0 | Plan + baseline | This document; confirm `simu` preset builds on Windows (`docs/building/windows.md`) | Document builds; risks updated |
 | 1 | Engine hooks spike | `simuDumpLcd`, `simuLcdNotify` arm/disarm, `simu` Lua module, pipe channel, all behind `WIDGET_STUDIO`; boot Gauge Pro inside simu SD tree; dump a PNG | **PASSED 2026-08-10** (manual spike, tx16smk3 @ 480×320, hand-authored `MODELS/model1.yml`, no `tools/widget-studio/` driver yet). PNGs of a real Gauge Pro instance in Needle/Arc/Bar styles with a live `TX_VOLTAGE` source, auto-scaled range and peak tracking, rendered by the actual firmware (LVGL + Lua binding). Pipe steering round-trips `key`/`capture`/`reset` commands. See §9a. |
-| 2 | Harness + genericity core | `studio.yml` schema + `ws introspect` auto-generation, `WidgetStudio/main.lua`, host `radio.yml` generator, scenario runner, file-queue fallback | Full Gauge Pro catalog (from `dev/scenes.lua`) rendered by real firmware; ≥ 95 % cases match the SVG loop's layout within tolerance; **a second demo widget runs with zero per-widget code**; valid `report.json` |
-| 3 | Driver + goldens | `ws run/gallery/diff/golden`, 3 themes × 2 resolutions golden baseline, exit codes for CI | Gauge Pro acceptance scenarios (dark/stock/high-contrast) pass on 480×272 and 800×480; full catalog runtime under a budgeted CI time |
+| 2 | Harness + genericity core | `studio.yml` schema + `ws introspect` auto-generation, `WidgetStudio/main.lua`, host `radio.yml` generator, scenario runner, file-queue fallback | Full Dial Pro and Bar Pro catalogs (from `dev/scenes.lua`) rendered by real firmware; ≥ 95 % cases match the SVG loop's layout within tolerance; **a second demo widget runs with zero per-widget code**; valid `report.json` |
+| 3 | Driver + goldens | `ws run/gallery/diff/golden`, 3 themes × 2 resolutions golden baseline, exit codes for CI | Gauge Dial Pro and Gauge Bar Pro acceptance scenarios (dark/stock/high-contrast) pass on 480×272 and 800×480; full catalog runtime under a budgeted CI time |
 | 4 | Hot reload | `ws watch` live-preview loop | Edit `geometry.lua` → fresh screenshot visible in < 2 s, unattended |
 | 5 | Browser workspace | `web/` Widget Studio panel (OPFS install + canvas PNG export) | Same catalog renders and exports in Chrome via the web simulator |
-| 6 | Harden + docs | Capture timing under load, error taxonomy, README quickstart (schema + demo widget), Gauge Pro CI wiring | Full pipeline green in CI; a new developer can run `ws run --widget <any-dir>` from the README |
+| 6 | Harden + docs | Capture timing under load, error taxonomy, README quickstart (schema + demo widget), Dial Pro + Bar Pro CI wiring | Full pipeline green in CI; a new developer can run `ws run --widget <any-dir>` from the README |
 
 # 6. Test matrix and acceptance criteria
 
@@ -211,7 +222,9 @@ Adapted from Gauge Pro's existing matrix so the new loop inherits its rigor:
 - **Sources:** stick, channel, timer, TX battery, RSSI, voltage, temp, `CELLS` table aggregation (sensor-registered, Q12), invalid source, disconnected telemetry source.
 - **Values:** below/at/above min and max, warn/critical boundaries, min==max, inverted config, negatives, decimals.
 - **Dynamic:** rapid/noisy/step values, source change, range change, telemetry loss/recovery, resize, theme switch.
-- **Performance:** four simultaneous Gauge Pro instances; per-case tick cost in `report.json`; refresh-budget compliance (200 instructions) measured through the simu.
+- **Performance:** four simultaneous instances covering Gauge Dial Pro and Gauge Bar Pro;
+  per-case tick cost in `report.json`; compliance with the split callback gates measured through
+  the simulator.
 - **Genericity:** the demo widget exercises each option type the contract supports; `ws introspect` output for it needs no hand-editing to run.
 
 Acceptance criteria:

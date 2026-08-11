@@ -1,5 +1,8 @@
 # Gauge Pro Bar v2 — Phase 3 report
 
+> **Histórico:** evidencia pre-split de Bar, hoy `GaugeBarPro`/`BarPro`. Consulte
+> [`DOCUMENTATION.md`](DOCUMENTATION.md) para la arquitectura vigente.
+
 **Completed:** 2026-08-09  
 **Scope:** Color freedom for the horizontal Continuous Precision Rail. Phase 4
 alternate faces, Phase 5 vertical/zero-origin rendering and Phase 6 motion

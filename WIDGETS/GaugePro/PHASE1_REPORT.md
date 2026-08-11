@@ -1,5 +1,8 @@
 # Gauge Pro v2 Bar — Phase 1 Personalization Architecture Report
 
+> **Histórico:** evidencia pre-split de Bar, hoy `GaugeBarPro`/`BarPro`. Consulte
+> [`DOCUMENTATION.md`](DOCUMENTATION.md) para la arquitectura vigente.
+
 **Status:** PASS — Phase 1 complete  
 **Date:** 2026-08-09  
 **Branch:** `feat/gauge-v2`  

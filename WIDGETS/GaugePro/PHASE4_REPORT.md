@@ -1,5 +1,8 @@
 # Gauge Pro Bar v2 — Phase 4 report
 
+> **Histórico:** evidencia pre-split de Bar, hoy `GaugeBarPro`/`BarPro`. Consulte
+> [`DOCUMENTATION.md`](DOCUMENTATION.md) para la arquitectura vigente.
+
 **Completed:** 2026-08-09  
 **Scope:** Production Blocks, Hex, Fine Ticks and Signal Steps faces, their
 presets and source-aware Auto mapping. Signed Dual Rail, vertical/zero-origin

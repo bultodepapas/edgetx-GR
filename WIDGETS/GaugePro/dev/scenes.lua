@@ -121,6 +121,63 @@ local function registerRadio(mock)
   end
 end
 
+local function loadFront(widgetDir, folder)
+  local path = widgetDir .. "../../WIDGETS/" .. folder .. "/main.lua"
+  local chunk, err = loadfile(path, "bt", _ENV or _G)
+  if not chunk then error("scenes: cannot load " .. path .. ": " .. tostring(err)) end
+  return chunk({ corePath = widgetDir })
+end
+
+function M.frontContracts(widgetDir)
+  return {
+    dial = loadFront(widgetDir, "GaugeDialPro"),
+    bar = loadFront(widgetDir, "GaugeBarPro"),
+  }
+end
+
+local function splitCase(widgetDir, case)
+  local fronts = M.frontContracts(widgetDir)
+  local opts = M.resolveOpts(case.opts) or {}
+  local style = opts.Style
+  opts.Style = nil
+
+  local dialKeys, barKeys = {}, {}
+  for _, d in ipairs(fronts.dial.defs) do dialKeys[d.key] = true end
+  for _, d in ipairs(fronts.bar.defs) do barKeys[d.key] = true end
+  local hasDial, hasBar = false, false
+  for key in pairs(opts) do
+    if dialKeys[key] and not barKeys[key] then hasDial = true end
+    if barKeys[key] and not dialKeys[key] then hasBar = true end
+  end
+  if hasDial and hasBar then
+    error("scenes: " .. case.name .. " mixes DialPro and BarPro options")
+  end
+
+  local family
+  if style == "Bar" or hasBar then
+    family = "bar"
+  elseif style == "Needle" or style == "Arc" or hasDial then
+    family = "dial"
+  elseif style == nil or style == "Auto" then
+    family = (case.zone[1] / math.max(case.zone[2], 1) > 2.6) and "bar" or "dial"
+  else
+    error("scenes: " .. case.name .. " has unknown Style " .. tostring(style))
+  end
+  if family == "dial" and
+     (style == "Auto" or style == "Needle" or style == "Arc") then
+    opts.DialStyle = style
+  end
+
+  local allowed = (family == "dial") and dialKeys or barKeys
+  for key in pairs(opts) do
+    if not allowed[key] then
+      error("scenes: " .. case.name .. " option " .. key
+        .. " is not valid for " .. family)
+    end
+  end
+  return fronts[family], family, opts
+end
+
 -- Build one scene. Returns a context table with the widget and the facts the
 -- gallery captions and the manifest record.
 function M.build(mock, widgetDir, case)
@@ -135,9 +192,9 @@ function M.build(mock, widgetDir, case)
     if src.maxId then mock.setValue(src.maxId, case.history[2]) end
   end
 
-  local mod = dofile(widgetDir .. "main.lua")
+  local mod, family, authored = splitCase(widgetDir, case)
   local o = { Source = case.noSource and 0 or src.id }
-  for k, v in pairs(M.resolveOpts(case.opts) or {}) do o[k] = v end
+  for k, v in pairs(authored) do o[k] = v end
   local opts = mock.makeOptions(mod.defs, o)
 
   local zone = { x = 0, y = 0, w = case.zone[1], h = case.zone[2] }
@@ -149,6 +206,7 @@ function M.build(mock, widgetDir, case)
   end
 
   local ctx = { mock = mock, mod = mod, widget = w, opts = opts,
+                family = family, frontend = mod.name,
                 srcId = src.id, zone = zone, case = case }
   if case.post then case.post(ctx) end
 
@@ -188,6 +246,7 @@ function M.facts(ctx)
   end
   census.total = total
   return {
+    family = ctx.family, frontend = ctx.frontend,
     mode = L.mode, orientation = L.orientation, style = L.style,
     sweep = L.sweep, radius = L.radius, valueFont = L.valueFont,
     showNeedle = L.showNeedle and true or false,

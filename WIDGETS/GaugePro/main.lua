@@ -208,6 +208,13 @@ local DEFS = {
     choices = { "Auto", "Above", "Below", "Inside", "Off" } },
 }
 
+local SPEC = {
+  name = NAME,
+  family = nil, -- legacy keeps the current Auto/Needle/Arc/Bar dispatch
+  coreApi = 1,
+  defs = DEFS,
+}
+
 -- Firmware option array. Built inline (rather than in options.lua) so boot
 -- costs exactly one file read per widget - main.lua runs at startup for
 -- every widget on the card, used or not. DELIBERATE duplication (Tanda 6
@@ -260,7 +267,11 @@ local function create(zone, opts, path)
     if not chunk then
       error("GaugePro: cannot load app.lua (" .. tostring(err) .. ")")
     end
-    sharedApp = chunk(DEFS)
+    sharedApp = chunk(SPEC)
+    if type(sharedApp) ~= "table" or sharedApp.coreApi ~= SPEC.coreApi then
+      error(NAME .. ": incompatible GaugeCore API (expected "
+        .. tostring(SPEC.coreApi) .. ")")
+    end
   end
   local widget = sharedApp.create(zone, opts, path)
   widget.app = sharedApp

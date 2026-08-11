@@ -1,6 +1,6 @@
-"""Gauge Pro option table: loads defs.json (produced by defs_dump.lua from
-the REAL WIDGETS/GaugePro/main.lua) and translates readable option overrides
-into the model-YAML wire format.
+"""Gauge Pro split option tables: loads defs.json (produced by defs_dump.lua
+from the REAL DialPro and BarPro frontends) and translates readable option
+overrides into the model-YAML wire format.
 
 The wire format below (which storage type each Lua option type maps to, and
 the exact YAML field name per type) is not documented anywhere in the C++ --
@@ -76,16 +76,32 @@ def _decode_mock_color(packed):
 
 
 class Defs:
-    def __init__(self, rows):
+    def __init__(self, rows, family, widget_name, folder, core_api):
         self.rows = rows
+        self.family = family
+        self.widget_name = widget_name
+        self.folder = folder
+        self.core_api = core_api
         self.by_key = {r["key"]: r for r in rows}
         assert len(rows) == len(self.by_key), "duplicate DEFS key in defs.json"
 
     @classmethod
-    def load(cls, path):
+    def load_catalog(cls, path):
         with open(path, "r", encoding="utf-8") as f:
-            rows = json.load(f)
-        return cls(rows)
+            payload = json.load(f)
+        if payload.get("schema") != 2 or set(payload.get("fronts", {})) != {"dial", "bar"}:
+            raise ValueError("defs.json is not the Gauge Pro split schema v2")
+        out = {}
+        for family, front in payload["fronts"].items():
+            if front.get("family") != family:
+                raise ValueError("defs.json family mismatch for %s" % family)
+            out[family] = cls(front["options"], family, front["name"],
+                              front["folder"], front["coreApi"])
+        if out["dial"].widget_name != "DialPro" or out["bar"].widget_name != "BarPro":
+            raise ValueError("unexpected split widget IDs in defs.json")
+        if out["dial"].core_api != 1 or out["bar"].core_api != 1:
+            raise ValueError("unsupported GaugeCore API in defs.json")
+        return out
 
     def keys(self):
         return [r["key"] for r in self.rows]
@@ -160,10 +176,14 @@ class Defs:
         return yaml_type, field, int(value)
 
     def build_options(self, overrides):
-        """Full 44-slot wire option list for one Gauge Pro instance: every
+        """Full family-specific wire option list for one split instance: every
         DEFS key gets an explicit value, defaults for anything `overrides`
         doesn't touch. Returns a list of (index, yaml_type, field, value) in
         DEFS order -- the model-YAML options block's positional contract."""
+        unknown = sorted(set(overrides) - set(self.by_key))
+        if unknown:
+            raise ValueError("%s overrides options from another contract: %s"
+                             % (self.widget_name, ", ".join(unknown)))
         out = []
         for row in self.rows:
             key = row["key"]

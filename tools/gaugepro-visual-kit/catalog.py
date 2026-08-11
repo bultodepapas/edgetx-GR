@@ -1,5 +1,5 @@
 """Track 1 (single-widget, ported from dev/scenes.lua) and Track 2 (layout
-galleries) screen catalogs -- see myplans/gaugepro-visual-kit-plan.md Sec 4.
+galleries) screen catalogs for Gauge Dial Pro and Gauge Bar Pro.
 
 TELEMETRY SCOPE NOTE (read before touching source handling below): dynamic
 sensor injection (setTelemetryValue) needs a matching `telemetrySensors[]`
@@ -97,7 +97,45 @@ def _effective_range(overrides, defs: Defs):
     return get("Min"), get("Max"), get("Warn"), get("Crit")
 
 
-def track1_gauge_options(case, defs: Defs):
+def _family_and_options(case, defs_by_family):
+    """Translate one legacy scene's Style selector into a fixed split family.
+
+    The audited scene catalogue intentionally remains the visual source of
+    truth. This adapter is the only place that understands its old Style
+    option: Bar selects BarPro; Needle/Arc select DialPro + DialStyle; Auto
+    follows the old wide-zone threshold. Family-only keys are validated so a
+    scene cannot silently lose an override during the conversion.
+    """
+    overrides = dict(case.get("opts") or {})
+    style = overrides.pop("Style", None)
+    dial_only = set(defs_by_family["dial"].by_key) - set(defs_by_family["bar"].by_key)
+    bar_only = set(defs_by_family["bar"].by_key) - set(defs_by_family["dial"].by_key)
+    has_dial = bool(set(overrides) & dial_only)
+    has_bar = bool(set(overrides) & bar_only)
+    if has_dial and has_bar:
+        raise ValueError("scene %s mixes DialPro and BarPro options" % case["name"])
+
+    if style == "Bar" or has_bar:
+        family = "bar"
+    elif style in ("Needle", "Arc") or has_dial:
+        family = "dial"
+    elif style in (None, "Auto"):
+        zone = case.get("zone") or [1, 1]
+        family = "bar" if zone[0] / max(zone[1], 1) > 2.6 else "dial"
+    else:
+        raise ValueError("scene %s has unknown legacy Style %r" %
+                         (case["name"], style))
+
+    if family == "dial" and style in ("Auto", "Needle", "Arc"):
+        overrides["DialStyle"] = style
+    unknown = sorted(set(overrides) - set(defs_by_family[family].by_key))
+    if unknown:
+        raise ValueError("scene %s has invalid %s options: %s" %
+                         (case["name"], family, ", ".join(unknown)))
+    return family, overrides
+
+
+def track1_gauge_options(case, defs_by_family):
     """Readable option-override dict for one scenes.json case, ready for
     Defs.build_options(). Always sets Source=TX_VOLTAGE (see module
     docstring) and folds the case's value/thresholds through voltage_window
@@ -110,25 +148,27 @@ def track1_gauge_options(case, defs: Defs):
     generic TX_VOLTAGE auto-range regardless of voltage_window's output).
     A case's own `opts` can still override this back to "Auto" if it wants
     to (rare, and moot for TX_VOLTAGE, which has no dedicated preset)."""
+    family, authored = _family_and_options(case, defs_by_family)
+    defs = defs_by_family[family]
     overrides = {"Scale": "Manual"}
-    overrides.update(case.get("opts") or {})
+    overrides.update(authored)
     overrides["Source"] = "TX_VOLTAGE"
 
     if case.get("noSource"):
         overrides["Source"] = "NONE"
-        return overrides
+        return family, overrides
 
     min_, max_, warn, crit = _effective_range(overrides, defs)
     value = case.get("value")
     if isinstance(value, list):
         value = sum(value) / len(value)  # pre-CELLS-support approximation
     if value is None:
-        return overrides
+        return family, overrides
 
     nmin, nmax, nwarn, ncrit = voltage_window(min_, max_, warn, crit, value)
     overrides["Min"], overrides["Max"] = nmin, nmax
     overrides["Warn"], overrides["Crit"] = nwarn, ncrit
-    return overrides
+    return family, overrides
 
 
 def load_scenes(path="scenes.json"):
@@ -137,9 +177,10 @@ def load_scenes(path="scenes.json"):
 
 
 class Track1Screen:
-    def __init__(self, case, overrides, layout_id="Layout1x1", zone_index=0,
+    def __init__(self, case, family, overrides, layout_id="Layout1x1", zone_index=0,
                  model_note="", real_rect=None):
         self.case = case
+        self.family = family
         self.overrides = overrides
         self.layout_id = layout_id
         self.zone_index = zone_index
@@ -159,7 +200,7 @@ class Track1Screen:
         return self.case["section"]
 
 
-def build_track1_screens(scenes_data, defs: Defs):
+def build_track1_screens(scenes_data, defs_by_family):
     """One Track1Screen per non-skipped case, in scenes.json's own order
     (grouped by section already, since scenes_dump.lua flattens M.sections
     in order).
@@ -180,16 +221,16 @@ def build_track1_screens(scenes_data, defs: Defs):
         name = case["name"]
         if name in SKIPPED_CASES:
             continue
-        overrides = track1_gauge_options(case, defs)
+        family, overrides = track1_gauge_options(case, defs_by_family)
         zone = case.get("zone")
         if zone:
             target_w, target_h = zone
             layout_id, zone_index, rect = layouts.nearest_zone(
                 target_w, target_h, SCREEN_W, SCREEN_H)
-            out.append(Track1Screen(case, overrides, layout_id=layout_id,
+            out.append(Track1Screen(case, family, overrides, layout_id=layout_id,
                                      zone_index=zone_index, real_rect=rect))
         else:
-            out.append(Track1Screen(case, overrides))
+            out.append(Track1Screen(case, family, overrides))
     return out
 
 
@@ -222,17 +263,21 @@ def batch_by_section(screens, max_per_model=MAX_CUSTOM_SCREENS):
 # ------------------------------------------------------------- Track 2 -----
 
 class LayoutGalleryScreen:
-    """One Track 2 screen: a real LayoutId with a distinct Gauge Pro config
-    per zone. `zones` is a list of (zone_index, overrides) pairs."""
+    """One Track 2 screen with a distinct split-widget config per zone.
+
+    Callers provide ``(zone_index, (family, overrides))`` pairs; ``zones`` is
+    normalized to the model generator's ``(zone_index, family, overrides)``.
+    """
 
     def __init__(self, key, title, layout_id, zones):
         self.key = key
         self.title = title
         self.layout_id = layout_id
-        self.zones = zones
+        self.zones = [(zi, family, overrides)
+                      for zi, (family, overrides) in zones]
 
 
-def build_track2_screens():
+def build_track2_screens(defs_by_family):
     """Curated layout-gallery screens, Sec 4 Track 2 of the plan. Every
     zone gets Source=TX_VOLTAGE with its own voltage_window() so multiple
     zones on one screen can show different bands simultaneously even though
@@ -245,7 +290,9 @@ def build_track2_screens():
         # entirely and derives a range from the source's own preset table).
         extra.setdefault("Scale", "Manual")
         extra.update(Source="TX_VOLTAGE", Min=nmin, Max=nmax, Warn=nwarn, Crit=ncrit)
-        return extra
+        case = {"name": "track2", "zone": [1, 1], "opts": extra}
+        family, split = _family_and_options(case, defs_by_family)
+        return family, split
 
     screens = []
 

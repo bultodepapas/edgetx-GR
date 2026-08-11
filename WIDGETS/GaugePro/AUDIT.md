@@ -1,5 +1,8 @@
 # GaugePro — auditoría de código (post 1.1)
 
+> **Histórico:** auditoría del GaugePro monolítico. Los módulos y líneas se conservan como
+> evidencia de esa revisión; el mapa vigente está en [`DOCUMENTATION.md`](DOCUMENTATION.md).
+
 **Fecha:** 2026-08-05 · **Rama:** `feat/gauge-v2` · **HEAD:** `78e1ecef7`
 **Alcance:** únicamente `WIDGETS/GaugePro/` (14 módulos runtime, harness de test, docs y `dev/`).
 **Método:** lectura completa del código; contrastación de cada supuesto contra el firmware de

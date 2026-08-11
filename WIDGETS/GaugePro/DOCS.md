@@ -1,6 +1,6 @@
 # Gauge Pro — User & Technical Reference
 
-**Version:** 1.1 (branch `feat/gauge-v2`)
+**Version:** 1.3 (Gauge Dial Pro/Gauge Bar Pro naming contract, branch `feat/gauge-v2`)
 **Target:** EdgeTX 2.11+ color radios (LVGL); developed against EdgeTX 3.0
 **Language:** Lua (LVGL rendering path, no legacy `lcd` renderer)
 **License:** GPLv2
@@ -10,10 +10,14 @@
 ## 1. Overview
 
 Gauge Pro is a responsive analog-digital telemetry instrument for EdgeTX
-color-LCD radios. It renders a dial with a threshold rail, an active progress
-arc, a tapered needle, adaptive ticks, semantic normal/warning/critical
-colouring, peak-hold history and a value readout — or, where a dial cannot
-work, the same instrument as a linear bar.
+color-LCD radios. The current package registers two focused widgets:
+`GaugeDialPro` renders Auto/Needle/Arc instruments and `GaugeBarPro` renders linear
+faces. Both consume one shared `GaugeCore`, so telemetry, scale, state, color,
+history and alerts keep the same semantics.
+
+Their visible labels are **Gauge Dial Pro** and **Gauge Bar Pro**. EdgeTX stores
+the 10-character-safe registration IDs `DialPro` and `BarPro`; the SD folders
+remain `GaugeDialPro` and `GaugeBarPro`.
 
 It is the only widget in the EdgeTX ecosystem that draws with the **LVGL
 retained-object API** (`lvgl.arc`, `lvgl.triangle`, `lvgl.line`): every other
@@ -31,17 +35,22 @@ payload; there is no build step.
   still registers and draws a "needs EdgeTX 2.11+" message instead of
   disappearing from the model.
 - A color-LCD radio or the Companion Simulator.
-- No dependencies beyond the firmware's standard Lua API.
+- No external dependencies beyond the firmware's standard Lua API. The bundled
+  `/SCRIPTS/TOOLS/GaugeCore/` directory is required by both frontends.
 
 ## 3. Installation
 
-1. Copy the `GaugePro` folder to the SD card's `WIDGETS/` directory, so the
-   radio sees `/WIDGETS/GaugePro/main.lua`.
-2. In Companion: place the folder inside the SD-card content structure, or
-   copy it onto a real SD card.
+1. From `WIDGETS/GaugePro`, run
+   `pwsh dev/sync-sd.ps1 -Destination <SD-root>`.
+2. The installer creates `/SCRIPTS/TOOLS/GaugeCore/`,
+   `/WIDGETS/GaugeDialPro/` and `/WIDGETS/GaugeBarPro/` in that order and validates
+   `coreApi = 1`. Add `-IncludeLegacy` while migrating existing models.
 3. Power the radio (or restart the Simulator) so the widget list refreshes.
 4. On a main screen: **long-press** an empty widget slot → **Widgets** → add a
-   widget → pick **Gauge Pro** → configure it.
+   widget → pick **Gauge Dial Pro** or **Gauge Bar Pro** → configure it.
+
+See [`MIGRATION.md`](MIGRATION.md). The installer never deletes GaugePro
+legacy automatically.
 
 ## 4. Usage
 
@@ -54,6 +63,11 @@ slots does:
 |---|---|---|
 | 2.11.x (radio **and** Companion) | 10 | `widgets_container.h` `MAX_WIDGET_OPTIONS 10` |
 | 2.12+ / 3.0 | 50 | `datastructs_screen.h`; dynamic allocation since commit `5c96b1e15` |
+
+For the split widgets, slots 1–9 are identical. Slot 10 is `DialStyle` for
+GaugeDialPro and `BarPreset` for GaugeBarPro. GaugeDialPro has 24 declared options on
+2.12+; GaugeBarPro has 42. The detailed 44-slot tables below describe GaugePro
+legacy, retained only for migration.
 
 The widget declares its **core ten** on every firmware, in fixed positions,
 and appends the rest only when the firmware can store them. Options are never
@@ -485,7 +499,8 @@ table or unbounded colour cache.
 
 | File | Responsibility |
 |---|---|
-| `main.lua` | **Boot-weight only**: option declarations, version gate, `lvgl` guard, and a `loadScript` of `app.lua` on first use. Every widget's `main.lua` is executed at radio startup, used or not (see 6.1). |
+| `GaugeDialPro/main.lua`, `GaugeBarPro/main.lua` | **Boot-weight only**: IDs `DialPro`/`BarPro`, visible labels, family options, version/`lvgl` guard, fixed core path and first-use delegation. |
+| `GaugePro/main.lua` | Legacy transition frontend; retains its historical Auto dispatch and 44 slots. |
 | `app.lua` | Lifecycle: create / update / refresh, config → ranges → layout, staged rebuild decisions. |
 | `options.lua` | The option wire format: capacity and typed parsing. Pure Lua. |
 | `theme.lua` | Design tokens, text metrics, RGB/luminance/contrast analysis, bounded palette and badge-ink caches. |
@@ -496,8 +511,10 @@ table or unbounded colour cache.
 | `smoothing.lua` | Frame-rate independent gauge-geometry damping. |
 | `motion.lua` | Retained bar motion profiles, bounded colour/fade/settle/head state, hidden-resume landing and responsive effect caps. |
 | `telemetry.lua` | Source metadata cache, value reading, cell aggregation, availability model, history. |
-| `layout.lua` | Mode/orientation/style classification, dial and bar geometry, typography, regions. |
-| `renderer.lua` | Retained LVGL dial tree; per-frame property-only updates. |
+| `layout_common.lua` | Shared mode/orientation classification, typography, containment and structural signature. |
+| `ui_core.lua` | Shared semantic colors, state badge, value/unit anchoring, pulse and retained-property batching. |
+| `dial_layout.lua`, `dial_renderer.lua` | Radial geometry and retained LVGL dial tree. |
+| `bar_layout.lua`, `bar.lua` | Linear geometry and retained LVGL bar tree. |
 | `bar_style.lua` | Appearance presets, Auto inheritance, runtime palettes, compact variants and signatures. |
 | `bar_faces.lua` | Retained face interface and normalized render state for Continuous, Blocks, Hex, Fine Ticks, Steps and signed Dual Rail on horizontal/vertical/zero-origin axes, plus object ceilings and honest one-sided fallback. |
 | `bar.lua` | Linear orchestrator: shared thresholds/history/labels/badges plus face dispatch. |
@@ -509,6 +526,9 @@ table or unbounded colour cache.
 | `dev/api_spike.lua` | LVGL API feasibility widget for Companion/hardware. |
 | `dev/RESEARCH.md` | Research notes behind the design decisions. |
 | `tests/` | Headless suites (see 7). |
+
+`app.lua` loads common modules plus only the selected family. The legacy
+frontend is the sole composition that loads both families.
 
 ### 5.2 The option contract
 
@@ -754,7 +774,9 @@ Headless suites run with stock Lua 5.3 (the version EdgeTX embeds):
 
 ```sh
 lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (70 tests)
-lua5.3 tests/smoke_test.lua <widget-dir>/   # full lifecycle     (200 tests)
+lua5.3 tests/smoke_test.lua <widget-dir>/   # legacy lifecycle   (201 tests)
+lua5.3 tests/widgets_test.lua <widget-dir>/ # split contracts    (17 tests)
+lua5.3 dev/split_resources.lua <widget-dir>/ # split resource gates
 lua5.3 dev/collide.lua      <widget-dir>/   # geometric collision audit
 lua5.3 dev/instructions.lua <widget-dir>/   # firmware callback budgets
 lua5.3 dev/measure_frames.lua <widget-dir>/ # stopped-GC allocations
@@ -764,17 +786,26 @@ lua5.3 dev/collage.lua      <widget-dir>/ docs/   # the official option sheet
 lua5.3 dev/preview.lua      <widget-dir>/   # writes dev/preview.html
 ```
 
+Real-firmware simulator checks run from `tools/gaugepro-visual-kit/`:
+
+```sh
+python run.py check                   # split contracts and generated YAML
+python run.py capture --track2-only   # eight real DialPro/BarPro layouts
+python run.py all                     # 206 Track 1 cases + layouts + report
+```
+
 The mock environment enforces the firmware's real behaviour: per-object
 property allow-lists (including the triangle and dash-parameter restrictions
 in 5.9), `{x, y}` point arrays, the missing string metatable, 10 ms
 `getTime()` ticks, the three-value `getSourceValue`, and — most importantly —
-the **integer option wire format** with 1-based choices. Test input is written
-in readable form (`Style = "Needle"`) and converted to the wire format by
-`mock.makeOptions`, so the tests stay legible without lying about the
-contract.
+the **integer option wire format** with 1-based choices. Scene input retains
+the audited legacy vocabulary (`Style = "Needle"`/`"Bar"`), but
+`dev/scenes.lua` consumes it at the catalogue boundary, selects `DialPro` or
+`BarPro`, and emits only valid family options such as `DialStyle`. Generated
+model YAML never contains the legacy `Style` field.
 
-Coverage includes: the two frozen option contracts (slots 1–24 and 25–39),
-name lengths, 1-based
+Coverage includes: the frozen 24-slot DialPro and 42-slot BarPro contracts,
+their identical shared slots 1–9, name lengths, 1-based
 defaults, the 2.11 ten-slot build and the 2.12 full build), all colour modes
 and styles reaching the objects, preset/override precedence, all four bar
 palettes, exact custom anchors, bounded color caches, face contracts and
@@ -788,7 +819,7 @@ their startup delay, the reset switch, the 17-layout firmware atlas plus the
 golden zone matrix (every object inside the zone, object count ≤ 40), and a 200-frame
 flight that must produce zero object churn.
 
-`dev/preview.lua` renders the actual object tree — same coordinates, angles,
+`dev/preview.lua` renders both Pro frontends' actual object trees — same coordinates, angles,
 fonts and theme roles — as SVG. The production gallery covers stock, dark and
 high-contrast fixtures. It is the
 fastest way to review a visual change, and it is how the layout, chip sizing
@@ -814,7 +845,7 @@ lua5.3 dev/gallery.lua . --png                 # also rasterise, if a
 | File | Role |
 |---|---|
 | `dev/svgkit.lua` | The LVGL → SVG emitter and the theme palettes. One emitter, shared. |
-| `dev/scenes.lua` | The scene catalogue and the fact extractor. One list, shared. |
+| `dev/scenes.lua` | Scene catalogue, legacy-Style → fixed-family adapter and fact extractor. One list, shared. |
 | `dev/gallery.lua` | Composition, manifest, coverage report, baseline diff. |
 | `dev/shots.lua` | The same scenes as individual SVGs, for close-up review. |
 | `dev/collage.lua` | The **official** sheet in `docs/` — the one the README embeds. |
@@ -845,11 +876,11 @@ Three things make it a verification tool rather than a picture:
   so two runs diff cleanly. `--baseline` reports exactly which field of which
   scene moved, which is how a refactor proves it changed nothing it did not
   intend to.
-- **The coverage panel** cross-checks the catalogue against `main.lua`'s
-  option declarations and names any option no scene ever varies. Options that
+- **The coverage panel** cross-checks the catalogue against both Pro frontends'
+  option declarations and names any family option no scene ever varies. Options that
   cannot appear in a still frame (alerts, haptics, the reset switch) are
   listed as `n/a` with the reason, so the gap list stays honest. Append option
-  25 without a scene for it and the sheet says so.
+  to either frontend without a scene for it and the sheet says so.
 - **Three visual fixtures**: stock light, representative dark and explicit
   high contrast, because theme roles, fixed safety colours and authored custom
   colours must coexist on every supported ground. The light pass is the only

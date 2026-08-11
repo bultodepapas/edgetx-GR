@@ -1,7 +1,12 @@
-# Gauge Pro Visual Validation Kit — Plan
+# Gauge Dial Pro + Gauge Bar Pro Visual Validation Kit — Plan
 
-**Document version:** 0.1
-**Status:** Planning deliverable — no implementation yet. Verified against the local repo (`bultodepapas/edgetx-GR`, branch `feat/gauge-v2`, EdgeTX 3.0).
+> **Split ejecutado:** el catálogo legado sigue siendo la fuente auditada de escenas, pero el
+> adaptador lo divide en contratos `GaugeDialPro`/`DialPro` y `GaugeBarPro`/`BarPro`, genera YAML
+> por familia e instala el `GaugeCore` compartido. Consulte
+> [`../WIDGETS/GaugePro/DOCUMENTATION.md`](../WIDGETS/GaugePro/DOCUMENTATION.md).
+
+**Document version:** 0.2
+**Status:** Split adapter implemented and verified against real `simu.exe`: 206/206 Track 1 captures and 8/8 Track 2 layouts completed; 16 telemetry-injection cases remain explicitly skipped.
 **Depends on:** `myplans/widget-visual-emulator-plan.md` ("Widget Studio") §9a — its Phase 1 engine-hooks spike **already passed** on 2026-08-10. This plan does not repeat that work; it consumes it.
 **Date:** August 10, 2026
 
@@ -9,19 +14,33 @@
 
 ## 0. Scope statement (read this first)
 
-The request is for a **reproducible, real-firmware, pixel-truth visual catalog of Gauge Pro**: every option, every layout, every telemetry state, every theme, captured as committed PNGs with generated documentation, runnable as one script.
+The request is for a **reproducible, real-firmware, pixel-truth visual catalog of Gauge Dial Pro and Gauge Bar Pro**: every relevant family option, every layout, every telemetry state, every theme, captured as committed PNGs with generated documentation, runnable as one script.
 
 This is deliberately **narrower** than the full "Widget Studio" platform described in `widget-visual-emulator-plan.md` (contract-driven multi-widget genericity, `studio.yml` schema, hot reload, browser workspace, golden-diff CI gate). That plan is real and its Phase 1 spike is the foundation this one stands on, but building its full generic driver (Phases 2–6) is a separate, larger undertaking with its own gates. Building it is **not required** to deliver what was asked here.
 
 So: **reuse the engine hooks Phase 1 already proved** (native `simu` + `WIDGET_STUDIO` + `--pipe` steering + deterministic capture — all already merged, see §9a of that plan), and build a **small, Gauge-Pro-specific driver** on top of them. If a future session wants the generic platform, this plan's driver is a worked example of exactly the kind of client it would serve — but it does not block on it, and does not try to be it.
 
+### 0.1 Implemented split delta
+
+- `defs.json` schema 2 contains both real frontend contracts: DialPro 24 and BarPro 42 options.
+- The legacy scene source is adapted into 56 DialPro and 150 BarPro runnable cases; `Style` is
+  consumed by the adapter and never reaches generated YAML.
+- Model zones carry an explicit family and serialize `widgetName: DialPro` or `BarPro`.
+- The disposable SD tree installs `GaugeCore` plus both Pro frontends and removes stale legacy
+  frontend/bytecode only inside that generated tree.
+- Run-log schema 2 rejects rows left by monolithic runs.
+- Verified on real `simu.exe`: 206/206 Track 1 cases and 8/8 Track 2 layouts captured, zero runtime
+  errors. Sixteen source-injection cases remain explicitly skipped.
+
 ---
 
-## 1. Research — current Gauge Pro implementation
+## 1. Research — original monolithic baseline
 
-Read in full for this plan: `main.lua`, `options.lua`, `theme.lua`, `dev/scenes.lua`, `dev/zone_atlas.lua`, `.gitignore`. Skimmed: `app.lua`, `renderer.lua`, `bar.lua`, `bar_style.lua`, `bar_faces.lua`, `telemetry.lua`, `alerts.lua`, `motion.lua`, `presets.lua`, `ranges.lua`, `format.lua`, `smoothing.lua`, `geometry.lua`, `layout.lua`.
+The table below records the pre-split baseline used to author the scene catalog. The implemented
+driver now reads `GaugeDialPro/main.lua` and `GaugeBarPro/main.lua`; current runtime modules are
+listed in `WIDGETS/GaugePro/DOCUMENTATION.md`.
 
-### 1.1 The option contract (`main.lua` `DEFS`, 44 entries)
+### 1.1 Historical legacy option contract (`GaugePro/main.lua`, 44 entries)
 
 Options are **positional and typed**; the wire format and 1-based CHOICE convention are documented in `options.lua`'s header and verified against `radio/src/gui/lua_widget_factory.cpp` / `widget_settings.cpp` in an earlier session. Full table, in declaration order (this **is** the option matrix for §5):
 
@@ -72,7 +91,8 @@ Options are **positional and typed**; the wire format and 1-based CHOICE convent
 | 42 | ValuePos | CHOICE | Auto | Auto / Above / Inside / End / Off |
 | 43 | LabelPos | CHOICE | Auto | Auto / Above / Below / Inside / Off |
 
-44 declared slots; all fit in the 2.12+ `MAX_WIDGET_OPTIONS=50` budget this repo targets (`main.lua:73-209`, `options.lua:26-30`).
+These 44 slots describe GaugePro legacy only. The current visual-kit contracts are 24 DialPro
+slots and 42 BarPro slots, both extracted mechanically from their real frontends.
 
 **Non-visual options** (cannot be shown in a still frame — verbatim from `dev/scenes.lua:99-106`, already an audited exclusion list, reused rather than re-litigated):
 
@@ -89,7 +109,9 @@ Options are **positional and typed**; the wire format and 1-based CHOICE convent
 
 `M.parse()` only falls back to the declared default for **CHOICE** (`choiceOf`: any raw value `<1` → default) and **BOOL** (`boolOf`: `nil` → default, but a literal `0` is a valid, meaningful `false`). **VALUE, SLIDER, SWITCH, COLOR, and SOURCE never do this** — `numberOf(raw, default)` returns `tonumber(raw) or default`, and a stored `0` is a valid number, so it is returned as-is, not replaced. This was independently confirmed empirically in the Widget Studio Phase 1 spike (`widget-visual-emulator-plan.md` §9a, last paragraph): a hand-authored zone with unset `Min`/`Max` read back as literal `0`, not Gauge Pro's compiled defaults of 0/100.
 
-**Consequence for this plan:** the model-YAML generator (§10) must write an explicit value for **every one of the 44 options on every screen**, never rely on omission-equals-default. This is not optional polish; a screen that omits `Warn`/`Crit`/`Damping` etc. will silently render with `0`, not the intended default, and the catalog would be documenting a bug that doesn't exist.
+**Implemented consequence:** the model-YAML generator writes an explicit value for every option
+in the selected family contract—24 for DialPro or 42 for BarPro—and rejects unknown or
+cross-family overrides. It never relies on omission-equals-default.
 
 ### 1.3 Colour contract (`theme.lua`, cross-checked against memory `gaugepro-colour-contract`)
 
@@ -107,7 +129,7 @@ Two channels, never mixed:
 | `estado` | Estado y disponibilidad | 7 | normal/warn/crit/stale/no-link/no-data/no-source |
 | `color` | Modos de color | 10 | all 5 `ColorMode`s × normal/critical |
 | `escala` | Escalas y umbrales | 9 | non-0..100 ranges, descending scale, out-of-range, warn==crit |
-| `dial` | Opciones del dial | 11 | Sweep, Style, ShowChip, ShowMinMax |
+| `dial` | Opciones del dial | 11 | Sweep, DialStyle, ShowChip, ShowMinMax |
 | `aguja` | Aguja y amortiguación | 5 | needle positions, Damping 0 vs 9 |
 | `texto` | Valor, unidad y nombre | 7 | Precision, Label/Suffix override, timer source |
 | `bateria` | Batería y celdas | 7 | Cells aggregation, Battery %, CELLS table |
@@ -302,7 +324,7 @@ tools/
     driver.py          # owns the simu process + --pipe channel
     report.py          # writes CATALOG.md / INDEX.md / RUN_SUMMARY.md / run.log.jsonl
     run.py              # CLI entrypoint, subcommands per §10
-    defs_dump.lua       # tiny Lua shim: dofile main.lua under mock_env.lua, dump .defs as JSON
+    defs_dump.lua       # loads both real Pro frontends; dumps schema 2 contracts
 ```
 
 **Why `WIDGETS/GaugePro/docs/visual-kit/` and not a top-level `docs/gauge-pro/visual-kit/` or `tests/visual/gauge-pro/`:** this repo already has exactly this precedent, and it already carves the exception out of `.gitignore` — `WIDGETS/GaugePro/.gitignore:9-11`: *"NOT ignored, deliberately: docs/ holds the official option collage... unlike dev/shots/, which is scratch."* There is no top-level `tests/` directory in this repo to extend, and `docs/gauge-pro/` (top-level) would split Gauge Pro's documentation across two locations for no benefit. `tools/gaugepro-visual-kit/` mirrors the sibling `tools/widget-studio/` package the other plan proposes (not yet built), keeping the two tools visually consistent if both exist later.
@@ -317,8 +339,8 @@ Single Python entrypoint, `python tools/gaugepro-visual-kit/run.py <subcommand>`
 
 | Subcommand | Behavior |
 |---|---|
-| `defs` | Runs `defs_dump.lua` (a ~20-line shim that loads `tests/mock_env.lua`'s constant/table stubs, `dofile`s the real `main.lua`, and JSON-dumps the returned `.defs` table) via the pinned Lua 5.3.6 toolchain. Writes `defs.json`. **Zero hand-duplication of the option table** — this is the direct fix for the exact class of drift risk `main.lua`'s own header already warns about (Tanda 6 F-14: "options.lua's builder and translator were deleted after verifying both byte-identical... this inline build is the ONLY builder"). Every other subcommand reads `defs.json`, never a hand-maintained Python mirror. |
-| `generate` | Reads `defs.json` + the catalog (Track 1 cases transcribed from `dev/scenes.lua`, Track 2 cases authored fresh, §4) and writes: `MODELS/*.yml` (one file per ≤10-screen batch, §8), `THEMES/*/theme.yml` (§3), a `RADIO/radio.yml` per theme batch (only the `selectedTheme` field differs). Validates every option write is present and typed against `defs.json` (catches the §1.2 trap mechanically: a screen missing a VALUE/COLOR/SWITCH/SOURCE entry is a build error, not a silent `0`). |
+| `check` | Extracts both real frontend contracts, converts all scenes, rejects family leakage and verifies generated YAML contains `DialPro` + `BarPro` but never legacy `GaugePro`; does not launch simu. |
+| `generate` | Writes schema-2 `defs.json` and `scenes.json`, builds the 56 Dial/150 Bar Track 1 catalog and eight Track 2 layouts, validating every override against its family contract. |
 | `capture` | Boots `simu` (must already be built with `-DWIDGET_STUDIO=ON`, `ws build`-equivalent — reuses the exact CMake option from the other plan's §4.1, already merged) headless (`SDL_VIDEODRIVER=dummy`), drives it over `--pipe` per §8, collects PNGs into `docs/visual-kit/screenshots/`, appends one JSONL row per screen to `run.log.jsonl`. |
 | `report` | Regenerates `CATALOG.md`, `INDEX.md`, `RUN_SUMMARY.md` from the same catalog + the run log — never hand-edited (§13). |
 | `all` | `defs` → `generate` → `capture` → `report`, in order. **This is the "single script" the request asks for.** Nonzero exit if any screen failed (§12). |

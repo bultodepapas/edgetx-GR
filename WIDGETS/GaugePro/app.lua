@@ -16,15 +16,56 @@
 ---- # License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html               #
 ---- #########################################################################
 
-local DEFS = ...
+local input = ...
+-- Frontends pass an explicit product specification. Accepting the historical
+-- bare DEFS array keeps local tools and old compiled mains diagnosable during
+-- the transition, while every shipping frontend uses the structured form.
+local SPEC
+if type(input) == "table" and type(input.defs) == "table" then
+  SPEC = input
+else
+  SPEC = { name = "GaugePro", family = nil, coreApi = 1, defs = input }
+end
+local DEFS = assert(SPEC.defs, "GaugePro: missing frontend option definitions")
+local CORE_API = 1
+if type(SPEC.name) ~= "string" or SPEC.name == "" then
+  error("GaugeCore: frontend name must be a non-empty string")
+end
+if SPEC.family ~= nil and SPEC.family ~= "dial" and SPEC.family ~= "bar" then
+  error(SPEC.name .. ": invalid GaugeCore family " .. tostring(SPEC.family))
+end
+if SPEC.coreApi ~= CORE_API then
+  error((SPEC.name or "GaugePro") .. ": incompatible GaugeCore API (expected "
+    .. tostring(SPEC.coreApi) .. ", found " .. tostring(CORE_API) .. ")")
+end
 
 local M = {}
+M.coreApi = CORE_API
 
-local MODULES = {
+-- Shared product semantics are always present. Bar-only presentation and
+-- motion are loaded only for GaugeBarPro (or for the legacy auto-dispatcher).
+-- This matters on EdgeTX: each loaded chunk has a real RAM cost even when no
+-- function from it is ever called.
+local COMMON_MODULES = {
   "theme", "geometry", "format", "options", "ranges", "presets",
-  "smoothing", "motion", "telemetry", "layout", "renderer", "bar_style",
-  "bar_faces", "bar", "alerts",
+  "smoothing", "telemetry", "layout_common", "ui_core", "alerts",
 }
+local DIAL_MODULES = { "dial_layout", "dial_renderer" }
+local BAR_MODULES = {
+  "motion", "bar_layout", "bar_style", "bar_faces", "bar",
+}
+
+local function moduleNames()
+  local names = {}
+  for i = 1, #COMMON_MODULES do names[#names + 1] = COMMON_MODULES[i] end
+  if SPEC.family == "dial" or SPEC.family == nil then
+    for i = 1, #DIAL_MODULES do names[#names + 1] = DIAL_MODULES[i] end
+  end
+  if SPEC.family == "bar" or SPEC.family == nil then
+    for i = 1, #BAR_MODULES do names[#names + 1] = BAR_MODULES[i] end
+  end
+  return names
+end
 
 local SCALE_AUTO = 1
 local BATTERY_OFF = 1
@@ -33,7 +74,8 @@ local BATTERY_OFF = 1
 -- (all per-widget state lives in the `widget` table), the setup() calls are
 -- idempotent, and theme's metric caches are exactly what should be shared
 -- across instances. main.lua also memoizes app.lua itself, so one screen
--- with four gauges loads 16 chunks once instead of 64 (AUDIT.md P2-3).
+-- with four gauges loads each required chunk once rather than once per
+-- instance (AUDIT.md P2-3).
 -- Keyed by path so two differently-located copies of the widget stay
 -- independent.
 local MODS_BY_PATH = {}
@@ -43,25 +85,70 @@ local function loadModules(path)
   if mods then return mods end
   mods = {}
   MODS_BY_PATH[path] = mods
-  for i = 1, #MODULES do
-    local name = MODULES[i]
+  local names = moduleNames()
+  for i = 1, #names do
+    local name = names[i]
     local chunk, err = loadScript(path .. name .. ".lua", "bt")
     if not chunk then
-      error("GaugePro: cannot load " .. name .. " (" .. tostring(err) .. ")")
+      error((SPEC.name or "GaugePro") .. ": cannot load " .. name
+        .. " from " .. path .. " (" .. tostring(err) .. ")")
     end
     local ok, mod = pcall(chunk)
     if not ok or type(mod) ~= "table" then
-      error("GaugePro: bad module " .. name .. " (" .. tostring(mod) .. ")")
+      error((SPEC.name or "GaugePro") .. ": bad module " .. name
+        .. " from " .. path .. " (" .. tostring(mod) .. ")")
     end
     mods[name] = mod
   end
-  mods.layout.setup(mods.theme, mods.geometry, mods.format)
-  mods.renderer.setup(mods.theme, mods.geometry, mods.format)
-  mods.motion.setup(mods.theme)
-  mods.bar_style.setup(mods.theme, mods.presets)
-  mods.bar_faces.setup(mods.theme, mods.geometry, mods.renderer)
-  mods.bar.setup(mods.theme, mods.geometry, mods.format, mods.renderer,
-                 mods.bar_faces, mods.motion)
+  mods.layout_common.setup(mods.theme, mods.geometry, mods.format)
+  if mods.dial_layout then
+    mods.dial_layout.setup(mods.layout_common, mods.theme, mods.geometry,
+                           mods.format)
+  end
+  if mods.bar_layout then
+    mods.bar_layout.setup(mods.layout_common, mods.theme, mods.geometry,
+                          mods.format)
+  end
+
+  -- Compatibility facade used by the lifecycle. It composes exactly one
+  -- family for the new frontends and both only for GaugePro legacy.
+  mods.layout = {
+    calculate = function(widget, cfg)
+      local w, h = widget.zone.w, widget.zone.h
+      local mode, orientation = mods.layout_common.classify(w, h)
+      local layout = { mode = mode, orientation = orientation, w = w, h = h }
+      local style = mods.layout_common.pickStyle(cfg, w, h, widget.family)
+      if style == "bar" then
+        return assert(mods.bar_layout,
+          "GaugeCore: Bar layout was not loaded").calculate(widget, cfg, layout)
+      end
+      return assert(mods.dial_layout,
+        "GaugeCore: Dial layout was not loaded").calculate(widget, cfg, layout)
+    end,
+    signature = mods.layout_common.signature,
+    applyBarVisual = mods.bar_layout and mods.bar_layout.applyBarVisual,
+  }
+  mods.ui_core.setup(mods.theme, mods.geometry, mods.format)
+  if mods.dial_renderer then
+    mods.dial_renderer.setup(mods.ui_core, mods.theme, mods.geometry,
+                             mods.format)
+  end
+  -- Public compatibility alias for existing diagnostics and tests. It points
+  -- at the genuinely shared UI primitives, never at the dial renderer.
+  mods.renderer = mods.ui_core
+  if mods.dial_renderer then
+    mods.renderer.angleOf = mods.dial_renderer.angleOf
+    mods.renderer.bandSpan = mods.dial_renderer.bandSpan
+  end
+  if mods.motion then mods.motion.setup(mods.theme) end
+  if mods.bar_style then mods.bar_style.setup(mods.theme, mods.presets) end
+  if mods.bar_faces then
+    mods.bar_faces.setup(mods.theme, mods.geometry, mods.renderer)
+  end
+  if mods.bar then
+    mods.bar.setup(mods.theme, mods.geometry, mods.format, mods.renderer,
+                   mods.bar_faces, mods.motion)
+  end
   return mods
 end
 
@@ -70,6 +157,8 @@ function M.create(zone, options, path)
     zone = zone,
     options = options,
     path = path or "/WIDGETS/GaugePro/",
+    family = SPEC.family,
+    frontendName = SPEC.name or "GaugePro",
     defs = DEFS,
     mods = loadModules(path or "/WIDGETS/GaugePro/"),
     -- `gen` counts REAL resolutions of the source (telemetry.resolveSource);
@@ -91,7 +180,7 @@ end
 -- Which renderer draws this layout.
 local function painter(widget)
   return (widget.layout.style == "bar") and widget.mods.bar
-      or widget.mods.renderer
+      or widget.mods.dial_renderer
 end
 M.painter = painter
 
@@ -243,7 +332,12 @@ local function configure(widget, deferRebuild)
   if sig ~= widget.layoutSig then
     widget.layoutSig = sig
     widget.layoutRebuilt = true
-    if deferRebuild and widget.ui and widget.ui.built then
+    -- New split frontends stage their initial tree too: parsing/resolution
+    -- and a rich Bar build in one callback measured above the 10k structural
+    -- guardrail. GaugePro legacy keeps its historical immediate first build.
+    local staged = deferRebuild and ((widget.ui and widget.ui.built)
+      or SPEC.family ~= nil)
+    if staged then
       widget.rebuildPending = true
     else
       rebuild(widget)
