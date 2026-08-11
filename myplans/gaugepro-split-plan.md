@@ -1,317 +1,542 @@
-# Gauge Pro — Plan de división en dos widgets: dial (reloj) y barra
+# Gauge Pro — Plan corregido para dividir dial y barra
 
-**Versión del documento:** 0.1 (borrador validado contra el árbol local, rama `feat/gauge-v2`)
-**Estado:** Plan de senior dev; no se escribe código todavía
-**Fecha:** 10 de agosto de 2026
-
----
-
-# 1. Objetivo
-
-Dividir el widget `WIDGETS/GaugePro/` en **dos widgets registrados e independientes**:
-
-| Widget nuevo | Familia | Qué dibuja | Sustituye a |
-|---|---|---|---|
-| `GaugeDial` | `dial` | Instrumentos rotativos (Needle y Arc) | `Style = Needle` / `Style = Arc` / `Style = Auto` (zonas no-barra) |
-| `GaugeBar` | `bar` | Instrumentos lineales (barras) | `Style = Bar` / `Style = Auto` (zonas muy anchas) |
-
-Cada widget debe tener:
-- **Su propio nombre y carpeta** en la SD (`/WIDGETS/<Nombre>/main.lua`), listado por separado en "Add widget".
-- **Su propio conjunto de opciones** (el de dial no muestra opciones de barra ni viceversa).
-- **Una sola fuente de verdad de código** — sin duplicar módulos (el repo ya eliminó un builder duplicado por exactamente esta razón; ver §2.4 y AUDIT.md P2-3).
-- **Comportamiento actual intacto** dentro de cada familia: mismo dibujo, mismo modelo de datos, mismo rendimiento, mismas garantías.
+**Versión:** 0.3 (revisión senior + guardrails, contra `feat/gauge-v2`, HEAD `38988a178`)
+**Fecha:** 11 de agosto de 2026
+**Estado:** listo para decisión e implementación; no se modifica runtime en este documento
+**Guía normativa:** [`WIDGETS/GaugePro/DEVELOPMENT_GUIDE.md`](../WIDGETS/GaugePro/DEVELOPMENT_GUIDE.md)
 
 ---
 
-# 2. Análisis del código actual
+## 1. Veredicto
 
-## 2.1 Anatomía del widget (hechos verificados leyendo el código)
+La división es conveniente: `GaugePro` ya contiene dos productos distintos, con geometría,
+opciones y expectativas de zona diferentes. La frontera técnica también existe (`layout.style`,
+`painter()`, `bar_style`, `bar_faces`, `bar`), por lo que no hay que reescribir el motor visual.
 
-Un solo widget, 17 módulos runtime + `main.lua` + `app.lua`:
+El borrador 0.1, sin embargo, no era implementable de forma segura. Esta revisión corrige seis
+problemas:
 
-| Módulo | Tamaño | Responsabilidad | Familia |
-|---|---|---|---|
-| `main.lua` | 15 KB | Registro, 44 opciones (`DEFS`), builder inline, guard de compatibilidad, memoiza `app.lua` | — |
-| `app.lua` | 16 KB | Ciclo de vida: `create/update/refresh`, `configure`, `apply`, `painter()` | — |
-| `theme.lua` | 27 KB | Tipografía, colores, `px()` (LCD_SCALE), opacidades, medidas | compartido |
-| `geometry.lua` | 6 KB | `normalize`, `valueToAngle`, `linePoints(Into)`, `makeAxis`, `axisSpan` | compartido |
-| `format.lua` | 3 KB | `display`, `widestSample`, `hms` | compartido |
-| `options.lua` | 5 KB | `parse` del wire format (1-based, slots posicionales) | compartido |
-| `ranges.lua` | 5 KB | `build`, `saneThresholds`, `determineState`, `deadband` | compartido |
-| `presets.lua` | 10 KB | Presets de sensores, batería, celdas | compartido |
-| `smoothing.lua` | 2 KB | `tau`, `step` (amortiguación independiente de framerate) | compartido |
-| `telemetry.lua` | 18 KB | Resolución de fuente, historial min/max, staleness | compartido |
-| `alerts.lua` | 4 KB | Alertas por transición de estado | compartido |
-| `layout.lua` | 65 KB | `classify`, `pickStyle`, **`dialLayout`** (líneas 314-892), **`barLayout` + `applyBarVisual`** (896-1272), `signature`, y los helpers compartidos de colocación de texto (`placeValue`, `pickValueFont`, `stackTextRows`, `chipOverhang`, `chordAt`/`clipToChord`) | **ambas** |
-| `renderer.lua` | 47 KB | **Renderizador de dial** (`buildTrack`, `buildTicks`, `buildNeedle`, `build`, `applyColors`, `updateArc`, `updateHistory`) **+ helpers LVGL compartidos usados por la barra**: `setProp`, `flush`, `label`, `updateChip`, `anchorUnit`, `updateSourceLabels`, `updatePulse`, `resolveColor`, `valueColor`, `applyStateInk`, `stateText`, `stateKey`, constantes `COLOR_*` | **ambas** |
-| `bar_style.lua` | 20 KB | Resolución de apariencia de barra (presets → override → compacto), paletas | barra |
-| `bar_faces.lua` | 64 KB | Registro de caras de barra (continuous, blocks, hex, ticks, steps, dual-rail); `select`, `estimateObjects`, techo 40 objetos | barra |
-| `bar.lua` | 20 KB | Driver del renderizador de barra (`build`/`update`, marks, chip, pulse) | barra |
-| `motion.lua` | 16 KB | Lenguaje de movimiento Phase 6 (off/essential/refined/expressive) | **solo barra** (verificado: `Motion.` solo aparece en `bar.lua:255,347`) |
+1. **Pérdida de Needle/Arc.** El borrador eliminaba `Style` de `GaugeDial`, pero
+   `dialLayout()` decide la aguja con `cfg.style`. El resultado habría sido un dial siempre en
+   modo Arc. `GaugeDial` conserva un selector propio `DialStyle = Auto | Needle | Arc`.
+2. **Ruta de core incorrecta.** EdgeTX siempre llama `create(zone, options, widgetPath)` y el
+   tercer argumento será `/WIDGETS/GaugeDial/` o `/WIDGETS/GaugeBar/`. No puede reutilizarse como
+   override del core. Los frentes deben ignorarlo para cargar módulos y usar un `CORE_PATH`
+   explícito.
+3. **Caché no compartida entre tipos.** Cada `main.lua` ejecuta su propio chunk de `app.lua`; por
+   tanto cada frente obtiene su propio `MODS_BY_PATH`. Se conserva la compartición entre
+   instancias del mismo tipo, pero un Dial + un Bar no comparten automáticamente módulos en RAM.
+   El coste mixto debe medirse y la separación de módulos por familia es puerta obligatoria de
+   release, no refactor opcional.
+4. **Fases imposibles.** El borrador hacía que los frentes buscaran
+   `/SCRIPTS/TOOLS/GaugeCore/` antes de que deploy creara esa carpeta. El empaquetado del core se
+   mueve a la misma fase que introduce los frentes.
+5. **Baseline desactualizado y rojo.** La suite actual tiene 70 unit tests y 200 lifecycle tests,
+   no 36 + 46. En este HEAD: unit `70/70`; lifecycle `200 pass / 1 fail`; luacheck `1 warning / 0
+   errors`. No se inicia el split hasta resolver el fallo de anatomía de Precision Rail
+   (`expected 16, got 14`).
+6. **Test de builder no realizable.** El builder es local y no acepta un `DEFS` arbitrario. Se
+   reemplaza aquel test por contratos observables sobre `mod.options`, `mod.defs`, capacidades
+   2.11/2.12 y, si se duplican bloques de bootstrap, una comprobación estática de identidad.
 
-## 2.2 El despacho actual dial ↔ bar
+---
 
-La elección de familia vive en `layout.pickStyle` (`layout.lua:163-167`):
+## 2. Objetivo y no objetivos
+
+Crear dos widgets registrados e independientes:
+
+| Widget | Familia fija | Caras |
+|---|---|---|
+| `GaugeDial` | `dial` | Auto, Needle, Arc |
+| `GaugeBar` | `bar` | Continuous, Blocks, Hex, Ticks, Steps, Dual rail mediante presets/overrides |
+
+Cada widget tendrá nombre, carpeta y opciones propios. Compartirán una sola fuente de runtime.
+No se duplicarán renderizadores ni lógica de telemetría en el repositorio.
+
+No son objetivos de este cambio:
+
+- rediseñar las caras actuales;
+- cambiar thresholds, smoothing, alertas, historial o semántica de colores;
+- migrar automáticamente datos del modelo en la radio;
+- introducir una caché global Lua sin demostrar antes que hace falta;
+- retirar `GaugePro` antes de que exista una ruta de transición documentada.
+
+---
+
+## 3. Hechos del código actual
+
+### 3.1 Inventario real
+
+Hay **17 archivos Lua de producción en total**: `main.lua`, `app.lua` y 15 módulos cargados por
+`app.lua`. No son “17 módulos + main + app”.
+
+El módulo `app.lua` carga hoy siempre:
+
+```text
+theme geometry format options ranges presets smoothing motion telemetry
+layout renderer bar_style bar_faces bar alerts
+```
+
+Aunque `motion`, `bar_style`, `bar_faces` y `bar` solo sirven a barras, un dial también paga su
+carga. A la inversa, una barra carga todo el layout y renderer de dial.
+
+### 3.2 Despacho existente
+
+`layout.pickStyle(cfg, w, h)` devuelve `bar` cuando:
+
+- `Style = Bar`; o
+- `Style = Auto` y `w / h > 2.6`.
+
+`app.painter()` elige `bar` o `renderer` mediante `widget.layout.style`. La apariencia de barra
+solo se resuelve cuando el layout es `bar`. Esta frontera se conserva.
+
+### 3.3 Invariante que obliga a conservar DialStyle
+
+La familia y la cara de dial no son la misma decisión:
 
 ```lua
-if cfg.style == M.STYLE_BAR then return "bar" end
-if cfg.style == M.STYLE_AUTO and (w / h) > 2.6 then return "bar" end
-return "dial"
+-- familia
+L.style = "dial" -- frente GaugeDial
+
+-- cara dentro de la familia
+L.showNeedle = (cfg.style == STYLE_NEEDLE)
+  or (cfg.style == STYLE_AUTO and mode ~= "micro")
 ```
 
-- La opción `Style` (posición 7 del contrato, `main.lua:87-88`) tiene opciones `{ Auto, Needle, Arc, Bar }`.
-- `app.lua:92-96` (`painter`) elige renderizador por `widget.layout.style`; `configure()` resuelve `barVisual` solo si `L.style == "bar"` (`app.lua:228-233`); `refresh()` solo refresca paleta de barra si el estilo es barra (`app.lua:371-373`).
-- `layout.calculate` (`layout.lua:1276-1287`) despacha a `dialLayout` o `barLayout`.
+Fijar la familia a `dial` elimina únicamente el salto automático a barra. No puede eliminar el
+selector Auto/Needle/Arc.
 
-Consecuencia clave: **todo el código condicional por familia ya existe y está bien aislado**. El split no requiere reescribir renderizadores; requiere (a) fijar la familia por widget y (b) recortar opciones.
+### 3.4 Contrato de opciones
 
-## 2.3 El contrato de opciones (restricción dura)
+- Los slots son posicionales.
+- CHOICE usa enteros 1-based.
+- EdgeTX 2.11 declara 10 opciones; 2.12+ admite hasta 50.
+- Los widgets nuevos no heredan slots de `GaugePro`, pero una vez publicados sus propios slots
+  quedan congelados y solo se podrá append.
+- Los defaults de opciones no declaradas en 2.11 siguen llegando a runtime porque
+  `options.parse()` recorre el `DEFS` completo.
 
-Documentado en `options.lua:1-34` y verificado contra el firmware:
+### 3.5 Contrato real de `create()`
 
-1. **Los slots son POSICIONALES y solo se pueden APPEND** (`options.lua:21-24`). Insertar/reordenar reinterpreta datos de modelos guardados.
-2. **CHOICE son enteros 1-based**, nunca strings (`options.lua:16-19`).
-3. **Capacidad**: 2.11 → 10 slots; 2.12+ → 50 (`options.lua:39-52`). "Los primeros diez deben importar".
-4. **44 opciones** hoy (`smoke_test.lua:164`, golden list). `Style` está en la posición 7.
+El firmware llama a cada widget con tres argumentos:
 
-Implicación: los dos widgets nuevos son **widgets nuevos, sin modelos heredados**, por lo que sus posiciones de slot las decidimos nosotros desde cero. La restricción de "frozen slots" NO los ata al orden actual de GaugePro — solo nos obliga a que los primeros diez de cada widget importen en 2.11.
+```text
+create(zone, storedOptions, /WIDGETS/<carpeta-del-frente>/)
+```
 
-## 2.4 Principios de diseño del proyecto que el plan debe respetar
-
-- **Una sola fuente de verdad, sin duplicación.** Tanda 6 F-14/6.1 borró el builder duplicado de `options.lua` y dejó UN builder inline en `main.lua` porque "los dos solo pueden divergir" (ver `options.lua:54-59` y `main.lua:211-217`). Duplicar ~10 módulos compartidos en dos carpetas sería exactamente el defecto que el proyecto eliminó.
-- **Coste de boot:** `main.lua` se ejecuta en el arranque para **todo widget de la tarjeta, usado o no** (`main.lua:7-9`). Todo lo que se mueva a un segundo archivo leído en boot cuesta una lectura más.
-- **Memorización por path:** `app.lua` memoiza los módulos por path (`MODS_BY_PATH`, `app.lua:39-40`) y `main.lua` memoiza `app.lua` por radio (`main.lua:254-268`). Cuatro instancias = 16 chunks en vez de 64 (AUDIT.md P2-3).
-- **Una instancia comparte la tabla de módulos:** los módulos son puros; todo el estado por-widget vive en la tabla `widget`. Dos tipos de widget distintos pueden cargar el mismo path con DEFS distintos sin colisión, porque cada ejecución del chunk `app.lua` captura su propio `DEFS` y su propio `MODS_BY_PATH`.
-
-## 2.5 Los dos conjuntos de opciones hoy (`main.lua:73-209`)
-
-Posiciones actuales (monolito):
-- **1-10 (core 211):** Source, Min, Max, Warn, Crit, HighGood, **Style**, ColorMode, Precision, ShowMinMax
-- **11-24 (212):** Accent, Label, Suffix, Scale, Sweep, Damping, Cells, Battery, Alerts, AlertSw, Delay, Vibrate, ResetSw, ShowChip
-- **25-39 (212, barra Phase 1):** BarPreset, BarFace, BarDir, BarOrigin, BarSize, BarEnds, Segments, SegGap, Palette, WarnClr, CritClr, TrackClr, Surface, PanelClr, Contrast
-- **40-44 (212, barra Phase 5):** Motion, BarHead, ScaleMarks, ValuePos, LabelPos
-
-Única opción **solo-dial**: `Sweep`. Única opción **inherente al monolito**: `Style` (se elimina en ambos).
+Ese tercer argumento describe el frente, no el core. El diseño debe separar los conceptos
+`widgetPath` y `corePath`.
 
 ---
 
-# 3. Estado objetivo
+## 4. Decisiones de arquitectura
 
-## 3.1 Arquitectura recomendada: "motor compartido + dos frentes delgados"
+### D1 — Motor compartido + dos frentes delgados
 
-```
-Repo (fuente única)
-WIDGETS/
-├── GaugePro/            ← MONOLITO SIN TOCAR (referencia, suite de tests, motor)
-│   ├── main.lua  app.lua  + los 15 módulos
-│   ├── tests/  dev/  docs/  ...
-├── GaugeDial/           ← NUEVO (solo main.lua, ~150 líneas)
-│   └── main.lua          name="GaugeDial", DEFS dial (23), family="dial"
-└── GaugeBar/            ← NUEVO (solo main.lua, ~180 líneas)
-    └── main.lua          name="GaugeBar", DEFS bar (42), family="bar"
+Distribución nueva:
 
-SD (salida de sync-sd.ps1)
-/WIDGETS/GaugeDial/main.lua      → loadScript /SCRIPTS/TOOLS/GaugeCore/app.lua
-/WIDGETS/GaugeBar/main.lua       → loadScript /SCRIPTS/TOOLS/GaugeCore/app.lua
-/SCRIPTS/TOOLS/GaugeCore/*.lua   → los 17 archivos runtime (sin main.lua; no se registra)
+```text
+/WIDGETS/GaugeDial/main.lua
+/WIDGETS/GaugeBar/main.lua
+/SCRIPTS/TOOLS/GaugeCore/app.lua
+/SCRIPTS/TOOLS/GaugeCore/<módulos>.lua
 ```
 
-- En la SD el radio ve **exactamente dos widgets**: `GaugeDial` y `GaugeBar`. `/SCRIPTS/TOOLS/GaugeCore/` no es escaneado como widget (el escaneo de `/WIDGETS` carga solo carpetas con `main.lua`; `SCRIPTS/TOOLS` es el hogar canónico de librerías Lua).
-- Cada `main.lua` de frente pasa su `DEFS` (con la clave extra `family`) a `app.lua` del core. El chunk de `app.lua` captura ese `DEFS`; cada widget tiene su propio `MODS_BY_PATH`. Sin colisión (ver §2.4).
-- **Cero duplicación de lógica**: un solo juego de módulos, un solo builder, un solo renderizador por familia.
+`GaugeCore` está fuera de `/WIDGETS`; el scanner del firmware solo recorre un nivel bajo
+`WIDGETS_PATH` y carga las carpetas que contienen `main.lua`. Por ello el paquete nuevo registra
+exactamente dos widgets.
 
-### 3.1.1 Alternativas consideradas (decisión D1)
+Durante la transición puede existir además `/WIDGETS/GaugePro/`; en ese paquete la radio mostrará
+tres widgets. No debe afirmarse “exactamente dos” para el paquete de transición.
 
-| Opción | Descripción | Pro | Contra | Veredicto |
-|---|---|---|---|---|
-| **A. Dos carpetas autocontenidas** | Cada widget lleva copia de los módulos compartidos | Instalación de una sola carpeta; sin dependencia runtime | Duplicación → deriva (contra F-14/6.1); ~2× espacio SD; requiere paso de sync para no divergir | No |
-| **B. Motor + frentes (recomendada)** | Core en `/SCRIPTS/TOOLS/GaugeCore/`, dos frentes en `/WIDGETS/` | Una sola fuente; sin deriva; instalación de "suite" | Instalar un widget requiere la carpeta core (installación de 3 carpetas) | **Sí** |
-| **C. Monolito como tercer widget** | Los frentes cargan de `/WIDGETS/GaugePro/` | Migración trivial; cero movimiento de archivos | El radio muestra 3 widgets; el core vive en una carpeta que parece widget | Solo transitorio |
+### D2 — Una fuente en repo; dos layouts de deploy
 
-## 3.2 Nombres y registro
+Durante el PR de split, los módulos canónicos pueden permanecer en `WIDGETS/GaugePro/` para evitar
+un `git mv` masivo de tests, docs y herramientas. `sync-sd.ps1` los copia al destino
+`/SCRIPTS/TOOLS/GaugeCore/` mediante una lista/manifest explícita.
 
-| | `GaugeDial` | `GaugeBar` |
+Esto es una sola fuente en el repositorio aunque durante la transición pueda haber dos copias en
+la SD (core + legacy). Mover físicamente la fuente a `SCRIPTS/TOOLS/GaugeCore/` será un cleanup
+posterior, separado del cambio funcional.
+
+### D3 — SPEC explícito, no propiedades escondidas en DEFS
+
+Cada frente pasa una especificación al factory de `app.lua`:
+
+```lua
+local SPEC = {
+  name = "GaugeDial",       -- o GaugeBar
+  family = "dial",          -- o bar
+  coreApi = 1,
+  defs = DEFS,
+}
+
+local app = appChunk(SPEC)
+```
+
+`app.lua` valida `name`, `family`, `coreApi` y `defs`. No se añade `DEFS.family` a una tabla que
+conceptualmente es un array.
+
+### D4 — La ruta de producción nunca proviene del tercer argumento
+
+Patrón obligatorio del frente:
+
+```lua
+local CORE_PATH = "/SCRIPTS/TOOLS/GaugeCore/"
+
+local function create(zone, opts, _widgetPath)
+  -- cargar app.lua y sus módulos exclusivamente desde CORE_PATH
+end
+```
+
+Para tests, el chunk de `main.lua` puede recibir una configuración solo al ejecutarse (por
+ejemplo `chunk({ corePath = widgetDir })`). No se usa el tercer argumento de `create()` como
+inyección. Un test específico debe pasar `/WIDGETS/GaugeDial/` como tercer argumento y demostrar
+que todos los `loadScript` apuntan al core.
+
+### D5 — ABI/versionado del core
+
+Los frentes declaran `coreApi = 1`; `app.lua` expone el mismo número. Si falta el core o no
+coincide la versión, el error debe nombrar el frente, la ruta y las versiones esperada/encontrada.
+Esto convierte una instalación parcial o mezcla de releases en un diagnóstico, no en un fallo
+opaco.
+
+El core se carga en primer uso, no durante el registro, para que un core ausente no impida que el
+widget aparezca en “Add widget”. El guard `lvgl == nil` también se conserva por frente.
+
+### D6 — Sin caché global en la primera implementación
+
+Cada `main.lua` memoiza un `sharedApp`; todas las instancias del mismo tipo comparten app y módulos.
+Dial y Bar mantienen caches separadas. Es un coste fijo por familia usada, no por instancia.
+
+No se escribe en `_G` para compartir módulos entre tipos. Si la prueba de memoria mixta no pasa,
+se presenta una decisión arquitectónica aparte: caché global versionada y namespaced, o aceptar
+un presupuesto explícito. No se oculta la duplicación bajo la afirmación de que el path la evita.
+
+---
+
+## 5. Opciones definitivas
+
+### 5.1 Prefijo común, slots 1–9
+
+| # | Key | Field | Tipo | Default |
+|---:|---|---|---|---|
+| 1 | Source | source | SOURCE | RSSI |
+| 2 | Min | min | VALUE | 0 |
+| 3 | Max | max | VALUE | 100 |
+| 4 | Warn | warn | VALUE | 55 |
+| 5 | Crit | crit | VALUE | 35 |
+| 6 | HighGood | highGood | BOOL | 1 |
+| 7 | ColorMode | colorMode | CHOICE | Rail (3) |
+| 8 | Precision | precision | CHOICE | Auto (1) |
+| 9 | ShowMinMax | showMinMax | CHOICE | Markers (2) |
+
+Este prefijo es byte-equivalente en ambos frentes y queda congelado.
+
+### 5.2 GaugeDial — 24 opciones
+
+- **Slot 10 / since 211:** `DialStyle`, field `style`, CHOICE
+  `{ Auto, Needle, Arc }`, default Auto.
+- **Slot 11 / since 212:** `Sweep`, CHOICE `{ 270 deg, 180 deg, 360 deg }`.
+- **Slots 12–24 / since 212:** `Accent`, `Label`, `Suffix`, `Scale`, `Damping`,
+  `Cells`, `Battery`, `Alerts`, `AlertSw`, `Delay`, `Vibrate`, `ResetSw`, `ShowChip`.
+
+`DialStyle` cabe en el límite de 10 caracteres y mantiene exactamente la semántica que usa
+`dialLayout`. Se elimina únicamente la alternativa Bar.
+
+### 5.3 GaugeBar — 42 opciones
+
+- **Slot 10 / since 211:** `BarPreset`, default Classic (2).
+- **Slots 11–23 / since 212:** `Accent`, `Label`, `Suffix`, `Scale`, `Damping`,
+  `Cells`, `Battery`, `Alerts`, `AlertSw`, `Delay`, `Vibrate`, `ResetSw`, `ShowChip`.
+- **Slots 24–42 / since 212:** `BarFace`, `BarDir`, `BarOrigin`, `BarSize`,
+  `BarEnds`, `Segments`, `SegGap`, `Palette`, `WarnClr`, `CritClr`, `TrackClr`, `Surface`,
+  `PanelClr`, `Contrast`, `Motion`, `BarHead`, `ScaleMarks`, `ValuePos`, `LabelPos`.
+
+Este orden deja primero la configuración general y después la personalización avanzada. Como el
+widget es nuevo, no hay contrato anterior que obligue a conservar el orden 0.1.
+
+### 5.4 Reglas de UI
+
+- `GaugeDial` no muestra opciones `Bar*`, `Motion`, paleta/surface ni posiciones lineales.
+- `GaugeBar` no muestra `DialStyle` ni `Sweep`.
+- Ninguno muestra el selector de familia `Style = ... Bar` del monolito.
+- En 2.11 ambos declaran exactamente 10 opciones significativas.
+
+---
+
+## 6. Cambios técnicos
+
+### 6.1 Parametrización mínima
+
+1. `app.lua` recibe `SPEC`, guarda `widget.family` y usa `SPEC.name` en errores.
+2. `layout.pickStyle(cfg, w, h, family)`:
+
+   ```lua
+   if family == "dial" then return "dial" end
+   if family == "bar" then return "bar" end
+   -- fallback legacy actual
+   ```
+
+3. `layout.calculate()` pasa `widget.family`.
+4. `GaugePro` legacy pasa `family = nil`; su heurística y sus 44 slots quedan intactos.
+
+### 6.2 Frentes
+
+Cada frente contiene únicamente:
+
+- guard de compatibilidad;
+- `NAME`, `CORE_PATH`, `SPEC` y `DEFS`;
+- builder inline de opciones y traducciones;
+- memoización `sharedApp`;
+- delegación de `create/update/refresh`.
+
+El pequeño bootstrap se duplica deliberadamente para que el widget pueda registrarse sin core y
+para no añadir lecturas SD al arranque. Su comportamiento se congela mediante tests observables y
+una sección marcada idéntica en ambos archivos. No se presenta esa duplicación como “imposible de
+derivar”. Si la sección deja de ser trivial, se genera desde una plantilla en vez de crecer en
+paralelo.
+
+### 6.3 Separación de carga por familia — obligatoria antes de release
+
+Extraer:
+
+- `ui_core.lua`: batching de propiedades, labels, chip, pulso, colores y source labels usados por
+  ambos renderizadores;
+- `layout_common.lua`: clasificación, tipografía/colocación compartida y firma estructural;
+- `dial_layout.lua` y `bar_layout.lua`;
+- renombrar conceptualmente `renderer.lua` a renderer de dial y `bar.lua` a renderer de barra
+  (el rename físico puede hacerse en el mismo commit si no mezcla cambios funcionales).
+
+Listas objetivo:
+
+```text
+common: theme geometry format options ranges presets smoothing telemetry alerts
+        layout_common ui_core
+dial:   dial_layout dial_renderer
+bar:    motion bar_layout bar_style bar_faces bar_renderer
+legacy: common + dial + bar
+```
+
+`loadModules(corePath, family)` carga solo `common + family`. Los `setup()` también se ejecutan
+solo para módulos presentes. El frontend Dial no debe tener keys `bar`, `bar_style`, `bar_faces`
+o `motion`; el frontend Bar no debe cargar `dial_renderer` ni `dial_layout`.
+
+### 6.4 Deploy seguro
+
+`sync-sd.ps1` debe trabajar con tres targets resueltos y validados por separado:
+
+```text
+<SD>/SCRIPTS/TOOLS/GaugeCore
+<SD>/WIDGETS/GaugeDial
+<SD>/WIDGETS/GaugeBar
+```
+
+Requisitos:
+
+- manifest explícito por target;
+- borrar únicamente `*.luac` obsoletos dentro de esos targets exactos;
+- detectar archivos runtime antiguos que ya no estén en el manifest y reportarlos; no borrar
+  carpetas amplias;
+- copiar primero core, luego frentes;
+- ejecutar una verificación post-copy de existencia y `coreApi`;
+- modo `-IncludeLegacy` para el paquete de transición;
+- nunca borrar `WIDGETS/GaugePro` automáticamente. Su retirada es una acción explícita después de
+  migrar los modelos.
+
+Paquetes documentados:
+
+| Paquete | Contenido | Widgets visibles |
+|---|---|---:|
+| nuevo | Core + Dial + Bar | 2 |
+| transición | Core + Dial + Bar + GaugePro legacy | 3 |
+
+### 6.5 Guardrails obligatorios de desarrollo
+
+La guía [`DEVELOPMENT_GUIDE.md`](../WIDGETS/GaugePro/DEVELOPMENT_GUIDE.md) forma parte del contrato
+de este plan. No es documentación informativa: sus checks son puertas de revisión.
+
+Reglas resumidas:
+
+1. **Shared-first.** Telemetría, escalas, thresholds, estados, color, formato, smoothing,
+   historial, alertas, badges, accesibilidad y optimizaciones LVGL se implementan una vez en core.
+2. **Paridad por defecto.** Si una mejora de una familia es aplicable a la otra, se lleva al core
+   o se implementan ambos adaptadores en el mismo cambio. “Copiar después” no es aceptable.
+3. **Separación de geometría, no de semántica.** Dial y Bar pueden dibujar distinto; deben dar la
+   misma lectura, estado, unidad, historial, alertas y significado de ColorMode.
+4. **Dependencias unidireccionales.** Familias → core; nunca Dial → Bar, Bar → Dial o core → una
+   familia. Solo `app.lua` compone la familia elegida.
+5. **Frentes delgados.** `main.lua` registra opciones y delega; no contiene lógica de producto ni
+   de render.
+6. **Opciones protegidas.** Prefijo común 1–9 idéntico; slots publicados append-only; CHOICE
+   1-based; toda opción común se cambia en ambos frentes.
+7. **Pruebas simétricas.** Una regla compartida modificada exige evidencia contra Dial y Bar.
+8. **Recursos mixtos.** Un cambio de core se mide en Dial, Bar y Dial + Bar; probar una sola
+   familia no basta.
+9. **Excepciones explícitas.** Toda asimetría aplicable requiere evidencia, test, alcance temporal
+   y aprobación del propietario.
+
+Cada PR debe completar el checklist de la guía y declarar una de estas salidas para la otra
+familia: `shared automatically`, `implemented in both`, o `not applicable` con justificación.
+
+---
+
+## 7. Migración
+
+No hay migración automática segura en runtime: el modelo identifica un widget por factory y
+guarda opciones posicionales. Cambiar el nombre crea otra factory.
+
+Tabla manual:
+
+| GaugePro actual | Destino | Ajuste |
 |---|---|---|
-| `name` (≤ 10, `smoke_test.lua:135`) | `"GaugeDial"` (9) ✓ | `"GaugeBar"` (8) ✓ |
-| `translate(name)` | `"Gauge Dial"` | `"Gauge Bar"` |
-| Carpeta SD | `/WIDGETS/GaugeDial/` | `/WIDGETS/GaugeBar/` |
-| `family` | `"dial"` | `"bar"` |
-| Opciones | 23 (core 10 en 2.11) | 42 (core 10 en 2.11) |
-| `pickStyle` | siempre `dial` | siempre `bar` |
+| Style = Needle | GaugeDial | DialStyle = Needle |
+| Style = Arc | GaugeDial | DialStyle = Arc |
+| Style = Auto en zona no ancha | GaugeDial | DialStyle = Auto |
+| Style = Bar | GaugeBar | BarPreset y overrides equivalentes |
+| Style = Auto con `w/h > 2.6` | GaugeBar | BarPreset = Classic/Auto según decisión visual |
+
+Flujo recomendado:
+
+1. instalar el paquete de transición;
+2. añadir el widget nuevo al lado del legacy y copiar la configuración;
+3. comparar lectura, estado, alertas e historial;
+4. quitar la instancia legacy del modelo;
+5. solo cuando ningún modelo la use, retirar la carpeta `GaugePro` de la SD.
+
+La configuración antigua no se pierde mientras se conserve el legacy. No renombrar directamente
+la carpeta existente: eso dejaría referencias de modelos sin factory.
 
 ---
 
-# 4. Opciones por widget
+## 8. Estrategia de verificación
 
-## 4.1 Conjunto compartido (ambos, posiciones 1-9 idénticas para permitir un prefijo común en código y un test de identidad)
+### 8.1 Puerta cero: baseline
 
-| # | Key | Tipo | Default | Opciones |
-|---|---|---|---|---|
-| 1 | `Source` | SOURCE | RSSI | — |
-| 2 | `Min` | VALUE | 0 | -10000..10000 |
-| 3 | `Max` | VALUE | 100 | -10000..10000 |
-| 4 | `Warn` | VALUE | 55 | -10000..10000 |
-| 5 | `Crit` | VALUE | 35 | -10000..10000 |
-| 6 | `HighGood` | BOOL | 1 | — |
-| 7 | `ColorMode` | CHOICE | 3 | Static, Threshold, Rail, Gradient, Sections |
-| 8 | `Precision` | CHOICE | 1 | Auto, 0, 1, 2 |
-| 9 | `ShowMinMax` | CHOICE | 2 | Off, Markers, Markers + text |
+Antes del primer cambio:
 
-## 4.2 GaugeDial (23 opciones)
+- resolver el fallo actual `Precision Rail visible-object anatomy: expected 16, got 14`;
+- `tests/run_tests.lua`: 70/70;
+- `tests/smoke_test.lua`: 201/201 después de corregir/ratificar el caso rojo actual;
+- `luacheck`: 0 errores y no aumentar el warning conocido de `motion.lua`;
+- guardar manifiestos visuales, census, instrucciones y allocations actuales.
 
-- **Posiciones 1-9:** el conjunto compartido de §4.1.
-- **Posición 10 (since 211, core 2.11):** `Sweep` — CHOICE `{ "270 deg", "180 deg", "360 deg" }`, default 1. *(Es la única opción exclusiva de dial; se promueve a core porque en un widget de dial es la decisión de forma más importante después de las 9 compartidas.)*
-- **Posiciones 11-23 (since 212):** `Accent`, `Label`, `Suffix`, `Scale`, `Damping`, `Cells`, `Battery`, `Alerts`, `AlertSw`, `Delay`, `Vibrate`, `ResetSw`, `ShowChip` (mismos tipos/defaults que el monolito, `main.lua:110-139`).
+No se “arregla” el test cambiando 16 por 14 sin decidir si el casing nuevo eliminó objetos
+correctamente o si faltan dos objetos visibles.
 
-**Se eliminan:** `Style` (implícita) y las 20 opciones de barra.
+### 8.2 Contratos nuevos de frentes
 
-## 4.3 GaugeBar (42 opciones)
+1. nombres y keys `<= 10`, traducciones completas;
+2. Dial 24 opciones, Bar 42; ambos exactamente 10 en 2.11;
+3. slots 1–9 idénticos y golden list completa por frente;
+4. defaults/choices 1-based y mismos tipos/rangos que el monolito;
+5. `GaugeDial` forzado a dial incluso en `400x80`;
+6. `GaugeBar` forzado a bar incluso en `200x160`;
+7. `DialStyle` Auto/Needle/Arc produce la anatomía correcta;
+8. Bar no tiene `cfg.sweep`; Dial no tiene `cfg.barPreset`;
+9. el tercer argumento `/WIDGETS/<front>/` jamás se usa para cargar core;
+10. core ausente y `coreApi` incompatible producen errores diagnósticos;
+11. dos instancias del mismo frente comparten `sharedApp` y tabla de módulos;
+12. create/update/refresh, resize, source change, alertas y 200 frames sin object churn.
 
-- **Posiciones 1-9:** el conjunto compartido de §4.1.
-- **Posición 10 (since 211):** `BarPreset` — CHOICE `{ Auto, Classic, Theme, Hex, Blocks, Ticks, RC center, Minimal, Bold data }`, default 2. *(Promovida a core: en un widget de barra, el preset es la decisión de forma más importante; sin ella, 2.11 quedaría con solo 9 opciones.)*
-- **Posiciones 11-29 (since 212):** `BarFace`, `BarDir`, `BarOrigin`, `BarSize`, `BarEnds`, `Segments`, `SegGap`, `Palette`, `WarnClr`, `CritClr`, `TrackClr`, `Surface`, `PanelClr`, `Contrast`, `Motion`, `BarHead`, `ScaleMarks`, `ValuePos`, `LabelPos` (las 20 de barra menos `BarPreset`; tipos/defaults iguales que `main.lua:145-208`).
-- **Posiciones 30-42 (since 212):** `Accent`, `Label`, `Suffix`, `Scale`, `Damping`, `Cells`, `Battery`, `Alerts`, `AlertSw`, `Delay`, `Vibrate`, `ResetSw`, `ShowChip`.
+### 8.3 Paridad visual y funcional
 
-**Se eliminan:** `Style` (implícita) y `Sweep` (irrelevante en una barra).
+Comparar escenas equivalentes contra el monolito:
 
-## 4.4 Notas
+- Needle/Arc: 180/270/360, micro/compact/normal/large, horizontal/vertical;
+- Bar: las seis caras, ambos ejes, escalas ascendentes/descendentes/cero, cinco ColorMode;
+- NO SOURCE, NO DATA, STALE, NO LINK, WARN, CRIT;
+- batería, Cells, timers, min/max, reconnect y reset;
+- temas stock, dark y high-contrast.
 
-- `Scale` ("Scale ends") **sí es compartida**: los tests de barra la usan (`smoke_test.lua:468`, `Scale = "Manual"`).
-- El orden del conjunto compartido 212 puede diferir entre widgets (en dial ocupa 11-23, en barra 30-42); lo que se fija por test es el **conjunto** (key+tipo+default+choices), no la posición, para cada widget (ver §7.3).
-- El `builder` de opciones se mantiene **inline en cada `main.lua`** (igual que el monolito) para preservar el coste de boot de 1 lectura por widget. La deriva entre los tres builders se impide con un test de identidad (§7.3, T2).
+Las imágenes deben ser pixel-equivalentes salvo texto del nombre del widget o una diferencia
+aprobada y documentada.
 
----
+### 8.4 Presupuesto de recursos
 
-# 5. Cambios de código por módulo
+Extender `boot_cost.lua`/probes para medir, con GC controlado:
 
-## 5.1 Fase 1 — Parametrización de familia (mínima y quirúrgica)
+- boot de ambos `main.lua`, usados o no;
+- primer `create` de Dial y de Bar;
+- un Dial + un Bar;
+- cuatro instancias de Dial; cuatro de Bar;
+- paquete de transición con legacy.
 
-| Archivo | Cambio |
-|---|---|
-| `layout.lua:163-167` | `pickStyle(cfg, w, h, family)`: `if family == "bar" then return "bar" end if family == "dial" then return "dial" end` + heurística actual como fallback (familia nula = monolito intacto). |
-| `layout.lua:1276-1287` | `calculate(widget, cfg)` pasa `widget.family` a `pickStyle`. |
-| `app.lua:68-89` | `M.create` lee `DEFS.family` (clave extra, ignorada por `options.parse` que itera `1..#defs`) y la estampa en `widget.family`. |
-| `app.lua` | Sin más cambios en esta fase: `painter()`, los `if L.style == "bar"` de `configure()`/`refresh()` y `bar_style.refreshPalette` ya despachan correctamente porque `L.style` quedará forzado por `pickStyle`. |
+Gates:
 
-**Comportamiento del monolito:** `family` es nil → heurística actual idéntica. Los 36 unit + 46 lifecycle tests deben seguir pasando **sin modificaciones**.
+- una segunda instancia del mismo frente no vuelve a cargar chunks;
+- Dial no carga módulos de Bar y viceversa;
+- ninguna callback supera los contratos actuales: ordinary `< 2000`, transition `< 6000`,
+  structural `< 10000` instrucciones;
+- allocations steady-state no empeoran frente a los valores actuales (dial 13–14 B/frame; barras
+  ordinarias ~32–35 B/frame en los probes existentes);
+- el delta de RAM de un Dial + un Bar queda documentado y aprobado en radio objetivo. Si la
+  duplicación de common no cabe, el release se bloquea hasta decidir una caché compartida.
 
-**Nota de comportamiento deliberada:** el widget `GaugeDial` **pierde el fallback automático a barra** en zonas `w/h > 2.6`. En su lugar dibuja siempre dial; la orientación horizontal existente (`dialLayout`, `layout.lua:356-372`) ya lo maneja (dial a la izquierda, columna de texto a la derecha). Esto es el punto del split y debe documentarse.
+### 8.5 Simulador/radio
 
-## 5.2 Fase 2 — Los dos frentes
-
-### `WIDGETS/GaugeDial/main.lua` (nuevo)
-Estructura idéntica al monolito `main.lua` pero:
-- `local NAME = "GaugeDial"`, `local CORE_PATH = "/SCRIPTS/TOOLS/GaugeCore/"`
-- `DEFS` = 23 opciones de §4.2 + `DEFS.family = "dial"`.
-- `create(zone, opts, path)` carga `CORE_PATH .. "app.lua"` (el parámetro `path` solo sirve para los tests; por defecto `CORE_PATH`).
-- Guard de compatibilidad `if lvgl == nil` idéntico.
-- `translate` con labels de sus 23 opciones + `"Gauge Dial"`.
-
-### `WIDGETS/GaugeBar/main.lua` (nuevo)
-Igual con `NAME = "GaugeBar"`, `DEFS` de 42 opciones de §4.3 + `family = "bar"`, label `"Gauge Bar"`.
-
-### 5.2.1 La memoización `sharedApp` y el path del core
-- Cada frente memoiza su propio `sharedApp = chunk(DEFS)` (patrón `main.lua:254-268`).
-- `widget.app` se asigna igual; `update/refresh` delegan igual.
-- `app.lua` recibe el path del core en `create` y lo usa para `loadModules` → los módulos se cargan desde `/SCRIPTS/TOOLS/GaugeCore/`. **No se pasa el path del frente** (allí no hay módulos).
-
-## 5.3 Fase 3 — Refactor arquitectónico (recomendado, opcional en el tiempo)
-
-Objetivos: cortar carga muerta (el widget de barra no necesita `dialLayout` ni el driver de dial; el de dial no necesita `bar_style/bar_faces/bar/motion`), y nombres honestos.
-
-1. **Extraer `uicore.lua`** de `renderer.lua`: los helpers compartidos que la barra ya consume (`renderer.lua` → `setProp:47`, `flush:93`, `label:305`, `updateChip:619`, `anchorUnit:736`, `updateSourceLabels:1025`, `updatePulse:955`, `resolveColor:472`, `valueColor:497`, `applyStateInk:507`, `stateText:581`, `stateKey:605`, `COLOR_*:38`). `bar.lua` pasa a depender de `uicore` en vez de `renderer`. Sin cambio de comportamiento (la asignación `M.updateSourceLabels = R.updateSourceLabels` en `bar.lua:26` simplemente apunta a `uicore`).
-2. **Dividir `layout.lua`** en: `layout.lua` (común: `classify`, `placeValue`, `pickValueFont`, `stackTextRows`, `chipOverhang`, `chordAt`/`clipToChord`, `signature`), `dial_layout.lua` (`dialLayout`), `bar_layout.lua` (`barLayout`, `applyBarVisual`).
-3. **`app.lua.MODULES` dependiente de familia:**
-   - dial: `theme, geometry, format, options, ranges, presets, smoothing, telemetry, layout, dial_layout, uicore, renderer(dial), alerts`
-   - bar: `theme, geometry, format, options, ranges, presets, smoothing, motion, telemetry, layout, bar_layout, uicore, bar_style, bar_faces, bar, alerts`
-4. **Simplificar `app.lua`:** `painter()` deja de despachar (familia fija); los `if L.style == "bar"` de `configure()`/`refresh()` se vuelven incondicionales según familia.
-5. **Mover los módulos al core** (`git mv WIDGETS/GaugePro/*.lua` → `WIDGETS/GaugeCore/` o directamente la ruta SD `/SCRIPTS/TOOLS/GaugeCore/` en el árbol de deploy) y actualizar los `dofile`/`loadfile` de los tests y `dev/`.
-
-**Riesgo de la Fase 3:** churn grande sobre archivos con tests y docs. Se hace solo después de que las Fases 1-2 estén verdes y congeladas.
-
-## 5.4 Fase 4 — Deploy y tooling
-
-| Archivo | Cambio |
-|---|---|
-| `dev/sync-sd.ps1` | Tres destinos: módulos runtime → `$Dest\SCRIPTS\TOOLS\GaugeCore\`; `main.lua` de cada frente → `$Dest\WIDGETS\GaugeDial\` y `$Dest\WIDGETS\GaugeBar\`. Mantener la validación de path seguro existente. |
-| `dev/gallery.lua`, `dev/collage.lua`, `dev/scenes.lua` | Parametrizar por widget/familia: las galerías "every option" deben reflejar el conjunto de opciones de cada widget (hoy producen el collage del monolito de 222 escenas). |
-| `dev/zone_atlas.lua`, `dev/shots.lua` | Revisar: el atlas de zonas y las capturas son válidos para ambas familias; solo hay que dirigirlos al widget correcto por escenario. |
-| `dev/boot_cost.lua` | Añadir medición del coste de boot de los dos frentes (contrato nuevo: 1 lectura por frente). |
-| `README.md`, `DOCS.md` | Instrucciones de instalación de la suite (3 carpetas), tabla de migración §6, sección por widget. |
+- instalación nueva muestra exactamente `GaugeDial` y `GaugeBar`;
+- instalación de transición muestra también `GaugePro`;
+- settings correctos en 2.11 y 2.12+;
+- reinicio en frío, cambio de tema, resize y cuatro widgets simultáneos;
+- instalación incompleta muestra un error accionable y no desaparece silenciosamente.
 
 ---
 
-# 6. Migración y compatibilidad
-
-- **Modelos existentes con `GaugePro`:** siguen funcionando mientras el monolito se siga distribuyendo. El plan recomienda **distribuir el monolito durante una fase de transición** y retirarlo del material de marketing al cerrar la Fase 4 (no del repo: sigue siendo la referencia de tests y el motor).
-- **No existe migración automática de config**: las opciones guardadas en el modelo van por posición de slot del widget `GaugePro`; los widgets nuevos tienen slots nuevos. El usuario debe quitar `GaugePro`, añadir `GaugeDial`/`GaugeBar` y reconfigurar. Se documenta una **tabla de mapeo** (manual):
-  - `Style = Needle|Arc|Auto` (zona no-barra) → `GaugeDial`; conserva Source/Min/Max/Warn/Crit/HighGood/ColorMode/Precision/ShowMinMax/Sweep/etc.
-  - `Style = Bar` (o `Auto` en zona muy ancha) → `GaugeBar`; conserva las mismas 9 compartidas + opciones de barra.
-- **Compatibilidad 2.11:** cada widget nuevo declara exactamente 10 opciones en 2.11 (su slot 10 de familia + las 9 compartidas). El resto queda `since 212`. Hay que verificar que la promoción de `Sweep`/`BarPreset` a `since 211` no choca con el firmware 2.11 (CHOICE existe; riesgo bajo — ver Riesgos R3).
-
----
-
-# 7. Estrategia de tests
-
-## 7.1 Suite existente (no se toca)
-- `tests/run_tests.lua` (36 unit): no carga `layout.lua` → la firma nueva de `pickStyle` no la afecta.
-- `tests/smoke_test.lua` (46 lifecycle) contra el monolito: el cambio de Fase 1 es nil-safe → debe pasar **sin modificación** (puerta de Fase 1).
-
-## 7.2 Nuevos tests de los frentes (`tests/widgets_test.lua`)
-Reutiliza `mock_env.lua`. Patrón `newWidget` actualizado para pasar el path del core en `create`.
-
-| # | Test | Qué pina |
-|---|---|---|
-| W1 | `#mod.name <= 10`, sin espacios, y `translate` cubre todas las opciones + el widget | Contrato de registro de ambos frentes |
-| W2 | `GaugeDial` declara 23 opciones; `GaugeBar` declara 42; cada uno exactamente 10 en `capacity=10` (2.11) | Conteo y contrato 2.11/2.12 |
-| W3 | **Identidad del prefijo compartido**: posiciones 1-9 idénticas (key+type+default+choices) en ambos `mod.defs` | Antideriva del conjunto compartido |
-| W4 | **Identidad del builder**: los builders de los tres widgets (monolito + 2 frentes) producen salidas estructuralmente iguales para un mismo `DEFS` de prueba | El builder inline no deriva entre copias |
-| W5 | Forzado de familia: `GaugeDial` en `{400,80}` → `widget.layout.style == "dial"`; `GaugeBar` en `{200,160}` → `"bar"` | `pickStyle` por familia |
-| W6 | `GaugeDial` ignora opciones de barra: `cfg.barPreset` ausente, `widget.barVisual == nil`, `configure()` no resuelve paleta | Sin contaminación cruzada |
-| W7 | `GaugeBar` ignora `Sweep`: opción ausente, `L.sweep` nulo | Ídem |
-| W8 | Smoke de vida: cada frente crea/actualiza/refresca sobre una fuente real (RSSI) sin errores; objeto churn = 0 | Rendimiento y estabilidad por familia |
-| W9 | `GaugeBar` con solo las 10 opciones de 2.11 renderiza la Classic Rail por defecto | Comportamiento 2.11 |
-| W10 | `GaugeDial` respeta `Sweep` (270/180/360 → `L.sweep`/`L.startAngle` correctos) | Opción exclusiva de dial |
-
-## 7.3 Regresión cruzada
-- El conjunto de opciones 212 de cada widget se fija con una golden list por widget (mismo estilo que `smoke_test.lua:160-168`).
-- `dev/collage.lua` regenera las hojas de opciones por familia y se comparan contra las PNG/SVG versionadas.
-
----
-
-# 8. Fases y puertas de verificación
+## 9. Fases y commits
 
 | Fase | Alcance | Puerta |
 |---|---|---|
-| 0 | Este documento; decisión D1 (arquitectura), nombres, conjuntos de opciones, política de transición | Plan revisado (grill) |
-| 1 | `pickStyle(family)` + `widget.family` en `app.lua`/`layout.lua` | 36 unit + 46 lifecycle verdes **sin tocar**; monolito idéntico |
-| 2 | `WIDGETS/GaugeDial/main.lua`, `WIDGETS/GaugeBar/main.lua`, `tests/widgets_test.lua` (W1-W10) | Todos los W1-W10 verdes; instalación manual en simu: 2 widgets listados, opciones correctas |
-| 3 | `uicore.lua`, split de `layout.lua`, `MODULES` por familia, `git mv` al core | Suite completa verde con el monolito ahora "referencia"; `boot_cost` por frente ≤ contrato; sin churn de objetos |
-| 4 | `sync-sd.ps1`, galerías por familia, `boot_cost`, README/DOCS | Deploy simu: 3 carpetas → 2 widgets; galerías por familia regeneradas |
-| 5 | Transición: retirar el monolito del material de distribución; tabla de migración publicada | Revisión final y README definitivo |
+| 0 | Resolver baseline rojo; congelar métricas/manifiestos; aprobar nombres, slots y guía normativa | baseline verde; guardrails aprobados |
+| 1 | Introducir `SPEC`, `coreApi`, `family` nil-safe y `pickStyle(..., family)` en legacy | monolito pixel-equivalente; suites intactas |
+| 2 | Añadir GaugeDial/GaugeBar, tests de contrato y sync del core/frentes | dos widgets reales en simu; tests de path y opciones verdes |
+| 3 | Extraer `ui_core`, layouts/renderers por familia y `MODULES` selectivo | tests completos; paridad visual; gates de RAM/instrucciones |
+| 4 | Galerías por familia, README/DOCS, paquetes nuevo/transición y guía de migración | instalación limpia y de upgrade verificadas |
+| 5 | Tras una release de transición, dejar de distribuir legacy por defecto | ningún modelo de prueba depende de GaugePro |
 
-**Orden de commits sugerido (conventional, estilo del repo):** `feat(widget): family parameter for dial/bar split` → `feat(widget): add GaugeDial front` → `feat(widget): add GaugeBar front` → `test(widget): widget split contract suite` → `refactor(widget): extract uicore and split layouts` → `chore(widget): deploy both widgets via sync-sd`.
+La Fase 2 es un checkpoint funcional, no un artefacto publicable. La Fase 3 es obligatoria antes
+de release.
+
+Orden sugerido de commits:
+
+```text
+test(gaugepro): restore green split baseline
+refactor(gaugepro): add frontend spec and fixed family dispatch
+feat(gaugepro): add GaugeDial and GaugeBar fronts
+test(gaugepro): pin split contracts and core path
+refactor(gaugepro): load family-specific layouts and renderers
+chore(gaugepro): deploy versioned shared core
+docs(gaugepro): publish split migration guide
+```
 
 ---
 
-# 9. Riesgos y mitigaciones
+## 10. Riesgos residuales
 
-| # | Riesgo | Severidad | Mitigación |
-|---|---|---|---|
-| R1 | Deriva entre las 3 copias del builder de opciones y/o los 3 conjuntos de DEFS | Media | Test W3 (identidad del prefijo 1-9) y W4 (identidad del builder); golden lists por widget |
-| R2 | El widget `GaugeDial` pierde el fallback a barra en zonas muy anchas (comportamiento visible) | Media | Decisión deliberada y documentada; la orientación horizontal de `dialLayout` ya la cubre; verificar en simu en 480×272 y 800×480 |
-| R3 | Promover `Sweep`/`BarPreset` a `since 211` en los widgets nuevos | Baja | Los widgets son nuevos (sin datos guardados); confirmar en 2.11 que CHOICE en slot 10 se declara y funciona |
-| R4 | El frente carga `app.lua` y 15 módulos desde `/SCRIPTS/TOOLS/GaugeCore/`; si el usuario instala solo una carpeta, falla | Media | Instalación de suite en 3 carpetas, documentada; `sync-sd.ps1` la hace de un solo comando; mensaje de error claro en `main.lua` si falta el core |
-| R5 | Coste de boot: cada frente sigue costando 1 lectura (main.lua inline builder) | Baja | Diseñado así; `dev/boot_cost.lua` mide y fija el contrato por frente |
-| R6 | Churn de la Fase 3 rompe tests/docs que referencian `renderer.lua`/`layout.lua` | Media | Fase 3 solo después de Fases 1-2 congeladas; `git mv` + actualización mecánica de paths; el monolito queda como referencia |
-| R7 | `GaugePro` (monolito) y los dos nuevos coexistiendo confunden ("¿cuál instalo?") | Baja | Política de transición explícita (§6); README jerarquiza los dos nuevos |
+| Riesgo | Severidad | Mitigación/gate |
+|---|---|---|
+| Core/frente de versiones distintas | Alta | `coreApi`, error diagnóstico, post-copy verify |
+| RAM duplicada entre Dial y Bar | Alta | módulos selectivos + prueba mixta; caché global solo por decisión explícita |
+| Instalación parcial | Alta | carga diferida, mensaje claro, manifest y paquetes |
+| Pérdida de Needle/Arc | Alta | `DialStyle` slot 10 + tests de anatomía |
+| Uso accidental de `widgetPath` como core | Alta | API separada + test con path real del firmware |
+| Deriva del bootstrap duplicado | Media | bloque mínimo idéntico + test estático; template si crece |
+| Ruptura de modelos legacy | Alta | paquete de transición; no auto-delete/rename |
+| Churn al separar layout/renderer | Media | después de checkpoint funcional; commits mecánicos separados |
+| Confusión entre Dial y “reloj de tiempo” | Baja | nombre técnico `GaugeDial`; evitar `GaugeClock` |
+| Una mejora llega solo a una familia aunque sea compartible | Alta | regla shared-first, checklist y tests simétricos de `DEVELOPMENT_GUIDE.md` |
 
 ---
 
-# 10. Preguntas abiertas
+## 11. Decisiones recomendadas para cerrar
 
-1. **¿Nombres finales?** Propuesta `GaugeDial`/`GaugeBar`. Alternativas: `GaugeClock`/`GaugeBar`, `GaugeNeedle`/`GaugeBar`, o nombres en español (`Reloj`/`Barra`) — los 10 caracteres lo permiten.
-2. **¿El monolito `GaugePro` se retira de la distribución o permanece como tercer widget "todo-en-uno"?** El plan recomienda retirarlo de la distribución (no del repo) tras la transición.
-3. **¿Slot 10 de cada widget?** `Sweep` (dial) y `BarPreset` (barra). Alternativa: dejar el slot 10 vacío y que 2.11 tenga solo 9 opciones.
-4. **¿Fase 3 (refactor arquitectónico) en el mismo PR o en uno posterior?** El plan la separa; puede aplazarse sin bloquear el valor del split.
-5. **¿La opción `Style` debe conservarse en algún widget como override por zona?** Recomendación: no — cada widget ES su familia; conservarla reintroduce la confusión que el split elimina.
+1. Usar nombres `GaugeDial` y `GaugeBar`.
+2. Mantener `DialStyle` y eliminar solo el cambio de familia.
+3. Slot 10: `DialStyle` para Dial, `BarPreset` para Bar; `Sweep` pasa al 11.
+4. Distribuir una release de transición con legacy opcional.
+5. Hacer obligatoria la separación de módulos y el gate de RAM antes de publicar.
+6. No introducir caché global hasta medir el caso mixto en el hardware objetivo.
+
+Con estas decisiones, el split deja de ser solo una separación de menús: se convierte en dos
+widgets coherentes, instalables y verificables, sin perder caras de dial ni degradar silenciosamente
+la memoria del transmisor.

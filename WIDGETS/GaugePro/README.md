@@ -132,6 +132,11 @@ WARN or CRIT. See [`DOCS.md` §4.1](DOCS.md).
 
 ## Architecture
 
+Development of the split Dial/Bar product is governed by
+[`DEVELOPMENT_GUIDE.md`](DEVELOPMENT_GUIDE.md): user-visible widgets stay separate while shared
+telemetry, state, colour, history, alerts and LVGL infrastructure remain a single core with
+cross-family parity gates.
+
 `main.lua` is boot-weight only — it is executed at radio startup for every
 widget on the card, used or not. Everything else loads on first use:
 
