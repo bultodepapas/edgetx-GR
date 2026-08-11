@@ -29,7 +29,12 @@ local function barLayout(widget, cfg, L, w, h)
   -- the row is reserved whatever ShowChip says: see the dial branch (F9)
   L.showState = w >= T.px(120)
   L.showMarkers = (cfg.showMinMax or 1) > 1
-  L.showMinMaxText = false
+  -- Slot 6 is one of the SHARED options, so its third choice has to mean the
+  -- same thing here as it does on the dial. It used to be hard-wired false:
+  -- "Markers + text" was pixel-identical to "Markers" on every bar, at every
+  -- size. Placement is decided after placeValue, against the room the value
+  -- row actually leaves.
+  L.showMinMaxText = (cfg.showMinMax or 1) > 2
   L.showScale = false
   L.showGhost = true
   L.showNeedle = false
@@ -146,6 +151,33 @@ local function barLayout(widget, cfg, L, w, h)
   placeValue(L, valueRegion, F.widestSample(widget),
              L.showUnit and widget.unitText or "",
              (h < T.px(60)) and T.FONTS.M or nil)
+
+  -- "min N" / "max N" ride the ENDS of the value row rather than claiming a
+  -- row of their own: the five-rung vertical ladder above has already spent
+  -- every pixel this zone has, and a horizontal bar leaves that row's two
+  -- margins empty around a centred value. Reserved against the configured
+  -- endpoints - the longest legitimate captions for this scale - exactly as
+  -- the dial does, and dropped back to the marks when either margin is too
+  -- narrow, so a live extreme can never wrap or collide with the value.
+  if L.showMinMaxText then
+    local minMaxH = T.fontHeight(L.minMaxFont)
+    local need = max(
+      T.textWidth("min " .. F.display(widget, cfg.min), L.minMaxFont),
+      T.textWidth("max " .. F.display(widget, cfg.max), L.minMaxFont))
+    local groupLeft = L.valueBox.x
+    local groupRight = (L.unitBox and L.showUnit)
+      and (L.unitBox.x + L.unitBox.w) or (L.valueBox.x + L.valueBox.w)
+    local leftRoom = groupLeft - pad * 2
+    local rightRoom = (w - pad) - groupRight - pad
+    local baseline = L.valueBox.y + L.valueBox.h - minMaxH
+    if need > 0 and leftRoom >= need and rightRoom >= need
+       and baseline >= pad then
+      L.minTextBox = box(pad, baseline, leftRoom, minMaxH)
+      L.maxTextBox = box(groupRight + pad, baseline, rightRoom, minMaxH)
+    else
+      L.showMinMaxText = false
+    end
+  end
 
   L.bar = box(pad, pad + textH + pad, w - pad * 2, barH)
   -- Below roughly 24 px of zone height nothing fits honestly any more: textH

@@ -208,6 +208,13 @@ function M.build(widget)
                            L.nameAlign,
                            widget.nameText)
   end
+  if L.showMinMaxText then
+    -- Same captions, same history ink and same left/right split as the dial
+    -- (dial_renderer): a shared option has to read the same on both families.
+    local ink = (palette and palette.history) or T.color.history
+    ui.minText = R.label(L.minTextBox, L.minMaxFont, ink, LEFT)
+    ui.maxText = R.label(L.maxTextBox, L.minMaxFont, ink, RIGHT)
+  end
   if L.showState then
     -- the state chip: same pill as the dial, so WARN/CRIT/STALE signal
     -- identically in bar zones (AUDIT.md P1-10). Text vertically centred and
@@ -307,12 +314,26 @@ local function updateHistory(widget)
       lvgl.hide(ui.maxMark)
     end
   end
+  if ui.minText then
+    local mn = h.min and F.display(widget, h.min) or ""
+    local mx = h.max and F.display(widget, h.max) or ""
+    if mn ~= frame.minStr then
+      frame.minStr = mn
+      R.setProp(widget, ui.minText, "text",
+                (mn ~= "") and ("min " .. mn) or "")
+    end
+    if mx ~= frame.maxStr then
+      frame.maxStr = mx
+      R.setProp(widget, ui.maxText, "text",
+                (mx ~= "") and ("max " .. mx) or "")
+    end
+  end
 end
 
--- Critical state pulses the fill at ~1 Hz, exactly as the dial pulses its
--- arc, so a bar communicates severity the same way a dial does
--- (AUDIT.md P1-10). Shared helper (Tanda 6 F-15): the dial pulses
--- ui.valueArc, the bar pulses ui.fill.
+-- Critical state pulses the exact-position head at ~1 Hz - never the fill, and
+-- never the dial's value arc, which both carry the reading itself
+-- (AUDIT.md P1-10 plus the 2026-08-11 contrast measurement). Shared helper
+-- (Tanda 6 F-15): the bar pulses ui.head, the dial pulses its state pill.
 
 function M.update(widget)
   local ui, frame = widget.ui, widget.frame
@@ -449,8 +470,18 @@ function M.update(widget)
   widget.barFace.update(widget, ui, state)
   updateHistory(widget)
   if key == "critical" or frame.pulseActive then
-    R.updatePulse(widget, key, ui.pulseTargets or ui.fill, state.pulseMode,
-                  state.opacity, state.motionPaused)
+    -- Never the fill: dimming the data channel is what put the critical red
+    -- at 1.74:1 on a dark theme (bar_faces, continuousBuildOverlay). Each face
+    -- nominates its head; a face built without one pulses the state pill, the
+    -- other status-channel object, which CRIT keeps visible even with the chip
+    -- option off.
+    if not ui.pulseTargets and ui.chip then
+      ui.pulseTargets = { ui.chip, ui.chipEdge, ui.stateLabel }
+    end
+    if ui.pulseTargets then
+      R.updatePulse(widget, key, ui.pulseTargets, state.pulseMode,
+                    state.opacity, state.motionPaused)
+    end
   end
 
   R.flush(widget)

@@ -14,6 +14,10 @@ local M = {}
 
 local T, G, R
 local floor, ceil, min, max = math.floor, math.ceil, math.min, math.max
+-- Forward-declared: the continuous face builds its surface long before the
+-- segmented helpers are defined, and it used to carry its own copy of this.
+-- Two copies meant a surface fix landed in one face and not the other.
+local buildPanel
 
 -- Hot-path variants for already-normalized render state. The public geometry
 -- helpers clamp arbitrary callers; face updates receive guaranteed 0..1 and
@@ -55,27 +59,17 @@ local function continuousSupports(_profile, config)
     or config.direction == "horizontal" or config.direction == "vertical"
 end
 
+-- Gradient is a SHARED rule, not a bar rule: slice budget, scale-position ->
+-- severity mapping and slice colour all live in the core so the dial's arc
+-- and this axis cannot drift into two meanings (ui_core, "spatial gradient").
+-- Re-exported here because the catalogue, the census and the tests address
+-- them through the face module.
 function M.gradientSliceCount(length, available)
-  local target = ceil(max(1, tonumber(length) or 1) / T.px(12))
-  target = max(8, min(24, target))
-  return max(1, min(target, floor(tonumber(available) or 24)))
+  return R.gradientSliceCount(length, available)
 end
 
--- Map a physical position on the authored scale into the semantic gradient:
--- critical=0, warning=.5, normal=1. Descending scales and low-is-good both
--- fall out of the same value mapping instead of swapping face-local bands.
 function M.gradientPosition(cfg, axisPosition)
-  axisPosition = max(0, min(1, tonumber(axisPosition) or 0))
-  local value = cfg.min + (cfg.max - cfg.min) * axisPosition
-  local lo, hi = cfg.crit, cfg.warn
-  if lo > hi then lo, hi = hi, lo end
-  if lo == hi then
-    if cfg.highGood then return (value >= hi) and 1 or 0 end
-    return (value <= lo) and 1 or 0
-  end
-  local t = G.normalize(value, lo, hi)
-  if not cfg.highGood then t = 1 - t end
-  return t
+  return R.gradientPosition(cfg, axisPosition)
 end
 
 local function gradientFixedObjects(config, layout)
@@ -102,6 +96,7 @@ local function gradientSharedObjects(widget)
   if L.showState then count = count + 3 end -- edge + fill + label
   if L.showGhost then count = count + 1 end
   if L.showMarkers then count = count + 2 end
+  if L.showMinMaxText then count = count + 2 end -- min + max captions
   local marks = widget.barVisual and widget.barVisual.marks or "auto"
   local thresholds = marks == "thresholds" or marks == "full"
     or (marks == "auto" and cfg.colorMode ~= R.COLOR_STATIC)
@@ -257,15 +252,8 @@ local function continuousBuild(widget, _geometry, style)
 
   -- Surface is intentionally first: every instrument object and every shared
   -- label is created after it, so a theme/custom panel can ground the complete
-  -- widget without changing text geometry.
-  if style.surface ~= "transparent" then
-    ui.panel = lvgl.rectangle{
-      x = 0, y = 0, w = L.w, h = L.h,
-      color = (palette and palette.panel) or COLOR_THEME_SECONDARY3,
-      opacity = T.opacity.full, filled = 1,
-      rounded = min(T.px(8), floor(min(L.w, L.h) / 8)),
-    }
-  end
+  -- widget without changing text geometry. One shared builder for every face.
+  buildPanel(widget, style)
 
   -- Round/square bodies use a separate one-pixel casing. It must be a REAL
   -- border, not a filled silhouette behind the translucent track: Contrast
@@ -363,18 +351,13 @@ local function continuousBuild(widget, _geometry, style)
     ui.fillCap = lvgl.triangle{ pts = capPts, color = capColor }
     lvgl.hide(ui.fillCap)
   end
-  if ui.gradientSlices then
-    ui.pulseTargets = {}
-    for i = 1, #ui.gradientSlices do
-      ui.pulseTargets[i] = ui.gradientSlices[i]
-    end
-    if ui.fillCap then
-      ui.pulseTargets[#ui.pulseTargets + 1] = ui.fillCap
-    end
-  else
-    ui.pulseTargets = { ui.fill }
-    if ui.fillCap then ui.pulseTargets[2] = ui.fillCap end
-  end
+  -- The critical pulse never dims the DATA. Modulating the fill's opacity put
+  -- the composite red at 1.74:1 against a dark theme at the trough - the most
+  -- urgent state rendered as the least visible thing on screen, and outside
+  -- the 3:1 floor every colour this widget paints has to clear. The segmented
+  -- faces already pulsed only their head; continuous and dual now do the same,
+  -- and bar.lua falls back to the state pill when a face has no head. The
+  -- target is attached by continuousBuildOverlay, once the head exists.
   return true
 end
 
@@ -465,7 +448,12 @@ local function buildPositionHead(widget)
 end
 
 local function continuousBuildOverlay(widget)
-  return buildPositionHead(widget)
+  local ok = buildPositionHead(widget)
+  -- Same rule as the segmented faces: pulse the exact-position head, never the
+  -- fill. With Head = None there is nothing here to pulse and bar.lua falls
+  -- back to the state pill.
+  widget.ui.pulseTargets = widget.ui.head and { widget.ui.head } or nil
+  return ok
 end
 
 local function moveHead(ui, key, axis, position)
@@ -757,7 +745,7 @@ local function continuousUpdate(widget, objects, state)
     end
   end
   if objects.gradientSlices then
-    if axis.originT == 0 then
+    if axis.prefixOrigin then
       updateGradientPrefix(widget, objects, normalized)
     else
       updateGradientSpan(widget, objects, fromT, toT)
@@ -906,14 +894,32 @@ local function addDowngrade(style, reason)
   style.downgrades[#style.downgrades + 1] = reason
 end
 
-local function buildPanel(widget, style)
+function buildPanel(widget, style)
   if style.surface == "transparent" then return end
   local L, palette = widget.layout, widget.barPalette
+  -- A panel the same colour as the screen behind it is an invisible object
+  -- that still costs a build slot and a full-zone fill every frame. On the
+  -- stock theme that is exactly what "Theme panel" was: palette.panel is
+  -- COLOR_THEME_SECONDARY3, which IS the home screen's background. Give it a
+  -- real edge instead of painting nothing - the border role is already in the
+  -- palette and is the same one the casing uses.
+  local color = (palette and palette.panel) or COLOR_THEME_SECONDARY3
+  local backdrop = palette and palette.backdrop
+  local rounded = min(T.px(8), floor(min(L.w, L.h) / 8))
+  if backdrop and color == backdrop and style.surface ~= "custom" then
+    widget.ui.panel = lvgl.rectangle{
+      x = 0, y = 0, w = L.w, h = L.h,
+      color = (palette and palette.border) or COLOR_THEME_SECONDARY1,
+      opacity = T.opacity.rail, filled = 0, thickness = T.px(1),
+      rounded = rounded,
+    }
+    return
+  end
   widget.ui.panel = lvgl.rectangle{
     x = 0, y = 0, w = L.w, h = L.h,
-    color = (palette and palette.panel) or COLOR_THEME_SECONDARY3,
+    color = color,
     opacity = T.opacity.full, filled = 1,
-    rounded = min(T.px(8), floor(min(L.w, L.h) / 8)),
+    rounded = rounded,
   }
 end
 
@@ -975,11 +981,7 @@ local function roleAt(bands, position)
 end
 
 local function spatialColor(widget, palette, position)
-  local t = M.gradientPosition(widget.config, position)
-  if t <= 0 then return palette.critical end
-  if t >= 1 then return palette.normal end
-  if t == 0.5 then return palette.warning end
-  return T.paletteColor(palette, t, 24)
+  return R.spatialColor(widget.config, palette, position)
 end
 
 local function paintCell(cell, stateOpacity)
@@ -988,9 +990,13 @@ local function paintCell(cell, stateOpacity)
   local color = active and cell.activeColor or cell.referenceColor
   local base = cell.baseOpacity
   local opacity
-  if stateOpacity == T.opacity.full and fraction == 1 then
+  -- `fraction >= 1` / `not active`, never `== 1` / `== 0`: the firmware floors
+  -- a float before comparing it with an integer literal, so `0.45 == 0` was
+  -- true here and every PARTIAL cell painted itself as an inactive ghost
+  -- (G.isZero documents the mechanism).
+  if stateOpacity == T.opacity.full and fraction >= 1 then
     opacity = T.opacity.full
-  elseif stateOpacity == T.opacity.full and fraction == 0 then
+  elseif stateOpacity == T.opacity.full and not active then
     opacity = base
   else
     local logical = base + floor((T.opacity.full - base) * fraction + 0.5)
@@ -1012,7 +1018,12 @@ local function paintCell(cell, stateOpacity)
 end
 
 local function setCellFraction(cell, fraction, stateOpacity, force)
-  if not force and cell.fraction == fraction then return end
+  -- Ordering, not equality: callers pass the integer 0/1 for the common ends
+  -- and a float in between, and a mixed `==` floors on this firmware - so a
+  -- cell holding 0.45 compared equal to an incoming 0 and the repaint was
+  -- skipped. Two `<` are exact for every pair (see G.isZero).
+  local held = cell.fraction
+  if not force and held >= fraction and fraction >= held then return end
   cell.fraction = fraction
   paintCell(cell, stateOpacity)
 end
@@ -1116,7 +1127,7 @@ end
 local function updatePartialCells(widget, objects, normalized, stateOpacity)
   local cells, frame = objects.faceCells, widget.frame
   local axis = widget.layout.axis
-  if axis.originT == 0 then
+  if axis.prefixOrigin then
     local scaled = normalized * #cells
     local whole = (normalized >= 1) and #cells or floor(scaled)
     local partial = (whole < #cells) and (scaled - whole) or 0
@@ -1190,7 +1201,7 @@ end
 local function updatePointCells(widget, objects, normalized, stateOpacity)
   local cells, frame = objects.faceCells, widget.frame
   local axis = widget.layout.axis
-  if axis.originT == 0 then
+  if axis.prefixOrigin then
     local active = frame.segmentActive or 0
     while active < #cells and normalized >= cells[active + 1].position do
       active = active + 1
@@ -1217,7 +1228,7 @@ end
 
 local function updateWholeCells(widget, objects, normalized, stateOpacity)
   local cells, frame = objects.faceCells, widget.frame
-  if widget.layout.axis.originT == 0 then
+  if widget.layout.axis.prefixOrigin then
     local whole = (normalized >= 1) and #cells or floor(normalized * #cells)
     local oldWhole = frame.segmentWhole or 0
     if whole > oldWhole then
@@ -1486,10 +1497,25 @@ local function stepsBuild(widget, _geometry, style)
   local gap = gapPixels(style)
   local geometryCap = max(5, floor((axis.length + gap) / (T.px(4) + gap)))
   local count = budgetedCount(widget, style, 32, 1, 5, 10, geometryCap)
+  -- The staircase rises to the full cross-height, but its FIRST steps have to
+  -- stay readable: interpolating from 1 px left a 2 px active green beside a
+  -- 15 px inactive track - the data channel rendered thinner than the thing it
+  -- is drawn over. Start the ramp at a floor instead. The floor yields to the
+  -- staircase itself when the rail is too shallow to give every step its own
+  -- pixel, so the shape never stalls into two equal steps.
+  local rise = max(1, count - 1)
+  local ceiling = max(1, axis.crossLength)
+  -- The floor wins over strict monotonicity. A rail with fewer pixels than
+  -- steps cannot give each one its own height, and the old ramp resolved that
+  -- by starting at 1 px: on a real 800x480 radio the first active steps came
+  -- out 2 px of green beside 15 px of inactive track, so the data channel was
+  -- the faintest thing in the widget. Repeating a height at the bottom is a
+  -- far smaller lie than drawing the reading as a hairline - the staircase
+  -- still rises, it just starts from something you can see.
+  local floorCross = min(max(T.px(3), 1), ceiling)
   for i = 1, count do
     local x, y, w, h, t1, t2 = slotGeometry(axis, i, count, gap)
-    local cross = floor((axis.crossLength - 1) * (i - 1)
-      / max(1, count - 1)) + 1
+    local cross = floorCross + floor((ceiling - floorCross) * (i - 1) / rise)
     if axis.orientation == "vertical" then
       x, w = axis.x + floor((axis.w - cross) / 2), cross
     else
@@ -1523,20 +1549,22 @@ local function dualBuild(widget, _geometry, style)
   local radius = (style.ends == "round") and floor(axis.crossLength / 2) or 0
   ui.faceKind = "dual-rail"
   ui.dualTracks = {}
-  ui.dualTrackNeg = {}
   for i = 1, 2 do
     local fromT, toT = (i == 1) and 0 or axis.originT,
       (i == 1) and axis.originT or 1
     local x, y, w, h = G.axisSpan(axis, fromT, toT)
-    local endpoint = (i == 1) and widget.config.min or widget.config.max
-    local negative = endpoint < 0
+    -- Both halves are TRACK, exactly like every other face's inactive body.
+    -- They used to take palette.critical / palette.normal, so a stick pushed
+    -- to +65 % still showed a full-length saturated red bar on the negative
+    -- half - and under contrast assist that rail reached 59 % opacity, at
+    -- which point it is indistinguishable from a filled negative reading.
+    -- The sign is already carried by which side of the zero notch the fill
+    -- grows from; it does not need a second, contradictory channel.
     local track = lvgl.rectangle{
       x = x, y = y, w = max(1, w), h = max(1, h),
-      color = negative and palette.critical or palette.normal,
+      color = palette.track,
       opacity = T.opacity.rail, filled = 1, rounded = radius,
     }
-    -- LVGL objects are opaque userdata on the radio (no __newindex).
-    ui.dualTrackNeg[i] = negative
     ui.dualTracks[i] = track
   end
   local x, y, w, h = G.axisSpan(active, active.originT, active.originT)
@@ -1546,7 +1574,6 @@ local function dualBuild(widget, _geometry, style)
     rounded = (style.ends == "round") and floor(active.crossLength / 2) or 0,
   }
   lvgl.hide(ui.fill)
-  ui.pulseTargets = { ui.fill }
   return true
 end
 
@@ -1559,8 +1586,7 @@ local function dualPalette(widget, objects, palette, state)
     or assisted and min(T.opacity.full, T.opacity.rail + 60) or T.opacity.rail
   for i = 1, #objects.dualTracks do
     local track = objects.dualTracks[i]
-    R.setProp(widget, track, "color",
-      objects.dualTrackNeg[i] and palette.critical or palette.normal)
+    R.setProp(widget, track, "color", palette.track)
     R.setProp(widget, track, "opacity", trackOpacity)
   end
   local negative = state.smoothValue ~= nil and state.smoothValue < 0

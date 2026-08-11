@@ -366,9 +366,19 @@ function Canvas:object(obj, label)
       -- and its unit vanished. Renders were inventing clipping bugs, which
       -- is worse than missing them, because it teaches reviewers to ignore
       -- the clip. Now a clip in the picture means a clip on the radio.
+      --
+      -- lengthAdjust is "spacing", NOT "spacingAndGlyphs". Scaling the GLYPHS
+      -- to hit that width made Chromium's rasteriser unreliable at some zoom
+      -- factors: at 2x the badges read "NO DA", "STAL" and one pill rendered
+      -- empty, at 6x "78 dB" came out as "/8 D" - all of them artefacts of the
+      -- rasteriser, none of them in the object tree. Four were nearly filed as
+      -- widget defects on 11 Aug 2026 before an A/B at another zoom cleared
+      -- them. Adjusting only the inter-glyph spacing keeps the run's total
+      -- advance honest - which is the whole point, so a clip in the picture is
+      -- still a clip on the radio - while every glyph is drawn as-is.
       self:emit(fmt('<text x="%.1f" y="%.1f" font-size="%d" fill="%s"'
         .. ' text-anchor="%s" font-family="DejaVu Sans, Verdana, sans-serif"'
-        .. ' textLength="%.1f" lengthAdjust="spacingAndGlyphs"'
+        .. ' textLength="%.1f" lengthAdjust="spacing"'
         .. ' fill-opacity="%.2f">%s</text>',
         x, p.y + (i - 1) * size + size * 0.78, size, self:color(p.color),
         anchor, M.textWidth(lines[i], size), opa, esc(lines[i])))

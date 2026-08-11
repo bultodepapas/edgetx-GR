@@ -169,6 +169,57 @@ local function resolveColor(widget, key, palette)
 end
 M.resolveColor = resolveColor
 
+-- ---- spatial gradient (shared by both families) --------------------------
+--
+-- Gradient means ONE thing: the colour of a point is the severity OF THAT
+-- POINT ON THE SCALE, so the whole instrument shows where the bad end is
+-- before the reading ever gets there. The bar slices its axis; the dial
+-- slices its arc. They differ in geometry and in nothing else - the rule,
+-- the slice budget and the colour lookup all live here so a change to one
+-- family cannot quietly become a second meaning in the other.
+--
+-- The dial used to take a completely different route: one colour for the
+-- whole arc, interpolated from the CURRENT value's distance to the
+-- thresholds. That is a legitimate idea, but it is not this one, and two
+-- gauges on one screen answered different questions under one option name.
+
+-- How many slices a run of `length` px deserves, capped by the object budget.
+function M.gradientSliceCount(length, available)
+  local target = math.ceil(math.max(1, tonumber(length) or 1) / T.px(12))
+  target = math.max(8, math.min(24, target))
+  return math.max(1, math.min(target, floor(tonumber(available) or 24)))
+end
+
+-- Map a physical position on the authored scale into the semantic gradient:
+-- critical=0, warning=.5, normal=1. Descending scales and low-is-good both
+-- fall out of the same value mapping instead of swapping face-local bands.
+function M.gradientPosition(cfg, axisPosition)
+  axisPosition = math.max(0, math.min(1, tonumber(axisPosition) or 0))
+  local value = cfg.min + (cfg.max - cfg.min) * axisPosition
+  local lo, hi = cfg.crit, cfg.warn
+  if lo > hi then lo, hi = hi, lo end
+  if lo == hi then
+    if cfg.highGood then return (value >= hi) and 1 or 0 end
+    return (value <= lo) and 1 or 0
+  end
+  local t = G.normalize(value, lo, hi)
+  if not cfg.highGood then t = 1 - t end
+  return t
+end
+
+-- The colour a slice at `position` takes. `palette` is the bar's resolved
+-- table; the dial has no palette resolver and passes nil, which falls back to
+-- the calibrated status colours - the same three the bar's "classic" palette
+-- carries, so both families land on identical RGB for identical severities.
+function M.spatialColor(cfg, palette, position)
+  palette = palette or T.color
+  local t = M.gradientPosition(cfg, position)
+  if t <= 0 then return palette.critical or T.color.crit end
+  if t >= 1 then return palette.normal or T.color.accent end
+  if t == 0.5 then return palette.warning or T.color.warn end
+  return T.paletteColor(palette.critical and palette or nil, t, 24)
+end
+
 -- The colour for the VALUE text. Shared with the bar (bar.lua calls it), so
 -- both orientations obey the same rule.
 --

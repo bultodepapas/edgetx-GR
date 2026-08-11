@@ -64,8 +64,15 @@ def flag_cross_case_duplicates(rows, shots_dir):
     cases rendering at the same wrong fullscreen size instead of their own
     declared zone. Either way that is not a PASS. A duplicate group where
     every screenshot belongs to the SAME case (a theme capture identical to
-    its stock baseline, H-03) is left alone -- expected, not a defect."""
-    groups = find_duplicate_groups(shots_dir)
+    its stock baseline, H-03) is left alone -- expected, not a defect.
+
+    So is a group EXPECTED_IDENTICAL explains: "Medium IS the default
+    thickness" is not a finding, and burying the real ones among 48 of those
+    is the same as reporting none. Three genuine defects (a shared option
+    with no effect, a surface that painted nothing, three dial colour modes
+    collapsed into one) sat in that undifferentiated list for a whole run
+    before the triage was added -- see verify_dupes.classify_group."""
+    groups = find_duplicate_groups(shots_dir, only_unexpected=True)
     by_file = {r["file"]: r for r in rows if r.get("file")}
     for files in groups.values():
         present = [by_file[f] for f in files if f in by_file]

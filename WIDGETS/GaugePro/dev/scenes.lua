@@ -1007,6 +1007,21 @@ M.sections = {
           Style = "Bar", Scale = "Manual", Min = -100, Max = 100,
           Warn = -30, Crit = -60, Damping = 0,
         }, value = 0 },
+      -- Slot 6's third choice on the BAR. The catalogue had no bar case that
+      -- exercised ShowMinMax at all, which is part of why "Markers + text"
+      -- could be hard-wired off on this family and go unnoticed.
+      { name = "br-minmax-text", title = "Markers + text (shared slot 6)",
+        zone = { 360, 100 }, source = "Thr", opts = {
+          Style = "Bar", Scale = "Manual", Min = -100, Max = 100,
+          ShowMinMax = "Markers + text", Damping = 0,
+        }, value = 40, post = function(ctx)
+          ctx.mock.setValue(ctx.srcId, -60)
+          ctx.mock.advance(50)
+          ctx.mod.refresh(ctx.widget)
+          ctx.mock.setValue(ctx.srcId, 75)
+          ctx.mock.advance(50)
+          ctx.mod.refresh(ctx.widget)
+        end },
       { name = "br-desc-history", title = "descending / min max ghost",
         zone = { 320, 90 }, source = "Thr", opts = {
           Style = "Bar", Scale = "Manual", Min = 100, Max = 0,

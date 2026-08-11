@@ -13,7 +13,13 @@ local M = {}
 
 local floor, abs = math.floor, math.abs
 
-M.NO_VALUE = "-"
+-- Two dashes, not one. A single hyphen set at the value font's size (29 px on
+-- a 220x170 dial) renders as one short, thick, vertically centred bar floating
+-- where a number should be: on the real firmware it reads as a stray
+-- rectangle, not as "no reading". Two read unambiguously as a placeholder at
+-- every size in the ramp, and still fit the reserved box, which is sized from
+-- the scale endpoints plus a character of slack (M.widestSample).
+M.NO_VALUE = "--"
 
 function M.number(v, precision)
   if type(v) ~= "number" or v ~= v then return M.NO_VALUE end

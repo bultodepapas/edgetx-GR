@@ -253,8 +253,36 @@ local function paletteFor(cfg, visual, themeSig, inputSig)
   local warningSource, criticalSource = T.color.warn, T.color.crit
   local mode = visual.palette
 
+  -- The backdrop the DATA is actually read against. With a panel it is the
+  -- panel; with a transparent surface it is whatever the home screen paints,
+  -- which is the theme's own SECONDARY3. Every contrast decision below has to
+  -- use this, not the track: a thin or segmented face barely touches the
+  -- track, so measuring against the track alone let a 1.14:1 fill through.
+  local backdrop = runtimeColor(
+    (visual.surface == "custom" and cfg.panelClr) or COLOR_THEME_SECONDARY3)
+
+  local themeDowngrade
   if mode == "theme" then
-    normalSource, warningSource = COLOR_THEME_ACTIVE, COLOR_THEME_WARNING
+    -- COLOR_THEME_ACTIVE is the CHECKED-control background, not an instrument
+    -- colour: it is #ffde00 at 1.13:1 on the stock theme, which is exactly why
+    -- theme.color stopped using it (see theme.lua's status-colour comment).
+    -- Adopt it only where it survives the same 3:1 floor a fixed colour must
+    -- clear; otherwise keep the calibrated accent and say so.
+    local candidate = runtimeColor(COLOR_THEME_ACTIVE)
+    local ratio = T.contrastRatio(candidate, backdrop)
+    if ratio and ratio < 3 then
+      themeDowngrade = string.format("theme-normal-contrast-%.2f", ratio)
+    else
+      normalSource = COLOR_THEME_ACTIVE
+    end
+    local warnCandidate = runtimeColor(COLOR_THEME_WARNING)
+    local warnRatio = T.contrastRatio(warnCandidate, backdrop)
+    if warnRatio and warnRatio < 3 then
+      themeDowngrade = (themeDowngrade and (themeDowngrade .. "+warning"))
+        or string.format("theme-warning-contrast-%.2f", warnRatio)
+    else
+      warningSource = COLOR_THEME_WARNING
+    end
   elseif mode == "custom-three" then
     warningSource = cfg.warnClr or T.color.warn
     criticalSource = cfg.critClr or T.color.crit
@@ -309,8 +337,15 @@ local function paletteFor(cfg, visual, themeSig, inputSig)
   local nt = T.contrastRatio(normal, track)
   local wt = T.contrastRatio(warning, track)
   local ct = T.contrastRatio(critical, track)
+  -- Against the surface the data is read on, not only against the track. A
+  -- Thin or Ticks face puts almost no track under its own colour, so this is
+  -- the measurement that decides whether the reading is visible at all.
+  local nb = T.contrastRatio(normal, backdrop)
+  local wb = T.contrastRatio(warning, backdrop)
+  local cb = T.contrastRatio(critical, backdrop)
   local basicNeed = (nw and nw < 60) or (wc and wc < 60)
-    or (nt and nt < 3) or (wt and wt < 3) or (ct and ct < 3) or false
+    or (nt and nt < 3) or (wt and wt < 3) or (ct and ct < 3)
+    or (nb and nb < 3) or (wb and wb < 3) or (cb and cb < 3) or false
   local nwCvd, wcCvd
   -- Matrix simulation is the expensive fallback, not a tax on every widget
   -- configure. If ordinary separation/contrast already requires assistance,
@@ -325,12 +360,17 @@ local function paletteFor(cfg, visual, themeSig, inputSig)
     nwCvd = nwProtan and min(nwProtan, nwDeutan, nwTritan) or nil
     wcCvd = wcProtan and min(wcProtan, wcDeutan, wcTritan) or nil
   end
+  palette.backdrop = backdrop
+  palette.themeDowngrade = themeDowngrade
   palette.analysis = {
     normalWarningDistance = nw,
     warningCriticalDistance = wc,
     normalTrackContrast = nt,
     warningTrackContrast = wt,
     criticalTrackContrast = ct,
+    normalBackdropContrast = nb,
+    warningBackdropContrast = wb,
+    criticalBackdropContrast = cb,
     normalWarningCvdDistance = nwCvd,
     warningCriticalCvdDistance = wcCvd,
   }
@@ -451,6 +491,12 @@ function M.resolve(widget, cfg)
   end
   visual.paletteSig = palette.signature
   visual.themeSig = palette.themeSignature
+  -- Recorded on `visual`, resolved on `palette`: the palette is memoised by
+  -- input signature, so the reason has to be copied here on every resolve
+  -- rather than appended inside paletteFor, which would duplicate it.
+  if palette.themeDowngrade then
+    visual.downgrades[#visual.downgrades + 1] = palette.themeDowngrade
+  end
   if widget then
     local now = (type(getTime) == "function") and getTime() or 0
     if palette ~= previous or widget.barThemeCheckAt == nil then

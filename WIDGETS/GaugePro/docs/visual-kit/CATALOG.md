@@ -8,34 +8,34 @@ Current split contract: `DialPro` and `BarPro` over shared `GaugeCore`.
 
 | # | Case | Widget | Status | Options (non-default) | Zone (real) | Screenshot |
 |---:|---|---|---|---|---|---|
-| 001 | st-normal | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [001_estado_st-normal.png](screenshots/001_estado_st-normal.png) |
+| 001 | st-normal | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [001_estado_st-normal.png](screenshots/001_estado_st-normal.png) |
 | 002 | st-warn | DialPro | PASS | Crit=6, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x160 (Layout1P3 z1) | [002_estado_st-warn.png](screenshots/002_estado_st-warn.png) |
-| 003 | st-crit | DialPro | WARN | Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x160 (Layout1P3 z1) | [003_estado_st-crit.png](screenshots/003_estado_st-crit.png) |
+| 003 | st-crit | DialPro | PASS | Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x160 (Layout1P3 z1) | [003_estado_st-crit.png](screenshots/003_estado_st-crit.png) |
 | 004 | st-nosource | DialPro | PASS | Scale=Manual | 400x160 (Layout1P3 z1) | [004_estado_st-nosource.png](screenshots/004_estado_st-nosource.png) |
 
 ## color
 
 | # | Case | Widget | Status | Options (non-default) | Zone (real) | Screenshot |
 |---:|---|---|---|---|---|---|
-| 005 | color-static-ok | DialPro | WARN | ColorMode=Static, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [005_color_color-static-ok.png](screenshots/005_color_color-static-ok.png) |
+| 005 | color-static-ok | DialPro | PASS | ColorMode=Static, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [005_color_color-static-ok.png](screenshots/005_color_color-static-ok.png) |
 | 006 | color-static-crit | DialPro | PASS | ColorMode=Static, Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x160 (Layout1P3 z1) | [006_color_color-static-crit.png](screenshots/006_color_color-static-crit.png) |
-| 007 | color-threshold-ok | DialPro | WARN | ColorMode=Threshold, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [007_color_color-threshold-ok.png](screenshots/007_color_color-threshold-ok.png) |
+| 007 | color-threshold-ok | DialPro | PASS | ColorMode=Threshold, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [007_color_color-threshold-ok.png](screenshots/007_color_color-threshold-ok.png) |
 | 008 | color-threshold-crit | DialPro | PASS | ColorMode=Threshold, Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x160 (Layout1P3 z1) | [008_color_color-threshold-crit.png](screenshots/008_color_color-threshold-crit.png) |
-| 009 | color-rail-ok | DialPro | WARN | ColorMode=Rail, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [009_color_color-rail-ok.png](screenshots/009_color_color-rail-ok.png) |
-| 010 | color-rail-crit | DialPro | WARN | ColorMode=Rail, Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x160 (Layout1P3 z1) | [010_color_color-rail-crit.png](screenshots/010_color_color-rail-crit.png) |
-| 011 | color-gradient-ok | DialPro | WARN | ColorMode=Gradient, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [011_color_color-gradient-ok.png](screenshots/011_color_color-gradient-ok.png) |
+| 009 | color-rail-ok | DialPro | PASS | ColorMode=Rail, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [009_color_color-rail-ok.png](screenshots/009_color_color-rail-ok.png) |
+| 010 | color-rail-crit | DialPro | PASS | ColorMode=Rail, Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x160 (Layout1P3 z1) | [010_color_color-rail-crit.png](screenshots/010_color_color-rail-crit.png) |
+| 011 | color-gradient-ok | DialPro | PASS | ColorMode=Gradient, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [011_color_color-gradient-ok.png](screenshots/011_color_color-gradient-ok.png) |
 | 012 | color-gradient-crit | DialPro | PASS | ColorMode=Gradient, Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x160 (Layout1P3 z1) | [012_color_color-gradient-crit.png](screenshots/012_color_color-gradient-crit.png) |
-| 013 | color-sections-ok | DialPro | WARN | ColorMode=Sections, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [013_color_color-sections-ok.png](screenshots/013_color_color-sections-ok.png) |
+| 013 | color-sections-ok | DialPro | PASS | ColorMode=Sections, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [013_color_color-sections-ok.png](screenshots/013_color_color-sections-ok.png) |
 | 014 | color-sections-crit | DialPro | PASS | ColorMode=Sections, Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x160 (Layout1P3 z1) | [014_color_color-sections-crit.png](screenshots/014_color_color-sections-crit.png) |
 
 ## escala
 
 | # | Case | Widget | Status | Options (non-default) | Zone (real) | Screenshot |
 |---:|---|---|---|---|---|---|
-| 015 | sc-preset | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Auto, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [015_escala_sc-preset.png](screenshots/015_escala_sc-preset.png) |
+| 015 | sc-preset | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Auto, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [015_escala_sc-preset.png](screenshots/015_escala_sc-preset.png) |
 | 016 | sc-dbm | DialPro | PASS | Crit=26, Max=21, Min=1, Scale=Manual, Warn=30 | 400x240 (Layout2P1 z1) | [016_escala_sc-dbm.png](screenshots/016_escala_sc-dbm.png) |
 | 017 | sc-20000 | DialPro | PASS | Crit=-7, Max=12, Min=-8, Precision=2, Scale=Manual, Warn=-7 | 400x240 (Layout2P1 z1) | [017_escala_sc-20000.png](screenshots/017_escala_sc-20000.png) |
-| 018 | sc-lowgood | DialPro | WARN | Crit=-4, Max=9, Min=-11, Scale=Auto, Warn=0 | 400x240 (Layout2P1 z1) | [018_escala_sc-lowgood.png](screenshots/018_escala_sc-lowgood.png) |
+| 018 | sc-lowgood | DialPro | PASS | Crit=-4, Max=9, Min=-11, Scale=Auto, Warn=0 | 400x240 (Layout2P1 z1) | [018_escala_sc-lowgood.png](screenshots/018_escala_sc-lowgood.png) |
 | 019 | sc-highgood-on | DialPro | PASS | ColorMode=Sections, Crit=6, HighGood=True, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x240 (Layout2P1 z1) | [019_escala_sc-highgood-on.png](screenshots/019_escala_sc-highgood-on.png) |
 | 020 | sc-highgood-off | DialPro | PASS | ColorMode=Sections, Crit=6, HighGood=False, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x240 (Layout2P1 z1) | [020_escala_sc-highgood-off.png](screenshots/020_escala_sc-highgood-off.png) |
 | 021 | sc-descending | DialPro | PASS | Crit=9, Max=16, Min=-4, Scale=Manual, Warn=5 | 400x240 (Layout2P1 z1) | [021_escala_sc-descending.png](screenshots/021_escala_sc-descending.png) |
@@ -49,12 +49,12 @@ Current split contract: `DialPro` and `BarPro` over shared `GaugeCore`.
 | 024 | op-sweep270 | DialPro | PASS | Crit=4, Max=17, Min=-3, Scale=Manual, Sweep=270 deg, Warn=8 | 400x240 (Layout2P1 z1) | [024_dial_op-sweep270.png](screenshots/024_dial_op-sweep270.png) |
 | 025 | op-sweep180 | DialPro | PASS | Crit=4, Max=17, Min=-3, Scale=Manual, Sweep=180 deg, Warn=8 | 400x240 (Layout2P1 z1) | [025_dial_op-sweep180.png](screenshots/025_dial_op-sweep180.png) |
 | 026 | op-sweep360 | DialPro | PASS | Crit=4, Max=17, Min=-3, Scale=Manual, Sweep=360 deg, Warn=8 | 400x240 (Layout2P1 z1) | [026_dial_op-sweep360.png](screenshots/026_dial_op-sweep360.png) |
-| 027 | op-style-needle | DialPro | WARN | Crit=-1, DialStyle=Needle, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [027_dial_op-style-needle.png](screenshots/027_dial_op-style-needle.png) |
+| 027 | op-style-needle | DialPro | PASS | Crit=-1, DialStyle=Needle, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [027_dial_op-style-needle.png](screenshots/027_dial_op-style-needle.png) |
 | 028 | op-style-arc | DialPro | PASS | Crit=-1, DialStyle=Arc, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [028_dial_op-style-arc.png](screenshots/028_dial_op-style-arc.png) |
-| 029 | op-chip-off-crit | DialPro | WARN | ColorMode=Rail, Crit=10, Max=24, Min=4, Scale=Manual, ShowChip=False, Warn=14 | 400x160 (Layout1P3 z1) | [029_dial_op-chip-off-crit.png](screenshots/029_dial_op-chip-off-crit.png) |
+| 029 | op-chip-off-crit | DialPro | PASS | ColorMode=Rail, Crit=10, Max=24, Min=4, Scale=Manual, ShowChip=False, Warn=14 | 400x160 (Layout1P3 z1) | [029_dial_op-chip-off-crit.png](screenshots/029_dial_op-chip-off-crit.png) |
 | 030 | op-mm-off | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Off, Warn=3 | 400x240 (Layout2P1 z1) | [030_dial_op-mm-off.png](screenshots/030_dial_op-mm-off.png) |
-| 031 | op-mm-mark | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers, Warn=3 | 400x240 (Layout2P1 z1) | [031_dial_op-mm-mark.png](screenshots/031_dial_op-mm-mark.png) |
-| 032 | op-mm-text | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [032_dial_op-mm-text.png](screenshots/032_dial_op-mm-text.png) |
+| 031 | op-mm-mark | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers, Warn=3 | 400x240 (Layout2P1 z1) | [031_dial_op-mm-mark.png](screenshots/031_dial_op-mm-mark.png) |
+| 032 | op-mm-text | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [032_dial_op-mm-text.png](screenshots/032_dial_op-mm-text.png) |
 
 ## aguja
 
@@ -73,13 +73,13 @@ Current split contract: `DialPro` and `BarPro` over shared `GaugeCore`.
 | 038 | tx-prec2 | DialPro | PASS | Crit=26, Max=11, Min=-9, Precision=2, Scale=Manual, Warn=46 | 400x160 (Layout1P3 z1) | [038_texto_tx-prec2.png](screenshots/038_texto_tx-prec2.png) |
 | 039 | tx-prec2-micro | DialPro | PASS | Crit=26, Max=11, Min=-9, Precision=2, Scale=Manual, Warn=46 | 400x120 (Layout1P4 z1) | [039_texto_tx-prec2-micro.png](screenshots/039_texto_tx-prec2-micro.png) |
 | 040 | tx-override | DialPro | PASS | Crit=-1, Label=PACK, Max=12, Min=-8, Scale=Manual, Suffix=volt, Warn=3 | 400x240 (Layout2P1 z1) | [040_texto_tx-override.png](screenshots/040_texto_tx-override.png) |
-| 041 | tx-scalelabels | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [041_texto_tx-scalelabels.png](screenshots/041_texto_tx-scalelabels.png) |
+| 041 | tx-scalelabels | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [041_texto_tx-scalelabels.png](screenshots/041_texto_tx-scalelabels.png) |
 
 ## acento
 
 | # | Case | Widget | Status | Options (non-default) | Zone (real) | Screenshot |
 |---:|---|---|---|---|---|---|
-| 042 | ac-default | DialPro | WARN | ColorMode=Sections, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [042_acento_ac-default.png](screenshots/042_acento_ac-default.png) |
+| 042 | ac-default | DialPro | PASS | ColorMode=Sections, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [042_acento_ac-default.png](screenshots/042_acento_ac-default.png) |
 | 043 | ac-focus | DialPro | PASS | Accent=354189312, ColorMode=Sections, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [043_acento_ac-focus.png](screenshots/043_acento_ac-focus.png) |
 | 044 | ac-edit | DialPro | PASS | Accent=79790080, ColorMode=Sections, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x160 (Layout1P3 z1) | [044_acento_ac-edit.png](screenshots/044_acento_ac-edit.png) |
 
@@ -87,10 +87,10 @@ Current split contract: `DialPro` and `BarPro` over shared `GaugeCore`.
 
 | # | Case | Widget | Status | Options (non-default) | Zone (real) | Screenshot |
 |---:|---|---|---|---|---|---|
-| 045 | pal-classic | BarPro | WARN | Crit=6, Max=19, Min=-1, Palette=Classic, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [045_paleta_pal-classic.png](screenshots/045_paleta_pal-classic.png) |
+| 045 | pal-classic | BarPro | PASS | Crit=6, Max=19, Min=-1, Palette=Classic, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [045_paleta_pal-classic.png](screenshots/045_paleta_pal-classic.png) |
 | 046 | pal-theme | BarPro | PASS | Crit=6, Max=19, Min=-1, Palette=Theme adaptive, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [046_paleta_pal-theme.png](screenshots/046_paleta_pal-theme.png) |
 | 047 | pal-preset-theme | BarPro | PASS | BarPreset=Theme, Crit=-1, Max=12, Min=-8, Palette=Auto, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [047_paleta_pal-preset-theme.png](screenshots/047_paleta_pal-preset-theme.png) |
-| 048 | pal-preset-auto | BarPro | WARN | BarPreset=Auto, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [048_paleta_pal-preset-auto.png](screenshots/048_paleta_pal-preset-auto.png) |
+| 048 | pal-preset-auto | BarPro | PASS | BarPreset=Auto, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [048_paleta_pal-preset-auto.png](screenshots/048_paleta_pal-preset-auto.png) |
 | 049 | pal-custom3-normal | BarPro | PASS | Accent=2031648768, Crit=-1, CritClr=232554496, Max=12, Min=-8, Palette=Custom 3, Scale=Manual, Warn=3, WarnClr=4140007424 | 400x120 (Layout1P4 z1) | [049_paleta_pal-custom3-normal.png](screenshots/049_paleta_pal-custom3-normal.png) |
 | 050 | pal-custom3-warn | BarPro | PASS | Accent=2031648768, Crit=6, CritClr=232554496, Max=19, Min=-1, Palette=Custom 3, Scale=Manual, Warn=10, WarnClr=4140007424 | 400x120 (Layout1P4 z1) | [050_paleta_pal-custom3-warn.png](screenshots/050_paleta_pal-custom3-warn.png) |
 | 051 | pal-custom3-crit | BarPro | PASS | Accent=2031648768, Crit=10, CritClr=232554496, Max=24, Min=4, Palette=Custom 3, Scale=Manual, Warn=14, WarnClr=4140007424 | 400x120 (Layout1P4 z1) | [051_paleta_pal-custom3-crit.png](screenshots/051_paleta_pal-custom3-crit.png) |
@@ -107,31 +107,31 @@ Current split contract: `DialPro` and `BarPro` over shared `GaugeCore`.
 
 | # | Case | Widget | Status | Options (non-default) | Zone (real) | Screenshot |
 |---:|---|---|---|---|---|---|
-| 060 | br-normal | BarPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [060_barra_br-normal.png](screenshots/060_barra_br-normal.png) |
-| 061 | br-warn | BarPro | WARN | Crit=6, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [061_barra_br-warn.png](screenshots/061_barra_br-warn.png) |
-| 062 | br-crit | BarPro | WARN | Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x120 (Layout1P4 z1) | [062_barra_br-crit.png](screenshots/062_barra_br-crit.png) |
-| 063 | br-narrow | BarPro | WARN | Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x120 (Layout1P4 z1) | [063_barra_br-narrow.png](screenshots/063_barra_br-narrow.png) |
-| 064 | br-short | BarPro | WARN | Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x120 (Layout1P4 z1) | [064_barra_br-short.png](screenshots/064_barra_br-short.png) |
+| 060 | br-normal | BarPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [060_barra_br-normal.png](screenshots/060_barra_br-normal.png) |
+| 061 | br-warn | BarPro | PASS | Crit=6, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [061_barra_br-warn.png](screenshots/061_barra_br-warn.png) |
+| 062 | br-crit | BarPro | PASS | Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x120 (Layout1P4 z1) | [062_barra_br-crit.png](screenshots/062_barra_br-crit.png) |
+| 063 | br-narrow | BarPro | PASS | Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x120 (Layout1P4 z1) | [063_barra_br-narrow.png](screenshots/063_barra_br-narrow.png) |
+| 064 | br-short | BarPro | PASS | Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x120 (Layout1P4 z1) | [064_barra_br-short.png](screenshots/064_barra_br-short.png) |
 | 065 | br-lowgood | BarPro | PASS | Crit=-4, Max=9, Min=-11, Scale=Manual, Warn=0 | 400x120 (Layout1P4 z1) | [065_barra_br-lowgood.png](screenshots/065_barra_br-lowgood.png) |
-| 066 | br-nochip | BarPro | WARN | Crit=10, Max=24, Min=4, Scale=Manual, ShowChip=False, Warn=14 | 400x120 (Layout1P4 z1) | [066_barra_br-nochip.png](screenshots/066_barra_br-nochip.png) |
-| 067 | br-auto | BarPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [067_barra_br-auto.png](screenshots/067_barra_br-auto.png) |
+| 066 | br-nochip | BarPro | PASS | Crit=10, Max=24, Min=4, Scale=Manual, ShowChip=False, Warn=14 | 400x120 (Layout1P4 z1) | [066_barra_br-nochip.png](screenshots/066_barra_br-nochip.png) |
+| 067 | br-auto | BarPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [067_barra_br-auto.png](screenshots/067_barra_br-auto.png) |
 | 068 | br-thin | BarPro | PASS | BarSize=Thin, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [068_barra_br-thin.png](screenshots/068_barra_br-thin.png) |
-| 069 | br-medium | BarPro | WARN | BarSize=Medium, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [069_barra_br-medium.png](screenshots/069_barra_br-medium.png) |
+| 069 | br-medium | BarPro | PASS | BarSize=Medium, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [069_barra_br-medium.png](screenshots/069_barra_br-medium.png) |
 | 070 | br-thick | BarPro | PASS | BarSize=Thick, Crit=6, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [070_barra_br-thick.png](screenshots/070_barra_br-thick.png) |
 | 071 | br-maximum | BarPro | PASS | BarSize=Maximum, Crit=10, Max=24, Min=4, Scale=Manual, Warn=14 | 400x120 (Layout1P4 z1) | [071_barra_br-maximum.png](screenshots/071_barra_br-maximum.png) |
-| 072 | br-end-round | BarPro | WARN | BarEnds=Round, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [072_barra_br-end-round.png](screenshots/072_barra_br-end-round.png) |
+| 072 | br-end-round | BarPro | PASS | BarEnds=Round, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [072_barra_br-end-round.png](screenshots/072_barra_br-end-round.png) |
 | 073 | br-end-square | BarPro | PASS | BarEnds=Square, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [073_barra_br-end-square.png](screenshots/073_barra_br-end-square.png) |
 | 074 | br-end-chamfer | BarPro | PASS | BarEnds=Chamfer, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [074_barra_br-end-chamfer.png](screenshots/074_barra_br-end-chamfer.png) |
-| 075 | br-surface-clear | BarPro | WARN | Crit=6, Max=19, Min=-1, Scale=Manual, Surface=Transparent, Warn=10 | 400x120 (Layout1P4 z1) | [075_barra_br-surface-clear.png](screenshots/075_barra_br-surface-clear.png) |
-| 076 | br-surface-theme | BarPro | WARN | Crit=6, Max=19, Min=-1, Scale=Manual, Surface=Theme panel, Warn=10 | 400x120 (Layout1P4 z1) | [076_barra_br-surface-theme.png](screenshots/076_barra_br-surface-theme.png) |
+| 075 | br-surface-clear | BarPro | PASS | Crit=6, Max=19, Min=-1, Scale=Manual, Surface=Transparent, Warn=10 | 400x120 (Layout1P4 z1) | [075_barra_br-surface-clear.png](screenshots/075_barra_br-surface-clear.png) |
+| 076 | br-surface-theme | BarPro | PASS | Crit=6, Max=19, Min=-1, Scale=Manual, Surface=Theme panel, Warn=10 | 400x120 (Layout1P4 z1) | [076_barra_br-surface-theme.png](screenshots/076_barra_br-surface-theme.png) |
 | 077 | br-surface-custom | BarPro | PASS | Crit=6, Max=19, Min=-1, PanelClr=952795136, Scale=Manual, Surface=Custom colors, TrackClr=2052227072, Warn=10 | 400x120 (Layout1P4 z1) | [077_barra_br-surface-custom.png](screenshots/077_barra_br-surface-custom.png) |
 | 078 | br-mode-static | BarPro | PASS | ColorMode=Static, Crit=6, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [078_barra_br-mode-static.png](screenshots/078_barra_br-mode-static.png) |
 | 079 | br-mode-threshold | BarPro | PASS | ColorMode=Threshold, Crit=6, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [079_barra_br-mode-threshold.png](screenshots/079_barra_br-mode-threshold.png) |
-| 080 | br-mode-rail | BarPro | WARN | ColorMode=Rail, Crit=6, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [080_barra_br-mode-rail.png](screenshots/080_barra_br-mode-rail.png) |
-| 081 | br-mode-gradient | BarPro | WARN | ColorMode=Gradient, Crit=5, Max=18, Min=-2, Scale=Manual, Warn=9 | 400x120 (Layout1P4 z1) | [081_barra_br-mode-gradient.png](screenshots/081_barra_br-mode-gradient.png) |
+| 080 | br-mode-rail | BarPro | PASS | ColorMode=Rail, Crit=6, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [080_barra_br-mode-rail.png](screenshots/080_barra_br-mode-rail.png) |
+| 081 | br-mode-gradient | BarPro | PASS | ColorMode=Gradient, Crit=5, Max=18, Min=-2, Scale=Manual, Warn=9 | 400x120 (Layout1P4 z1) | [081_barra_br-mode-gradient.png](screenshots/081_barra_br-mode-gradient.png) |
 | 082 | br-gradient-lowgood | BarPro | PASS | ColorMode=Gradient, Crit=2, Max=15, Min=-5, Scale=Manual, Warn=6 | 400x120 (Layout1P4 z1) | [082_barra_br-gradient-lowgood.png](screenshots/082_barra_br-gradient-lowgood.png) |
 | 083 | br-gradient-desc | BarPro | PASS | ColorMode=Gradient, Crit=11, Damping=0, Max=18, Min=-2, Scale=Manual, Warn=7 | 400x120 (Layout1P4 z1) | [083_barra_br-gradient-desc.png](screenshots/083_barra_br-gradient-desc.png) |
-| 084 | br-gradient-compact | BarPro | WARN | ColorMode=Gradient, Crit=5, Max=18, Min=-2, Scale=Manual, Warn=9 | 400x120 (Layout1P4 z1) | [084_barra_br-gradient-compact.png](screenshots/084_barra_br-gradient-compact.png) |
+| 084 | br-gradient-compact | BarPro | PASS | ColorMode=Gradient, Crit=5, Max=18, Min=-2, Scale=Manual, Warn=9 | 400x120 (Layout1P4 z1) | [084_barra_br-gradient-compact.png](screenshots/084_barra_br-gradient-compact.png) |
 | 085 | br-gradient-large | BarPro | PASS | BarSize=Thick, ColorMode=Gradient, Crit=-1, Max=12, Min=-8, Scale=Manual, Surface=Theme panel, Warn=3 | 400x120 (Layout1P4 z1) | [085_barra_br-gradient-large.png](screenshots/085_barra_br-gradient-large.png) |
 | 086 | br-mode-sections | BarPro | PASS | ColorMode=Sections, Crit=6, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [086_barra_br-mode-sections.png](screenshots/086_barra_br-mode-sections.png) |
 | 087 | br-preset-minimal | BarPro | PASS | BarPreset=Minimal, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [087_barra_br-preset-minimal.png](screenshots/087_barra_br-preset-minimal.png) |
@@ -172,10 +172,10 @@ Current split contract: `DialPro` and `BarPro` over shared `GaugeCore`.
 | 117 | f4-ticks-dense | BarPro | PASS | BarFace=Ticks, ColorMode=Threshold, Crit=6, Max=19, Min=-1, Scale=Manual, SegGap=Tight, Segments=24, Warn=10 | 400x120 (Layout1P4 z1) | [117_caras4_f4-ticks-dense.png](screenshots/117_caras4_f4-ticks-dense.png) |
 | 118 | f4-steps-compact | BarPro | PASS | BarFace=Steps, Crit=6, Max=19, Min=-1, Scale=Manual, Segments=6, Warn=10 | 400x120 (Layout1P4 z1) | [118_caras4_f4-steps-compact.png](screenshots/118_caras4_f4-steps-compact.png) |
 | 119 | f4-steps-signal | BarPro | PASS | BarFace=Steps, ColorMode=Sections, Crit=-1, Max=12, Min=-8, Scale=Manual, SegGap=Normal, Segments=10, Warn=3 | 400x120 (Layout1P4 z1) | [119_caras4_f4-steps-signal.png](screenshots/119_caras4_f4-steps-signal.png) |
-| 120 | f4-preset-hex | BarPro | WARN | BarPreset=Hex, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [120_caras4_f4-preset-hex.png](screenshots/120_caras4_f4-preset-hex.png) |
+| 120 | f4-preset-hex | BarPro | PASS | BarPreset=Hex, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [120_caras4_f4-preset-hex.png](screenshots/120_caras4_f4-preset-hex.png) |
 | 121 | f4-preset-blocks | BarPro | PASS | BarPreset=Blocks, Crit=6, Max=19, Min=-1, Scale=Manual, Warn=10 | 400x120 (Layout1P4 z1) | [121_caras4_f4-preset-blocks.png](screenshots/121_caras4_f4-preset-blocks.png) |
 | 122 | f4-preset-ticks | BarPro | PASS | BarPreset=Ticks, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [122_caras4_f4-preset-ticks.png](screenshots/122_caras4_f4-preset-ticks.png) |
-| 123 | f4-auto-rssi | BarPro | WARN | BarPreset=Auto, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [123_caras4_f4-auto-rssi.png](screenshots/123_caras4_f4-auto-rssi.png) |
+| 123 | f4-auto-rssi | BarPro | PASS | BarPreset=Auto, Crit=-1, Max=12, Min=-8, Scale=Manual, Warn=3 | 400x120 (Layout1P4 z1) | [123_caras4_f4-auto-rssi.png](screenshots/123_caras4_f4-auto-rssi.png) |
 
 ## ejes5
 
@@ -249,39 +249,92 @@ Current split contract: `DialPro` and `BarPro` over shared `GaugeCore`.
 | 189 | f5-label-v-inside | BarPro | PASS | BarDir=Vertical, BarFace=Steps, Crit=2, Damping=0, Label=AILERON, LabelPos=Inside, Max=14, Min=-6, Scale=Manual, Warn=6 | 400x360 (Layout4P2B z4) | [189_ejes5_f5-label-v-inside.png](screenshots/189_ejes5_f5-label-v-inside.png) |
 | 190 | f5-label-v-off | BarPro | PASS | BarDir=Vertical, BarFace=Steps, Crit=2, Damping=0, Label=AILERON, LabelPos=Off, Max=14, Min=-6, Scale=Manual, Warn=6 | 400x360 (Layout4P2B z4) | [190_ejes5_f5-label-v-off.png](screenshots/190_ejes5_f5-label-v-off.png) |
 | 191 | f5-auto-ail | BarPro | PASS | BarPreset=Auto, Crit=18, Damping=0, Max=24, Min=4, Scale=Manual, Warn=20 | 400x120 (Layout1P4 z1) | [191_ejes5_f5-auto-ail.png](screenshots/191_ejes5_f5-auto-ail.png) |
-| 192 | f5-auto-ch1 | BarPro | WARN | BarPreset=Auto, Crit=5, Damping=0, Max=11, Min=-9, Scale=Manual, Warn=7 | 400x120 (Layout1P4 z1) | [192_ejes5_f5-auto-ch1.png](screenshots/192_ejes5_f5-auto-ch1.png) |
-| 193 | f5-auto-thr | BarPro | WARN | BarPreset=Auto, Crit=5, Damping=0, Max=11, Min=-9, Scale=Manual, Warn=7 | 400x120 (Layout1P4 z1) | [193_ejes5_f5-auto-thr.png](screenshots/193_ejes5_f5-auto-thr.png) |
+| 192 | f5-auto-ch1 | BarPro | PASS | BarPreset=Auto, Crit=5, Damping=0, Max=11, Min=-9, Scale=Manual, Warn=7 | 400x120 (Layout1P4 z1) | [192_ejes5_f5-auto-ch1.png](screenshots/192_ejes5_f5-auto-ch1.png) |
+| 193 | f5-auto-thr | BarPro | PASS | BarPreset=Auto, Crit=5, Damping=0, Max=11, Min=-9, Scale=Manual, Warn=7 | 400x120 (Layout1P4 z1) | [193_ejes5_f5-auto-thr.png](screenshots/193_ejes5_f5-auto-thr.png) |
 | 194 | f5-auto-ail-one | BarPro | PASS | BarPreset=Auto, Crit=2, Damping=0, Max=15, Min=-5, Scale=Manual, Warn=6 | 400x120 (Layout1P4 z1) | [194_ejes5_f5-auto-ail-one.png](screenshots/194_ejes5_f5-auto-ail-one.png) |
 
 ## zonas
 
 | # | Case | Widget | Status | Options (non-default) | Zone (real) | Screenshot |
 |---:|---|---|---|---|---|---|
-| 195 | zone-60x60 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x120 (Layout1P4 z1) | [195_zonas_zone-60x60.png](screenshots/195_zonas_zone-60x60.png) |
-| 196 | zone-80x60 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x120 (Layout1P4 z1) | [196_zonas_zone-80x60.png](screenshots/196_zonas_zone-80x60.png) |
-| 197 | zone-100x100 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x120 (Layout1P4 z1) | [197_zonas_zone-100x100.png](screenshots/197_zonas_zone-100x100.png) |
-| 198 | zone-128x96 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x120 (Layout1P4 z1) | [198_zonas_zone-128x96.png](screenshots/198_zonas_zone-128x96.png) |
-| 199 | zone-160x160 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x160 (Layout1P3 z1) | [199_zonas_zone-160x160.png](screenshots/199_zonas_zone-160x160.png) |
-| 200 | zone-200x160 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x160 (Layout1P3 z1) | [200_zonas_zone-200x160.png](screenshots/200_zonas_zone-200x160.png) |
-| 201 | zone-200x200 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [201_zonas_zone-200x200.png](screenshots/201_zonas_zone-200x200.png) |
-| 202 | zone-260x220 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [202_zonas_zone-260x220.png](screenshots/202_zonas_zone-260x220.png) |
-| 203 | zone-300x150 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x160 (Layout1P3 z1) | [203_zonas_zone-300x150.png](screenshots/203_zonas_zone-300x150.png) |
-| 204 | zone-120x220 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [204_zonas_zone-120x220.png](screenshots/204_zonas_zone-120x220.png) |
-| 205 | zone-100x260 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [205_zonas_zone-100x260.png](screenshots/205_zonas_zone-100x260.png) |
-| 206 | zone-480x272 | DialPro | WARN | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [206_zonas_zone-480x272.png](screenshots/206_zonas_zone-480x272.png) |
+| 195 | zone-60x60 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x120 (Layout1P4 z1) | [195_zonas_zone-60x60.png](screenshots/195_zonas_zone-60x60.png) |
+| 196 | zone-80x60 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x120 (Layout1P4 z1) | [196_zonas_zone-80x60.png](screenshots/196_zonas_zone-80x60.png) |
+| 197 | zone-100x100 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x120 (Layout1P4 z1) | [197_zonas_zone-100x100.png](screenshots/197_zonas_zone-100x100.png) |
+| 198 | zone-128x96 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x120 (Layout1P4 z1) | [198_zonas_zone-128x96.png](screenshots/198_zonas_zone-128x96.png) |
+| 199 | zone-160x160 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x160 (Layout1P3 z1) | [199_zonas_zone-160x160.png](screenshots/199_zonas_zone-160x160.png) |
+| 200 | zone-200x160 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x160 (Layout1P3 z1) | [200_zonas_zone-200x160.png](screenshots/200_zonas_zone-200x160.png) |
+| 201 | zone-200x200 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [201_zonas_zone-200x200.png](screenshots/201_zonas_zone-200x200.png) |
+| 202 | zone-260x220 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [202_zonas_zone-260x220.png](screenshots/202_zonas_zone-260x220.png) |
+| 203 | zone-300x150 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x160 (Layout1P3 z1) | [203_zonas_zone-300x150.png](screenshots/203_zonas_zone-300x150.png) |
+| 204 | zone-120x220 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [204_zonas_zone-120x220.png](screenshots/204_zonas_zone-120x220.png) |
+| 205 | zone-100x260 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [205_zonas_zone-100x260.png](screenshots/205_zonas_zone-100x260.png) |
+| 206 | zone-480x272 | DialPro | PASS | Crit=-1, Max=12, Min=-8, Scale=Manual, ShowMinMax=Markers + text, Warn=3 | 400x240 (Layout2P1 z1) | [206_zonas_zone-480x272.png](screenshots/206_zonas_zone-480x272.png) |
 
 ## layouts
 
 | # | Case | Widget | Status | Options (non-default) | Zone (real) | Screenshot |
 |---:|---|---|---|---|---|---|
-| 001 | Full-screen bar gauge | BarPro | PASS |  |  | [L01_fullscreen_bar.png](screenshots/L01_fullscreen_bar.png) |
-| 002 | Full-screen needle (clock-style, 360 deg) | DialPro | PASS |  |  | [L02_fullscreen_needle.png](screenshots/L02_fullscreen_needle.png) |
-| 003 | Full-screen bar with min/max + label/unit | BarPro | PASS |  |  | [L03_fullscreen_bar_details.png](screenshots/L03_fullscreen_bar_details.png) |
-| 004 | Full-screen segmented bar (Hex face) | BarPro | PASS |  |  | [L04_fullscreen_bar_hex.png](screenshots/L04_fullscreen_bar_hex.png) |
-| 005 | Layout 2+3: dials (left) vs bars (right) | DialPro+BarPro | PASS |  |  | [L05_layout2p3_dial_vs_bar.png](screenshots/L05_layout2p3_dial_vs_bar.png) |
-| 006 | Layout 1+2: hero dial + two bars | DialPro+BarPro | PASS |  |  | [L06_layout1p2_mixed.png](screenshots/L06_layout1p2_mixed.png) |
-| 007 | Layout 4+2: four compact bars + two dials | DialPro+BarPro | PASS |  |  | [L07_layout4p2_mixed.png](screenshots/L07_layout4p2_mixed.png) |
-| 008 | Layout 2x2: four independent gauges | DialPro+BarPro | PASS |  |  | [L08_layout2x2_grid.png](screenshots/L08_layout2x2_grid.png) |
+| 207 | Full-screen bar gauge | BarPro | PASS |  |  | [L01_fullscreen_bar.png](screenshots/L01_fullscreen_bar.png) |
+| 208 | Full-screen needle (clock-style, 360 deg) | DialPro | PASS |  |  | [L02_fullscreen_needle.png](screenshots/L02_fullscreen_needle.png) |
+| 209 | Full-screen bar with min/max + label/unit | BarPro | PASS |  |  | [L03_fullscreen_bar_details.png](screenshots/L03_fullscreen_bar_details.png) |
+| 210 | Full-screen segmented bar (Hex face) | BarPro | PASS |  |  | [L04_fullscreen_bar_hex.png](screenshots/L04_fullscreen_bar_hex.png) |
+| 211 | Layout 2+3: dials (left) vs bars (right) | DialPro+BarPro | PASS |  |  | [L05_layout2p3_dial_vs_bar.png](screenshots/L05_layout2p3_dial_vs_bar.png) |
+| 212 | Layout 1+2: hero dial + two bars | DialPro+BarPro | PASS |  |  | [L06_layout1p2_mixed.png](screenshots/L06_layout1p2_mixed.png) |
+| 213 | Layout 4+2: four compact bars + two dials | DialPro+BarPro | PASS |  |  | [L07_layout4p2_mixed.png](screenshots/L07_layout4p2_mixed.png) |
+| 214 | Layout 2x2: four independent gauges | DialPro+BarPro | PASS |  |  | [L08_layout2x2_grid.png](screenshots/L08_layout2x2_grid.png) |
+
+## themes
+
+| # | Case | Widget | Status | Options (non-default) | Zone (real) | Screenshot |
+|---:|---|---|---|---|---|---|
+| 001 | st-normal [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [001_estado_st-normal__stock.png](screenshots/001_estado_st-normal__stock.png) |
+| 002 | st-warn [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [002_estado_st-warn__stock.png](screenshots/002_estado_st-warn__stock.png) |
+| 003 | st-crit [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [003_estado_st-crit__stock.png](screenshots/003_estado_st-crit__stock.png) |
+| 004 | st-nosource [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [004_estado_st-nosource__stock.png](screenshots/004_estado_st-nosource__stock.png) |
+| 005 | color-static-ok [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [005_color_color-static-ok__stock.png](screenshots/005_color_color-static-ok__stock.png) |
+| 006 | color-static-crit [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [006_color_color-static-crit__stock.png](screenshots/006_color_color-static-crit__stock.png) |
+| 007 | color-threshold-ok [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [007_color_color-threshold-ok__stock.png](screenshots/007_color_color-threshold-ok__stock.png) |
+| 008 | color-threshold-crit [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [008_color_color-threshold-crit__stock.png](screenshots/008_color_color-threshold-crit__stock.png) |
+| 009 | color-rail-ok [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [009_color_color-rail-ok__stock.png](screenshots/009_color_color-rail-ok__stock.png) |
+| 010 | color-rail-crit [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [010_color_color-rail-crit__stock.png](screenshots/010_color_color-rail-crit__stock.png) |
+| 011 | color-gradient-ok [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [011_color_color-gradient-ok__stock.png](screenshots/011_color_color-gradient-ok__stock.png) |
+| 012 | color-gradient-crit [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [012_color_color-gradient-crit__stock.png](screenshots/012_color_color-gradient-crit__stock.png) |
+| 013 | color-sections-ok [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [013_color_color-sections-ok__stock.png](screenshots/013_color_color-sections-ok__stock.png) |
+| 014 | color-sections-crit [stock] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [014_color_color-sections-crit__stock.png](screenshots/014_color_color-sections-crit__stock.png) |
+| 015 | Full-screen bar gauge [stock] | BarPro | PASS |  |  | [L01_fullscreen_bar__stock.png](screenshots/L01_fullscreen_bar__stock.png) |
+| 016 | Layout 2+3: dials (left) vs bars (right) [stock] | DialPro+BarPro | PASS |  |  | [L05_layout2p3_dial_vs_bar__stock.png](screenshots/L05_layout2p3_dial_vs_bar__stock.png) |
+| 017 | st-normal [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [017_estado_st-normal__gaugeprolab-light.png](screenshots/017_estado_st-normal__gaugeprolab-light.png) |
+| 018 | st-warn [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [018_estado_st-warn__gaugeprolab-light.png](screenshots/018_estado_st-warn__gaugeprolab-light.png) |
+| 019 | st-crit [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [019_estado_st-crit__gaugeprolab-light.png](screenshots/019_estado_st-crit__gaugeprolab-light.png) |
+| 020 | st-nosource [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [020_estado_st-nosource__gaugeprolab-light.png](screenshots/020_estado_st-nosource__gaugeprolab-light.png) |
+| 021 | color-static-ok [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [021_color_color-static-ok__gaugeprolab-light.png](screenshots/021_color_color-static-ok__gaugeprolab-light.png) |
+| 022 | color-static-crit [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [022_color_color-static-crit__gaugeprolab-light.png](screenshots/022_color_color-static-crit__gaugeprolab-light.png) |
+| 023 | color-threshold-ok [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [023_color_color-threshold-ok__gaugeprolab-light.png](screenshots/023_color_color-threshold-ok__gaugeprolab-light.png) |
+| 024 | color-threshold-crit [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [024_color_color-threshold-crit__gaugeprolab-light.png](screenshots/024_color_color-threshold-crit__gaugeprolab-light.png) |
+| 025 | color-rail-ok [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [025_color_color-rail-ok__gaugeprolab-light.png](screenshots/025_color_color-rail-ok__gaugeprolab-light.png) |
+| 026 | color-rail-crit [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [026_color_color-rail-crit__gaugeprolab-light.png](screenshots/026_color_color-rail-crit__gaugeprolab-light.png) |
+| 027 | color-gradient-ok [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [027_color_color-gradient-ok__gaugeprolab-light.png](screenshots/027_color_color-gradient-ok__gaugeprolab-light.png) |
+| 028 | color-gradient-crit [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [028_color_color-gradient-crit__gaugeprolab-light.png](screenshots/028_color_color-gradient-crit__gaugeprolab-light.png) |
+| 029 | color-sections-ok [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [029_color_color-sections-ok__gaugeprolab-light.png](screenshots/029_color_color-sections-ok__gaugeprolab-light.png) |
+| 030 | color-sections-crit [GaugeProLab Light] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [030_color_color-sections-crit__gaugeprolab-light.png](screenshots/030_color_color-sections-crit__gaugeprolab-light.png) |
+| 031 | Full-screen bar gauge [GaugeProLab Light] | BarPro | PASS |  |  | [L01_fullscreen_bar__gaugeprolab-light.png](screenshots/L01_fullscreen_bar__gaugeprolab-light.png) |
+| 032 | Layout 2+3: dials (left) vs bars (right) [GaugeProLab Light] | DialPro+BarPro | PASS |  |  | [L05_layout2p3_dial_vs_bar__gaugeprolab-light.png](screenshots/L05_layout2p3_dial_vs_bar__gaugeprolab-light.png) |
+| 033 | st-normal [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [033_estado_st-normal__gaugeprolab-dark.png](screenshots/033_estado_st-normal__gaugeprolab-dark.png) |
+| 034 | st-warn [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [034_estado_st-warn__gaugeprolab-dark.png](screenshots/034_estado_st-warn__gaugeprolab-dark.png) |
+| 035 | st-crit [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [035_estado_st-crit__gaugeprolab-dark.png](screenshots/035_estado_st-crit__gaugeprolab-dark.png) |
+| 036 | st-nosource [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [036_estado_st-nosource__gaugeprolab-dark.png](screenshots/036_estado_st-nosource__gaugeprolab-dark.png) |
+| 037 | color-static-ok [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [037_color_color-static-ok__gaugeprolab-dark.png](screenshots/037_color_color-static-ok__gaugeprolab-dark.png) |
+| 038 | color-static-crit [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [038_color_color-static-crit__gaugeprolab-dark.png](screenshots/038_color_color-static-crit__gaugeprolab-dark.png) |
+| 039 | color-threshold-ok [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [039_color_color-threshold-ok__gaugeprolab-dark.png](screenshots/039_color_color-threshold-ok__gaugeprolab-dark.png) |
+| 040 | color-threshold-crit [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [040_color_color-threshold-crit__gaugeprolab-dark.png](screenshots/040_color_color-threshold-crit__gaugeprolab-dark.png) |
+| 041 | color-rail-ok [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [041_color_color-rail-ok__gaugeprolab-dark.png](screenshots/041_color_color-rail-ok__gaugeprolab-dark.png) |
+| 042 | color-rail-crit [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [042_color_color-rail-crit__gaugeprolab-dark.png](screenshots/042_color_color-rail-crit__gaugeprolab-dark.png) |
+| 043 | color-gradient-ok [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [043_color_color-gradient-ok__gaugeprolab-dark.png](screenshots/043_color_color-gradient-ok__gaugeprolab-dark.png) |
+| 044 | color-gradient-crit [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [044_color_color-gradient-crit__gaugeprolab-dark.png](screenshots/044_color_color-gradient-crit__gaugeprolab-dark.png) |
+| 045 | color-sections-ok [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [045_color_color-sections-ok__gaugeprolab-dark.png](screenshots/045_color_color-sections-ok__gaugeprolab-dark.png) |
+| 046 | color-sections-crit [GaugeProLab Dark] | DialPro | PASS |  | 400x160 (Layout1P3 z1) | [046_color_color-sections-crit__gaugeprolab-dark.png](screenshots/046_color_color-sections-crit__gaugeprolab-dark.png) |
+| 047 | Full-screen bar gauge [GaugeProLab Dark] | BarPro | PASS |  |  | [L01_fullscreen_bar__gaugeprolab-dark.png](screenshots/L01_fullscreen_bar__gaugeprolab-dark.png) |
+| 048 | Layout 2+3: dials (left) vs bars (right) [GaugeProLab Dark] | DialPro+BarPro | PASS |  |  | [L05_layout2p3_dial_vs_bar__gaugeprolab-dark.png](screenshots/L05_layout2p3_dial_vs_bar__gaugeprolab-dark.png) |
 
 ## Skipped (this pass)
 

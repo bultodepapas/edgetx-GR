@@ -1,0 +1,3 @@
+# probe_one.py scratch output and ad-hoc run logs: reproducible, never reviewed
+probe_out/
+run_*.log

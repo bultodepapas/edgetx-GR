@@ -515,16 +515,38 @@ test("bar configuration signatures are stable and complete", function()
              "custom panel participates")
 end)
 
-test("Theme Adaptive resolves candidates and analyzes separation", function()
+test("Theme Adaptive adopts a theme role only when it is readable", function()
+  -- Stock EdgeTX: COLOR_THEME_ACTIVE is #ffde00 on a near-white screen -
+  -- 1.13:1, the exact colour theme.color stopped using. Theme Adaptive must
+  -- measure it against the surface the data is READ on and refuse it,
+  -- keeping the calibrated accent and naming the reason.
   mock.setThemeColors()
-  local _, palette = barStyle.resolve(visualWidget(), visualConfig{ palette = 3 })
-  assertEq(palette.normal, theme.resolveColor(COLOR_THEME_ACTIVE))
-  assertEq(palette.warning, theme.resolveColor(COLOR_THEME_WARNING))
+  local visual, palette = barStyle.resolve(visualWidget(),
+    visualConfig{ palette = 3 })
+  assertEq(palette.normal, theme.color.accent)
+  assertEq(palette.sources.normal, theme.color.accent)
+  assertTrue(theme.contrastRatio(theme.resolveColor(COLOR_THEME_ACTIVE),
+    palette.backdrop) < 3, "the stock ACTIVE role really is unreadable here")
+  -- The kept colour is the one that survives, so the reported figure is the
+  -- accent's and must clear the floor.
+  assertTrue(palette.analysis.normalBackdropContrast >= 3,
+    "the palette actually in use is readable")
+  local refusal = table.concat(visual.downgrades, ",")
+  assertTrue(string.find(refusal, "theme-normal-contrast", 1, true) ~= nil,
+    "the refusal is recorded, got: " .. refusal)
   assertEq(palette.critical, theme.color.crit)
-  assertEq(palette.sources.normal, COLOR_THEME_ACTIVE)
-  assertEq(palette.sources.warning, COLOR_THEME_WARNING)
   assertTrue(type(palette.analysis.normalWarningDistance) == "number")
   assertTrue(type(palette.analysis.normalTrackContrast) == "number")
+
+  -- A theme whose ACTIVE role clears the floor IS adopted: the guard is a
+  -- contrast test, not a ban on theme roles.
+  mock.setThemeColors({ [COLOR_THEME_ACTIVE] = { 0x20, 0x60, 0xa0 } })
+  local _, dark = barStyle.resolve(visualWidget(), visualConfig{ palette = 3 })
+  assertEq(dark.sources.normal, COLOR_THEME_ACTIVE)
+  assertEq(dark.normal, theme.resolveColor(COLOR_THEME_ACTIVE))
+  assertTrue(dark.analysis.normalBackdropContrast >= 3,
+    "an adopted role clears 3:1 against the backdrop")
+  mock.setThemeColors()
 end)
 
 test("palette signatures invalidate when runtime theme inks change", function()
@@ -769,7 +791,10 @@ test("number formatting honours precision", function()
   assertEq(format.number(3.14159, 0), "3")
   assertEq(format.number(3.14159, 1), "3.1")
   assertEq(format.number(3.14159, 2), "3.14")
-  assertEq(format.number(nil, 0), "-")
+  -- Two dashes: a single hyphen at the value font's size renders as a stray
+  -- bar rather than a placeholder (format.NO_VALUE).
+  assertEq(format.number(nil, 0), format.NO_VALUE)
+  assertEq(format.NO_VALUE, "--")
 end)
 
 test("timers format as hh:mm:ss with a sign", function()

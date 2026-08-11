@@ -3,9 +3,15 @@
 ---- #########################################################################
 
 local M = {}
-local floor, max = math.floor, math.max
+local floor, max, min = math.floor, math.max, math.min
 local T, G, F, U
 local setProp, label, resolveColor, stateText
+
+-- Object budget for the spatial gradient's arc slices. The dial's worst-case
+-- tree (needle + hub + ticks + rails + history + full text stack) sits around
+-- 30 objects, and the whole-tree ceiling both families are held to is 38, so
+-- the ramp gets what is left with a floor that still reads as a ramp.
+local DIAL_GRADIENT_SLICES = 8
 
 function M.setup(uiCore, theme, geometry, format)
   U, T, G, F = uiCore, theme, geometry, format
@@ -157,6 +163,32 @@ local function buildTicks(widget)
   end
 end
 
+-- Threshold mode's contract is "exact marks", and the bar has always drawn
+-- them. The dial drew nothing, so Static, Threshold and Gradient were
+-- byte-identical for as long as the reading stayed in the normal band - which
+-- is nearly all of it. One radial line per INTERIOR boundary, in that
+-- boundary's own colour, spanning the track so it reads against the arc
+-- whether the arc has reached it or not.
+local function buildThresholdMarks(widget)
+  local ui, L, cfg = widget.ui, widget.layout, widget.config
+  local inner = L.radius - floor(L.arcThickness / 2)
+  local outer = L.radius + floor(L.arcThickness / 2)
+  ui.thresholdMarks = {}
+  for i = 1, #widget.ranges do
+    local r = widget.ranges[i]
+    local t = G.normalize(r.to, cfg.min, cfg.max)
+    -- Interior only: the two ends of the scale are the track's own edges.
+    if t > 0 and t < 1 then
+      local a = angleOf(widget, r.to)
+      ui.thresholdMarks[#ui.thresholdMarks + 1] = lvgl.line{
+        pts = G.linePoints(L.cx, L.cy, inner, outer, a),
+        thickness = max(1, L.tickThickness),
+        color = T.stateColor(r.role, widget.accent),
+      }
+    end
+  end
+end
+
 local function buildNeedle(widget)
   local ui, L = widget.ui, widget.layout
   local a = L.startAngle
@@ -242,14 +274,52 @@ function M.build(widget)
     markRoundCenter(widget, ui.ghost)
   end
 
-  ui.valueArc = lvgl.arc{
-    x = L.cx, y = L.cy, radius = L.radius,
-    startAngle = L.startAngle, endAngle = L.startAngle,
-    bgStartAngle = L.startAngle, bgEndAngle = L.startAngle + L.sweep,
-    bgOpacity = 0, color = T.color.accent,
-    thickness = L.arcThickness, rounded = 1,
-  }
-  markRoundCenter(widget, ui.valueArc)
+  -- Gradient is SPATIAL on both families (ui_core, "spatial gradient"): the
+  -- arc is cut into slices whose colour is the severity of that point on the
+  -- scale, exactly as the bar cuts its axis. The dial used to paint the whole
+  -- arc one colour derived from the CURRENT value instead, which made Static,
+  -- Threshold and Gradient byte-identical in the normal state and gave one
+  -- option name two meanings across two widgets on the same screen.
+  if widget.config.colorMode == U.COLOR_GRADIENT then
+    local count = U.gradientSliceCount(
+      L.radius * L.sweep * 0.0175, DIAL_GRADIENT_SLICES)
+    ui.gradientArcs = {}
+    ui.gradientSpans = {}
+    local cfg = widget.config
+    for i = 1, count do
+      local a1 = L.startAngle + L.sweep * (i - 1) / count
+      local a2 = L.startAngle + L.sweep * i / count
+      local arc = lvgl.arc{
+        x = L.cx, y = L.cy, radius = L.radius,
+        startAngle = a1, endAngle = a2,
+        bgStartAngle = a1, bgEndAngle = a2,
+        bgOpacity = 0,
+        color = U.spatialColor(cfg, nil, (i - 0.5) / count),
+        -- Butt ends inside the run: a rounded cap on every slice would bead
+        -- the arc. Only the two extremes keep the family's rounded end.
+        thickness = L.arcThickness, rounded = (count == 1) and 1 or 0,
+      }
+      lvgl.hide(arc)
+      markRoundCenter(widget, arc)
+      ui.gradientArcs[i] = arc
+      ui.gradientSpans[i] = { a1, a2, shown = false }
+    end
+    -- One canonical handle for shared code, as the bar keeps ui.fill.
+    ui.valueArc = ui.gradientArcs[1]
+  else
+    ui.valueArc = lvgl.arc{
+      x = L.cx, y = L.cy, radius = L.radius,
+      startAngle = L.startAngle, endAngle = L.startAngle,
+      bgStartAngle = L.startAngle, bgEndAngle = L.startAngle + L.sweep,
+      bgOpacity = 0, color = T.color.accent,
+      thickness = L.arcThickness, rounded = 1,
+    }
+    markRoundCenter(widget, ui.valueArc)
+  end
+
+  if widget.config.colorMode == U.COLOR_THRESHOLD then
+    buildThresholdMarks(widget)
+  end
 
   if L.showNeedle then buildNeedle(widget) end
 
@@ -353,8 +423,16 @@ local function applyColors(widget, key)
   local ui = widget.ui
   local c = resolveColor(widget, key)
   local opa = (key == "muted") and T.opacity.muted or T.opacity.full
-  setProp(widget, ui.valueArc, "color", c)
-  setProp(widget, ui.valueArc, "opacity", opa)
+  if ui.gradientArcs then
+    -- Each slice owns its colour (the severity of its own position), so only
+    -- the muted/live opacity is a per-state decision here.
+    for i = 1, #ui.gradientArcs do
+      setProp(widget, ui.gradientArcs[i], "opacity", opa)
+    end
+  else
+    setProp(widget, ui.valueArc, "color", c)
+    setProp(widget, ui.valueArc, "opacity", opa)
+  end
   -- the VALUE's ink is not set here: it follows the state, which moves on its
   -- own gate (U.applyStateInk)
   -- the needle is intentionally NOT touched here: it keeps T.color.needle,
@@ -461,6 +539,42 @@ end
 -- if the order or the chip's opacity ever changes, that test fails first and
 -- says why.
 
+-- Sweep the sliced ramp up to `angle`. Only the slice the value is inside
+-- changes span; the ones behind it are already at full span and the ones
+-- ahead are already hidden, so an ordinary frame touches one object - the
+-- same shape as the bar's gradient prefix walk.
+local function updateGradientArcs(widget, angle)
+  local ui = widget.ui
+  local arcs, spans = ui.gradientArcs, ui.gradientSpans
+  for i = 1, #arcs do
+    local span = spans[i]
+    local a1, a2 = span[1], span[2]
+    if angle >= a2 then
+      if span.paint ~= a2 then
+        span.paint = a2
+        setProp(widget, arcs[i], "endAngle", a2)
+      end
+      if not span.shown then
+        span.shown = true
+        lvgl.show(arcs[i])
+      end
+    elseif angle > a1 then
+      local clipped = min(a2, max(a1, angle))
+      if span.paint ~= clipped then
+        span.paint = clipped
+        setProp(widget, arcs[i], "endAngle", clipped)
+      end
+      if not span.shown then
+        span.shown = true
+        lvgl.show(arcs[i])
+      end
+    elseif span.shown then
+      span.shown = false
+      lvgl.hide(arcs[i])
+    end
+  end
+end
+
 local function updateArc(widget)
   local ui, L, frame = widget.ui, widget.layout, widget.frame
   local data = widget.data
@@ -487,7 +601,11 @@ local function updateArc(widget)
   -- fewer comparison per frame, and one fewer needle rewrite per state change.
   if a ~= frame.angle then
     frame.angle = a
-    setProp(widget, ui.valueArc, "endAngle", a)
+    if ui.gradientArcs then
+      updateGradientArcs(widget, a)
+    else
+      setProp(widget, ui.valueArc, "endAngle", a)
+    end
     if ui.needle then
       -- three line segments, all rewritten with the same guarded pts path
       -- as before: base + mid + tip sweep together (P2-1). The pts tables
@@ -597,7 +715,16 @@ function M.update(widget)
   updateText(widget)
   updateArc(widget)
   updateHistory(widget)
-  U.updatePulse(widget, key, ui.valueArc)
+  -- The pill, not the arc. Modulating the value arc's opacity took the
+  -- critical red down to 1.74:1 against a dark theme at the trough - the data
+  -- channel disappearing to announce that it matters. The pill is the status
+  -- channel and CRIT keeps it on screen even with the chip option off, which
+  -- is what makes it the safe carrier here and on the bar (bar.lua).
+  if ui.chip then
+    ui.pulseTargets = ui.pulseTargets
+      or { ui.chip, ui.chipEdge, ui.stateLabel }
+    U.updatePulse(widget, key, ui.pulseTargets)
+  end
 
   U.flush(widget)
   frame.prevAvail = widget.data.availability

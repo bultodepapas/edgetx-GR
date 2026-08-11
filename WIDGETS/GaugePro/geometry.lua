@@ -79,6 +79,28 @@ function M.barFill(width, value, minimum, maximum)
   return floor(width * M.normalize(value, minimum, maximum) + 0.5)
 end
 
+-- NEVER compare a fractional number with `== 0` or `== 1` on this firmware.
+--
+-- EdgeTX builds Lua with `LUA_FLOORN2I 1` (radio/src/thirdparty/Lua/src/
+-- luaconf.h:164) so its API can take unrounded floats where an integer is
+-- required. That macro is also what `luaV_equalobj` uses for a float/integer
+-- pair (lvm.c:404), so on the radio - and ONLY on the radio, never in the
+-- pure-Lua harness -
+--
+--     0.45 == 0    --> true
+--     1.75 == 1    --> true
+--     0.45 == 0.0  --> false   (float/float is exact)
+--     0.45 > 0     --> true    (ordering converts int->float, also exact)
+--
+-- Equality against a FLOAT literal and every inequality are safe; equality
+-- against an INTEGER literal silently floors. Use `> 0` / `>= 1`, or a
+-- boolean resolved once, as below. This cost the zero-origin bar option and
+-- every partial segment before it was found; see
+-- docs/visual-kit/INFORME-BAR-DIAL-2026-08-11.md.
+function M.isZero(n)
+  return n <= 0 and n >= 0
+end
+
 -- Orientation-neutral authored-scale axis. The descriptor is allocated once
 -- during layout and then reused by every body, threshold, head and history
 -- overlay. `start` is always the physical position of normalized 0: left for
@@ -103,6 +125,11 @@ function M.makeAxis(rect, orientation, minimum, maximum, origin)
     scaleLowT = 0, zeroT = zeroT, zeroInside = zeroInside,
     origin = wantsZero and "zero" or "scale-low",
     originT = originT,
+    -- Resolved ONCE, as a boolean, because every face asks this question on
+    -- every frame and `originT == 0` is exactly the comparison the firmware
+    -- gets wrong (see M.isZero). True means the fill is a prefix from the
+    -- scale low end, which is also where a clamped zero origin lands.
+    prefixOrigin = M.isZero(originT),
     originClamped = wantsZero and not zeroInside or false,
   }
   axis.endCoord = start + growth * length

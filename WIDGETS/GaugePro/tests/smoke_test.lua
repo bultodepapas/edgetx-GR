@@ -241,8 +241,15 @@ test("Phase 1: Theme Adaptive recolours only the bar path", function()
   wb.app.update(wb, withOption(wb.options, "Palette", 3))
   assertEq(wb.layoutRebuilt, false, "palette is non-structural")
   refresh(wb)
-  assertEq(wb.ui.fill.props.color,
-    wb.mods.theme.resolveColor(COLOR_THEME_ACTIVE))
+  -- NOT COLOR_THEME_ACTIVE on the stock theme: that role is the background of
+  -- a CHECKED control (#ffde00, 1.13:1 against the stock screen), so the
+  -- palette keeps the calibrated accent and records why. Adopting a theme
+  -- role blind is the defect this asserts against, not a feature.
+  assertEq(wb.ui.fill.props.color, wb.mods.theme.color.accent,
+    "an unreadable theme role is refused")
+  local reasons = table.concat(wb.barVisual.downgrades or {}, ",")
+  assertTrue(string.find(reasons, "theme-normal-contrast", 1, true) ~= nil,
+    "the refusal is recorded as a downgrade, got: " .. reasons)
 
   local wd = newWidget({ x = 0, y = 0, w = 200, h = 160 },
     { Source = ID_RSSI, Style = "Needle" })
@@ -753,7 +760,21 @@ test("Phase 2: surfaces ground the widget and custom panel color is exact", func
   local themed = newWidget({ x = 0, y = 0, w = 300, h = 80 }, {
     Source = ID_RSSI, Style = "Bar", Surface = "Theme panel",
   })
-  assertEq(themed.ui.panel.props.color, themed.barPalette.panel)
+  -- A surface has to be PERCEPTIBLE. On the stock theme the panel role
+  -- (SECONDARY3) is the very colour the home screen paints behind the widget,
+  -- so filling with it produced an invisible object that still cost a
+  -- full-zone fill per frame - Theme panel was pixel-identical to
+  -- Transparent. When the two coincide the panel becomes a real edge instead.
+  assertTrue(themed.ui.panel ~= nil, "Theme panel builds a surface")
+  if themed.barPalette.panel == themed.barPalette.backdrop then
+    assertEq(themed.ui.panel.props.filled, 0, "an invisible fill becomes an edge")
+    assertEq(themed.ui.panel.props.color, themed.barPalette.border)
+    assertTrue(themed.mods.theme.contrastRatio(themed.ui.panel.props.color,
+      themed.barPalette.backdrop) > 1.5, "and that edge is visible")
+  else
+    assertEq(themed.ui.panel.props.color, themed.barPalette.panel)
+    assertEq(themed.ui.panel.props.filled, 1)
+  end
   local authored = lcd.RGB(55, 20, 90)
   local custom = newWidget({ x = 0, y = 0, w = 300, h = 80 }, {
     Source = ID_RSSI, Style = "Bar", Surface = "Custom colors",
@@ -790,8 +811,13 @@ test("Phase 2: Theme panel survives an explicit high-contrast fixture", function
   refresh(w)
   assertTrue(w.mods.theme.contrastRatio(w.barPalette.value,
     w.barPalette.panel) >= 7, "data ink clears enhanced contrast")
-  assertEq(w.ui.panel.props.color,
-    w.mods.theme.resolveColor(COLOR_THEME_SECONDARY3))
+  -- This fixture makes SECONDARY3 pure black, and the screen behind the
+  -- widget is that same role: a black panel on a black screen is the
+  -- invisible-surface case in its most extreme form, so the surface is drawn
+  -- as an edge that actually separates the widget from its background.
+  assertTrue(w.mods.theme.contrastRatio(w.ui.panel.props.color,
+    w.barPalette.backdrop) > 1.5,
+    "the surface is distinguishable from the screen behind it")
   assertEq(w.ui.head.visible, true)
   mock.setThemeColors()
 end)
@@ -1089,10 +1115,20 @@ test("Phase 4: Stepped Signal grows upward and keeps the numeric reading", funct
   })
   refresh(w)
   assertEq(#w.ui.faceCells, 8)
-  for i = 2, #w.ui.faceCells do
+  local cells = w.ui.faceCells
+  -- Every step is READABLE first and rising second: a rail with fewer pixels
+  -- than steps repeats a height at the bottom rather than drawing the first
+  -- ones as 1 px hairlines, which is how the active green ended up fainter
+  -- than the inactive track it sits on.
+  local floorPx = math.min(w.mods.theme.px(3), w.layout.axis.crossLength)
+  assertTrue(cells[1].primary.props.h >= floorPx,
+    "the first step clears the readability floor")
+  assertTrue(cells[#cells].primary.props.h > cells[1].primary.props.h,
+    "and the staircase still rises overall")
+  for i = 2, #cells do
     assertTrue(w.ui.faceCells[i].primary.props.h
-      > w.ui.faceCells[i - 1].primary.props.h,
-      "step " .. i .. " is taller")
+      >= w.ui.faceCells[i - 1].primary.props.h,
+      "step " .. i .. " is never shorter than the one before it")
     assertEq(w.ui.faceCells[i].primary.props.y
       + w.ui.faceCells[i].primary.props.h,
       w.ui.faceCells[1].primary.props.y
@@ -1322,16 +1358,24 @@ function()
   })
   mock.setValue(ID_RSSI, 70); refresh(w)
   mock.setValue(ID_RSSI, 20); refresh(w)
-  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.full)
+  -- The breath rides the exact-position HEAD. It must never ride the fill:
+  -- at the trough the composite critical red measures 1.74:1 against a dark
+  -- theme, so dimming the data channel hid the state it is announcing.
+  local head = w.ui.head
+  assertTrue(head ~= nil and w.ui.pulseTargets[1] == head,
+    "the pulse target is the head")
+  assertEq(head.props.opacity, w.mods.theme.opacity.full)
   refresh(w, 5)
-  local mid = w.ui.fill.props.opacity
+  local mid = head.props.opacity
   assertTrue(mid < w.mods.theme.opacity.full
     and mid > w.mods.theme.opacity.pulse, "quarter-cycle midpoint")
   refresh(w, 5)
-  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.pulse,
+  assertEq(head.props.opacity, w.mods.theme.opacity.pulse,
     "half-cycle trough")
-  refresh(w, 10)
   assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.full,
+    "the fill never leaves full opacity while pulsing")
+  refresh(w, 10)
+  assertEq(head.props.opacity, w.mods.theme.opacity.full,
     "one-second cycle returns exactly to full")
   assertEq(w.frame.pulseActive, true)
 end)
@@ -1904,12 +1948,43 @@ test("precision Auto follows the sensor", function()
   assertEq(w.config.precision, 2, "RxBt sensor declares prec 2")
 end)
 
-test("gradient mode produces a continuous colour", function()
-  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Gradient" })
-  mock.setValue(ID_RSSI, 80); refresh(w)
-  local high = w.ui.valueArc.props.color
-  mock.setValue(ID_RSSI, 20); refresh(w, 2)
-  assertTrue(w.ui.valueArc.props.color ~= high, "colour tracks the value")
+test("gradient mode paints the SCALE, and the value reveals it", function()
+  -- Gradient is spatial on both families now (ui_core, "spatial gradient"):
+  -- a slice's colour is the severity of its own position, so the ramp is a
+  -- property of the scale and does not move when the reading does. What the
+  -- reading changes is how much of it is revealed. The old contract - one
+  -- colour for the whole arc, derived from the current value - made Static,
+  -- Threshold and Gradient byte-identical in the normal state.
+  local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Gradient",
+                             Scale = "Manual", Min = 0, Max = 100,
+                             Crit = 20, Warn = 45 })
+  mock.setValue(ID_RSSI, 80); refresh(w, 2)
+  local arcs = w.ui.gradientArcs
+  assertTrue(arcs and #arcs > 2, "the arc is sliced")
+
+  local first, last = arcs[1].props.color, arcs[#arcs].props.color
+  assertTrue(first ~= last, "the two ends of the scale differ")
+  assertEq(first, w.mods.theme.color.crit, "the low end is the critical end")
+  assertEq(last, w.mods.theme.color.accent, "the high end is the normal end")
+
+  -- the ramp itself does not move with the reading
+  local before = {}
+  for i = 1, #arcs do before[i] = arcs[i].props.color end
+  mock.setValue(ID_RSSI, 20); refresh(w, 3)
+  for i = 1, #arcs do
+    assertEq(arcs[i].props.color, before[i],
+      "slice " .. i .. " keeps the colour of its own position")
+  end
+
+  -- ...but the revealed extent does
+  local shownLow = 0
+  for i = 1, #arcs do if arcs[i].visible then shownLow = shownLow + 1 end end
+  mock.setValue(ID_RSSI, 95); refresh(w, 3)
+  local shownHigh = 0
+  for i = 1, #arcs do if arcs[i].visible then shownHigh = shownHigh + 1 end end
+  assertTrue(shownHigh > shownLow,
+    "a higher reading reveals more of the ramp (" .. shownLow .. " -> "
+      .. shownHigh .. ")")
 end)
 
 test("P1-5: gradient with Warn == Crit follows the state, not the red end", function()
@@ -2249,14 +2324,17 @@ test("P1-10: the bar chips and pulses its state like the dial", function()
   assertEq(w.ui.chip.props.x + w.ui.chip.props.w,
     L.stateBox.x + L.stateBox.w, "the chip is right-aligned to the state box")
 
-  -- pulse: the fill alternates pulse/full at ~1 Hz (50 * 10 ms ticks)
+  -- pulse: the HEAD alternates pulse/full at ~1 Hz (50 * 10 ms ticks). The
+  -- fill is the data channel and stays at full opacity throughout.
   refresh(w, 10)     -- 500 ms: first toggle is due
   assertTrue(w.frame.pulse, "critical pulses after 500 ms")
-  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.pulse,
-    "the pulse trough dims the fill")
+  assertEq(w.ui.head.props.opacity, w.mods.theme.opacity.pulse,
+    "the pulse trough dims the head")
+  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.full,
+    "the pulse never dims the fill")
   refresh(w, 10)     -- another 500 ms: back to full
   assertEq(w.frame.pulse, false)
-  assertEq(w.ui.fill.props.opacity, w.mods.theme.opacity.full)
+  assertEq(w.ui.head.props.opacity, w.mods.theme.opacity.full)
 end)
 
 -- ---- designer review repair plan (dev/design-review-response.md) --------
@@ -3000,24 +3078,29 @@ test("no data states are distinguished", function()
 end)
 
 test("P1-1: losing the link mid-pulse leaves the gauge muted, not at full", function()
-  -- The pulse toggles the arc between pulse (150) and full (255). Losing the
-  -- link while the pulse is in its TROUGH used to make updatePulse() restore
-  -- T.opacity.full over the muted 120 that applyColors() had just set - a
-  -- dimmed gauge stuck at full opacity until the next colour change.
+  -- The pulse toggles the state PILL between pulse (150) and full (255) -
+  -- never the value arc, which has to stay readable at exactly the moment it
+  -- is announcing a critical reading. Losing the link while the pulse is in
+  -- its TROUGH used to make updatePulse() restore T.opacity.full over the
+  -- muted 120 that applyColors() had just set.
   local w = newWidget(nil, { Source = ID_RSSI, ColorMode = "Threshold" })
   mock.setValue(ID_RSSI, 10)          -- critical band
   refresh(w)
   mock.advance(6000)                  -- >= 500 ticks: pulse enters its trough
   w.mod.refresh(w)
   assertTrue(w.frame.pulse, "in the pulse trough")
-  assertEq(w.ui.valueArc.props.opacity, w.mods.theme.opacity.pulse)
+  assertEq(w.ui.chip.props.opacity, w.mods.theme.opacity.pulse)
+  assertEq(w.ui.valueArc.props.opacity, w.mods.theme.opacity.full,
+    "the arc carries the reading and never dims to pulse")
 
   mock.setValue(ID_RSSI, nil)
   mock.sim.rssi = 0                   -- link down while the pulse is low
   refresh(w)
   assertEq(w.frame.colorKey, "muted")
-  assertEq(w.ui.valueArc.props.opacity, w.mods.theme.opacity.muted,
+  assertEq(w.ui.chip.props.opacity, w.mods.theme.opacity.muted,
     "the muted gauge must stay dim, not snap to full opacity")
+  assertEq(w.ui.valueArc.props.opacity, w.mods.theme.opacity.muted,
+    "the arc follows the muted state through applyColors")
 end)
 
 test("the needle hides and snaps back on reconnect", function()
@@ -4434,6 +4517,238 @@ test("R-4: nothing is ever painted outside the widget's own zone", function()
   assertTrue(#offenders == 0,
     #offenders .. " painted outside the zone:\n    "
     .. table.concat(offenders, "\n    ", 1, math.min(#offenders, 8)))
+end)
+
+test("P-1: ShowMinMax's third choice adds text on BOTH families", function()
+  -- Slot 6 is shared, so its three choices must mean the same thing on the
+  -- dial and on the bar. The bar hard-coded showMinMaxText = false, and the
+  -- dial gated it on `mode == "large"` (a 300 px short side on an 800x480
+  -- radio), so on the half-screen zones people actually use "Markers + text"
+  -- was pixel-identical to "Markers" on one family and to nothing on the
+  -- other.
+  for _, style in ipairs({ "Bar", "Needle" }) do
+    local zone = (style == "Bar") and { x = 0, y = 0, w = 400, h = 120 }
+      or { x = 0, y = 0, w = 400, h = 240 }
+    local marks = newWidget(zone,
+      { Source = ID_RSSI, Style = style, ShowMinMax = "Markers" })
+    refresh(marks, 3)
+    assertTrue(marks.ui.minText == nil,
+      style .. ": Markers alone must not build captions")
+
+    local text = newWidget(zone,
+      { Source = ID_RSSI, Style = style, ShowMinMax = "Markers + text" })
+    mock.setValue(ID_RSSI, 40); refresh(text, 2)
+    mock.setValue(ID_RSSI, 90); refresh(text, 2)
+    assertTrue(text.layout.showMinMaxText,
+      style .. ": Markers + text is honoured at this size")
+    assertTrue(text.ui.minText ~= nil and text.ui.maxText ~= nil,
+      style .. ": both captions exist")
+    assertTrue(string.find(text.ui.minText.props.text or "", "min ", 1, true),
+      style .. ": the min caption reads its history, got "
+        .. tostring(text.ui.minText.props.text))
+    assertTrue(string.find(text.ui.maxText.props.text or "", "max ", 1, true),
+      style .. ": the max caption reads its history, got "
+        .. tostring(text.ui.maxText.props.text))
+    -- and it stays inside the zone
+    for _, o in ipairs({ text.ui.minText, text.ui.maxText }) do
+      local p = o.props
+      assertTrue(p.x >= 0 and p.y >= 0 and p.x + p.w <= zone.w
+        and p.y + (p.h or 0) <= zone.h,
+        style .. ": the caption stays inside the zone")
+    end
+  end
+end)
+
+test("P-2: Gradient means the same thing on the dial and on the bar",
+  function()
+    -- Same scale, same thresholds, same severity -> same RGB, whatever the
+    -- geometry. The dial used to derive one colour from the CURRENT value
+    -- while the bar coloured by POSITION, so two gauges on one screen
+    -- answered different questions under one option name.
+    local opts = { Source = ID_RSSI, ColorMode = "Gradient", Scale = "Manual",
+                   Min = 0, Max = 100, Crit = 20, Warn = 45 }
+    local dial = newWidget({ x = 0, y = 0, w = 240, h = 240 },
+      withOption(opts, "Style", "Needle"))
+    local bar = newWidget({ x = 0, y = 0, w = 400, h = 120 },
+      withOption(opts, "Style", "Bar"))
+    mock.setValue(ID_RSSI, 70); refresh(dial, 2); refresh(bar, 2)
+
+    local arcs = dial.ui.gradientArcs
+    local slices = bar.ui.gradientSlices
+    assertTrue(arcs and #arcs > 1, "the dial slices its arc")
+    assertTrue(slices and #slices > 1, "the bar slices its axis")
+
+    -- Both ends of the scale carry the same severity colour in both families.
+    assertEq(arcs[1].props.color, slices[1].props.color,
+      "the critical end matches")
+    assertEq(arcs[#arcs].props.color, slices[#slices].props.color,
+      "the normal end matches")
+
+    -- And the shared rule is the one both consumed.
+    local core = dial.mods.uiCore or dial.mods.ui_core
+    if core then
+      assertEq(core.gradientPosition(dial.config, 0),
+        core.gradientPosition(bar.config, 0), "one mapping, one meaning")
+    end
+  end)
+
+test("D-1: Threshold marks the exact boundaries on the dial too", function()
+  -- Threshold's contract is "exact marks". The bar drew them and the dial did
+  -- not, so on the dial Static, Threshold and Gradient were byte-identical
+  -- for the ~95 % of flight time the reading spends in the normal band.
+  local zone = { x = 0, y = 0, w = 240, h = 240 }
+  local opts = { Source = ID_RSSI, Scale = "Manual", Min = 0, Max = 100,
+                 Crit = 20, Warn = 45 }
+  local static = newWidget(zone, withOption(opts, "ColorMode", "Static"))
+  local threshold = newWidget(zone, withOption(opts, "ColorMode", "Threshold"))
+  mock.setValue(ID_RSSI, 80); refresh(static, 2); refresh(threshold, 2)
+
+  assertTrue(threshold.ui.thresholdMarks ~= nil
+    and #threshold.ui.thresholdMarks == 2,
+    "one mark per interior threshold")
+  assertTrue(static.ui.thresholdMarks == nil,
+    "Static has no thresholds to mark")
+  assertTrue(mock.objectCount() > 0, "objects were built")
+  for _, m in ipairs(threshold.ui.thresholdMarks) do
+    assertEq(m.kind, "line", "a threshold mark is a radial line")
+    assertTrue(m.visible, "and it is visible")
+  end
+end)
+
+test("P-1b: Static always announces its state, because its colour cannot",
+  function()
+    -- Static paints one fixed colour whatever the reading does, so the pill is
+    -- the ONLY channel left carrying WARN/CRIT. It must survive `State chip =
+    -- Off`, which is an appearance preference for the informational chips.
+    for _, chip in ipairs({ true, false }) do
+      local w = newWidget({ x = 0, y = 0, w = 320, h = 90 }, {
+        Source = ID_RSSI, Style = "Bar", ColorMode = "Static",
+        ShowChip = chip, Scale = "Manual", Min = 0, Max = 100,
+        Warn = 45, Crit = 25,
+      })
+      mock.setValue(ID_RSSI, 35); refresh(w, 3)
+      assertEq(w.frame.stateStr, "WARN", "the warning state is reached")
+      assertEq(w.frame.chipShown, true,
+        "Static keeps the pill with ShowChip=" .. tostring(chip))
+    end
+  end)
+
+-- ---- N-01..N-03: the firmware's float/integer equality ------------------
+--
+-- EdgeTX compiles Lua with LUA_FLOORN2I=1, so on the RADIO (never here)
+-- `0.45 == 0` is true: luaV_equalobj floors the float before comparing it
+-- with an integer. This harness cannot reproduce that, which is exactly why
+-- `BarOrigin = Zero` and every partial segment shipped broken behind 288
+-- green tests. These three guard the class instead of the symptom.
+
+test("N-01: a fractional origin resolves to a boolean, not a comparison",
+  function()
+    local G = dofile(widgetDir .. "geometry.lua")
+    local rect = { x = 0, y = 0, w = 400, h = 20 }
+
+    local inside = G.makeAxis(rect, "horizontal", -9, 11, "zero")
+    assertTrue(inside.originT > 0.44 and inside.originT < 0.46,
+      "zero inside the range gives a fractional originT")
+    assertEq(inside.prefixOrigin, false,
+      "a fractional origin is NOT a scale-low prefix")
+
+    -- Zero below the range clamps to the low end, which IS a prefix.
+    local below = G.makeAxis(rect, "horizontal", 4, 24, "zero")
+    assertEq(below.originT, 0, "zero below the range clamps to 0")
+    assertEq(below.prefixOrigin, true, "a clamped origin is a prefix")
+
+    assertEq(G.makeAxis(rect, "horizontal", -9, 11, "scale-low").prefixOrigin,
+      true, "scale-low is always a prefix")
+
+    assertEq(G.isZero(0.45), false, "isZero must not floor its argument")
+    assertEq(G.isZero(0), true, "isZero(0)")
+    assertEq(G.isZero(0.0), true, "isZero(0.0)")
+  end)
+
+test("N-02: a partial segment paints between ghost and full", function()
+  -- The failure this pins: paintCell used `fraction == 0`, so on the radio a
+  -- 0.45-filled boundary cell painted itself at the inactive base opacity and
+  -- the whole zero-origin span collapsed to a scale-low prefix.
+  local zone = { x = 0, y = 0, w = 400, h = 120 }
+  local w = newWidget(zone, {
+    Source = ID_AIL, BarFace = "Blocks", BarOrigin = "Zero",
+    ColorMode = "Sections", Scale = "Manual", Min = -100, Max = 100,
+    Crit = -60, Warn = -30, Damping = 0,
+  })
+  mock.setValue(ID_AIL, 650)          -- ~65 % of a -100..100 scale
+  refresh(w, 6)
+
+  local cells = w.ui.faceCells
+  assertTrue(cells and #cells > 4, "the blocks face built its cells")
+  local axis = w.layout.axis
+  assertEq(axis.prefixOrigin, false, "the scene really is zero-origin")
+
+  local base, full, partial = 0, 0, 0
+  for i = 1, #cells do
+    local c = cells[i]
+    if c.fraction >= 1 then full = full + 1
+    elseif c.fraction > 0 then
+      partial = partial + 1
+      assertTrue(c.paintOpacity > c.baseOpacity,
+        "a partial cell must not paint at the inactive base opacity")
+    else base = base + 1 end
+  end
+  assertTrue(full > 0, "cells between zero and the value are active")
+  assertTrue(base > 0, "cells below zero stay inactive")
+  -- Every active cell must sit on the value's side of the origin.
+  for i = 1, #cells do
+    if cells[i].fraction > 0 then
+      assertTrue(cells[i].toPosition > axis.originT - 0.001,
+        "no cell below the zero origin is active")
+    end
+  end
+end)
+
+test("N-03: no runtime module compares a fraction with an integer", function()
+  -- A source scan, deliberately: the harness's own arithmetic is correct, so
+  -- only reading the code can catch the next one of these.
+  local modules = {
+    "bar.lua", "bar_faces.lua", "bar_layout.lua", "bar_style.lua",
+    "dial_layout.lua", "dial_renderer.lua", "geometry.lua",
+    "layout_common.lua", "motion.lua", "ranges.lua", "smoothing.lua",
+    "theme.lua", "ui_core.lua", "app.lua",
+  }
+  -- Names whose value is normalized [0..1], a fraction of a span, or a
+  -- physical span - anything that can hold a non-integral float.
+  local banned = {
+    "originT", "zeroT", "fraction", "normalized", "smoothNormalized",
+    "rawNormalized", "position", "fromPosition", "toPosition", "span",
+    "gradientT", "ratio",
+  }
+  local offenders = {}
+  for _, name in ipairs(modules) do
+    local f = io.open(widgetDir .. name)
+    if f then
+      local lineNo = 0
+      -- The mock strips the string metatable exactly as the radio does, so
+      -- these must be string.f(s, ...) calls, never s:f(...).
+      for line in f:lines() do
+        lineNo = lineNo + 1
+        local code = string.gsub(line, "%-%-.*$", "")
+        for _, word in ipairs(banned) do
+          -- `x == 0` / `x ~= 1`, but NOT `x == 0.0` (float/float is exact).
+          for digits, after in
+              string.gmatch(code, word .. "%s*[=~]=%s*(%d+)(.?)") do
+            if digits and after ~= "." then
+              offenders[#offenders + 1] = string.format(
+                "%s:%d  %s", name, lineNo,
+                string.match(line, "^%s*(.-)%s*$"))
+            end
+          end
+        end
+      end
+      f:close()
+    end
+  end
+  assertTrue(#offenders == 0,
+    "float compared with an integer literal (floors on the radio; use an "
+    .. "inequality or geometry.isZero):\n    "
+    .. table.concat(offenders, "\n    "))
 end)
 
 print(string.format("-- %d passed, %d failed", passed, failed))

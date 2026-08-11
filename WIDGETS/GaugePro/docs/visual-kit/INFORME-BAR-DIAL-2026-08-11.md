@@ -1,5 +1,14 @@
 # Gauge Bar Pro + Gauge Dial Pro — informe de análisis visual y revisión de código
 
+> **Estado: los catorce hallazgos están corregidos y verificados.** El análisis
+> original se conserva íntegro más abajo, porque el diagnóstico es la parte que
+> no se puede reconstruir después. Lo que se hizo, y la evidencia de que
+> funciona, está en [§0 Reparaciones](#0-reparaciones-aplicadas).
+>
+> El hallazgo raíz resultó **no ser del widget**: EdgeTX compila Lua con
+> `LUA_FLOORN2I 1`, de modo que en la radio `0.45 == 0` es **verdadero**. Ver
+> [R-0](#r-0).
+
 **Fecha:** 11 de agosto de 2026
 **Rama:** `feat/gauge-v2` — árbol limpio en `488d6cf82`
 **Alcance:** el estilo **Bar** (`GaugeBarPro`) y el estilo **Dial / reloj** (`GaugeDialPro`),
@@ -7,6 +16,127 @@ en sus opciones, caras, modos de color, paletas, orígenes, tamaños y estados.
 **Documento hermano:** [`INFORME-DEFECTOS.md`](INFORME-DEFECTOS.md) (histórico pre-split).
 Este informe **no lo sustituye**: reverifica sus puntos abiertos contra el código
 actual y añade hallazgos nuevos.
+
+---
+
+## 0. Reparaciones aplicadas {#0-reparaciones-aplicadas}
+
+| ID | Corrección | Fichero(s) | Prueba que lo fija |
+|---|---|---|---|
+| [R-0](#r-0) | **Causa raíz de B-1**: `float == entero` se trunca en la radio. Eliminada esa comparación de todo el runtime | `geometry.lua`, `bar_faces.lua`, `ranges.lua` | `N-01`, `N-02`, `N-03` |
+| B-1 | `BarOrigin = Zero` mueve el origen del relleno en las cinco caras | (consecuencia de R-0) | `N-02` + captura nativa |
+| B-2 | El guardián de contraste mide contra la **superficie**, y `palette = theme` rechaza un rol ilegible en vez de adoptarlo a ciegas | `bar_style.lua` | `Theme Adaptive adopts a theme role only when it is readable` |
+| B-3 | Los dos carriles de Dual Rail son pista, no colores de estado | `bar_faces.lua` | catálogo + captura nativa |
+| B-4 | `Surface = Theme panel` se dibuja como borde real cuando su color coincide con el fondo; **y una sola implementación de panel para todas las caras** | `bar_faces.lua` | `Phase 2: surfaces ground the widget…` |
+| B-5 | El pulso crítico modula la cabeza / la píldora, nunca el dato | `bar_faces.lua`, `bar.lua`, `dial_renderer.lua` | `Phase 6: Refined critical pulse…`, `P1-1`, `P1-10` |
+| B-6 | La cara Steps tiene suelo de altura, cediendo sólo si el raíl no da un píxel por escalón | `bar_faces.lua` | `Phase 4: Stepped Signal grows upward…` |
+| B-7 | Static siempre anuncia su estado con la píldora | (ya era el comportamiento; ahora está fijado) | `P-1b` |
+| P-1 | `ShowMinMax = "Markers + text"` pinta texto en **ambas** familias | `bar_layout.lua`, `bar.lua`, `dial_layout.lua` | `P-1` |
+| P-2 | `Gradient` es espacial en las dos familias, con una sola regla compartida | `ui_core.lua`, `dial_renderer.lua`, `bar_faces.lua` | `P-2`, `gradient mode paints the SCALE…` |
+| D-1 | Threshold dibuja sus marcas exactas también en el dial | `dial_renderer.lua` | `D-1` |
+| D-2 | La aguja arranca dentro del buje | `dial_layout.lua` | catálogo (`st-normal`: pala r=8 → r=3) |
+| D-3 | El marcador de "sin lectura" es `--`, no un guion suelto | `format.lua` | `number formatting honours precision` |
+| H-1 | El emisor SVG usa `lengthAdjust="spacing"`: mantiene el ancho honesto sin deformar glifos | `dev/svgkit.lua` | inspección a 2× y 6× |
+| H-2 | `verify_dupes.py` clasifica cada duplicado y `report.py` sólo avisa de los inexplicados | `verify_dupes.py`, `report.py` | 48 WARN → 0 |
+
+Puertas después de las reparaciones:
+
+```
+run_tests.lua       70/70    PASS
+smoke_test.lua     208/208   PASS   (+7 tests nuevos)
+widgets_test.lua    17/17    PASS
+luacheck                     0 warnings / 0 errors en los 20 módulos runtime
+dev/collide.lua              all cases clean
+dev/gallery.lua              223 escenas, 0 fallidas, 0 avisos de render
+visual-kit (firmware real)   262 capturas, 262 PASS, 0 WARN, 0 FAIL
+verify_dupes.py              0 grupos duplicados sin explicar
+```
+
+### R-0 — La radio evalúa `0.45 == 0` como verdadero {#r-0}
+
+**Esto no era un defecto del widget.** Es la causa raíz de B-1 y de la mitad de
+sus síntomas, y afecta a **cualquier script Lua de este firmware**.
+
+`radio/src/thirdparty/Lua/src/luaconf.h:164` define `LUA_FLOORN2I 1`, con este
+comentario de EdgeTX:
+
+> *We need to force floats to be converted to integers, even if not integral in
+> nature. It allows most Edgetx API functions to accept unrounded floats when
+> integers are required.*
+
+El efecto buscado es ese. El no buscado es que `luaV_equalobj`
+(`lvm.c:404`) usa **el mismo** macro `tointeger` para comparar un float con un
+entero, así que el float se **suelifica** antes de comparar.
+
+Medido en el simulador real, instrumentando el widget y leyendo `simu.log`:
+
+```
+GPDBG4 o=0.45 mt=float  o==0:true  o==0.0:false  o>0:true
+                                   lit 0.45==0:true  1/2=0.5  3%2=1
+```
+
+- `x == <entero>` con `x` fraccionario → **falso positivo**.
+- `x == <float>` → correcto (`luai_numeq`).
+- `<`, `<=`, `>`, `>=` → correctos (la conversión va int→float, que es exacta).
+- Las claves de tabla no se ven afectadas (`luaH_get` fija el modo 0).
+
+Consecuencias que estaban vivas en el widget:
+
+| Comparación | Dónde | Qué provocaba |
+|---|---|---|
+| `axis.originT == 0` | `bar_faces` ×4 | `BarOrigin = Zero` tomaba siempre la rama de prefijo: **B-1** |
+| `fraction == 0` | `paintCell` | toda celda **parcial** se pintaba como fantasma |
+| `cell.fraction == fraction` | `setCellFraction` | el repintado de una celda parcial se saltaba |
+| `span == 0` | `ranges.deadband` | una escala de 0.5 V perdía su histéresis |
+
+Corregido usando desigualdades y un booleano resuelto una vez
+(`axis.prefixOrigin`), con el mecanismo documentado en `geometry.isZero`. La
+guarda `N-03` escanea los módulos de runtime y falla si vuelve a aparecer una
+de estas comparaciones: reintroducida a mano, la detecta
+(`bar_faces.lua:760 if axis.originT == 0 then`).
+
+**No se ha tocado `luaconf.h`.** Cambiar `LUA_FLOORN2I` alteraría la semántica
+numérica de todos los scripts del fork; es una decisión del propietario del
+firmware, no de este widget. Queda anotado aquí como defecto de plataforma con
+la evidencia para decidirlo.
+
+### Verificación sobre el firmware real {#verificacion}
+
+Tanda completa nueva, con todas las capturas regeneradas (Track 1, Track 2 y el
+subconjunto de temas): **262 pantallas, 262 PASS, 0 WARN, 0 FAIL**, frente a
+166 PASS / 48 WARN antes.
+
+Los 48 avisos eran duplicados byte-idénticos sin triar. Ahora `verify_dupes.py`
+clasifica cada grupo y `report.py` sólo degrada a WARN los que **no** tienen
+explicación: quedan **0 grupos inexplicados**. Los 12 que persisten están
+justificados uno a uno y se imprimen con su motivo — todos son "esta opción ES
+el valor por defecto, así que estos casos repiten el mismo render" o la
+limitación conocida de `TX_VOLTAGE` documentada en el README del kit.
+
+Medidas de píxel sobre las capturas nativas, mismo método que el análisis:
+
+| Qué | Antes | Después |
+|---|---|---|
+| Relleno del preset Minimal (`087`) | `#ffdf00` — **1.14:1** claro / 9.93 oscuro | `#21925a` — **3.40:1** claro / **3.35:1** oscuro |
+| Relleno en CRIT (`062`) | `#bd3c4a` (translúcido, 2.46:1 sobre oscuro) | `#ff0000` a opacidad plena |
+| Carril negativo de Dual Rail (`166`) | `#ef5d63` en todo su largo | `#6396bd` — pista |
+| Origen cero, relleno (`150`) | `407…730` (nace en el extremo bajo) | `583…730` (nace en la marca de cero, `580`) |
+| Primer escalón activo de Steps (`f4-steps-static`) | 2 px verde junto a 15 px de pista | escalón sólido, legible |
+
+Y mirando los píxeles, ampliados y recortados a la zona:
+
+| Hoja | Qué confirma |
+|---|---|
+| [`despues-dial-estado-color.png`](analisis-2026-08-11/despues-dial-estado-color.png) | Static / Threshold / Gradient **ya no son la misma imagen**: Threshold marca sus dos umbrales exactos, Gradient pinta la rampa espacial rojo→naranja→verde. La aguja arranca en el buje. `NO SOURCE` muestra `--`. El pulso apaga la píldora, no el arco |
+| [`despues-bar-origen-zero.png`](analisis-2026-08-11/despues-bar-origen-zero.png) | `BarOrigin = Zero` nace en la marca de cero en las **cinco** caras, con celda parcial en los dos bordes |
+| [`despues-bar-dual-rail.png`](analisis-2026-08-11/despues-bar-dual-rail.png) | Los dos carriles son pista neutra; el relleno crece desde el cero hacia el valor |
+| [`despues-bar-estilos.png`](analisis-2026-08-11/despues-bar-estilos.png) | Minimal en verde calibrado, CRIT en rojo pleno, `Theme panel` distinguible de `Transparent` |
+| [`despues-dial-minmax-text.png`](analisis-2026-08-11/despues-dial-minmax-text.png) · [`despues-bar-minmax-text.png`](analisis-2026-08-11/despues-bar-minmax-text.png) | `Markers + text` escribe `min`/`max` en **ambas** familias |
+| [`despues-bar-steps.png`](analisis-2026-08-11/despues-bar-steps.png) | Los escalones activos son barras sólidas, no pelos |
+
+El catálogo ganó una escena, `br-minmax-text`: no había **ninguna** caso de
+barra que ejerciera `ShowMinMax`, que es parte de por qué la tercera opción
+pudo estar cableada a `false` en esa familia sin que nadie lo viera.
 
 ---
 
@@ -64,22 +194,22 @@ el carril inactivo como si estuviera lleno.
 
 ## 2. Resumen ejecutivo
 
-| ID | Sev | Familia | Título | Estado |
+| ID | Sev | Familia | Título | Procedencia |
 |---|---|---|---|---|
-| [B-1](#b-1) | **P1** | Bar | `BarOrigin = Zero` no mueve el origen del relleno **en el firmware real** (sí en el mock) | nuevo / reabre W-06 |
-| [B-2](#b-2) | **P1** | Bar | Tres presets pintan el dato en `#ffde00` a **1.14:1** sobre el fondo | nuevo |
-| [B-3](#b-3) | **P1** | Bar | Dual Rail pinta el carril del signo contrario **lleno** y en rojo crítico | nuevo |
-| [P-1](#p-1) | **P1** | Paridad | `ShowMinMax = "Markers + text"` no muestra texto: en Bar **nunca**, en Dial casi nunca | nuevo |
-| [P-2](#p-2) | **P1** | Paridad | `ColorMode = Gradient` significa cosas distintas en Dial y en Bar | nuevo |
-| [B-4](#b-4) | **P2** | Bar | `Surface = Theme panel` es un no-op que cuesta un objeto LVGL | nuevo |
-| [B-5](#b-5) | **P2** | Bar | El pulso de crítico deja el relleno en `#bd3c4a`, fuera de la ventana de luminancia | nuevo |
-| [B-6](#b-6) | **P2** | Bar | La cara `Steps` dibuja los escalones bajos como pelos de 1 px | nuevo |
-| [D-1](#d-1) | **P2** | Dial | Static / Threshold / Gradient son **byte-idénticos** en estado normal | nuevo |
-| [D-2](#d-2) | **P2** | Dial | La aguja no arranca en el buje: hueco fijo de 0.07·R | W-04, sigue abierto (parcial) |
-| [B-7](#b-7) | **P3** | Bar | `ColorMode = Static` pinta con el verde que significa "normal" | W-05, sigue abierto |
-| [D-3](#d-3) | **P3** | Dial | El marcador de valor de `NO SOURCE` se lee como una barra gris suelta | nuevo |
-| [H-1](#h-1) | **P2** | Utillaje | El emisor SVG usa `textLength` + `lengthAdjust`: el texto se rompe al rasterizar | nuevo |
-| [H-2](#h-2) | **P2** | Utillaje | 48 capturas byte-idénticas; el aviso no distingue "opción sin efecto" de "colapso del arnés" | amplía H-03 |
+| [B-1](#b-1) | **P1 — RESUELTO** | Bar | `BarOrigin = Zero` no mueve el origen del relleno **en el firmware real** (sí en el mock) | reabre W-06 |
+| [B-2](#b-2) | **P1 — RESUELTO** | Bar | Tres presets pintan el dato en `#ffde00` a **1.14:1** sobre el fondo | nuevo |
+| [B-3](#b-3) | **P1 — RESUELTO** | Bar | Dual Rail pinta el carril del signo contrario **lleno** y en rojo crítico | nuevo |
+| [P-1](#p-1) | **P1 — RESUELTO** | Paridad | `ShowMinMax = "Markers + text"` no muestra texto: en Bar **nunca**, en Dial casi nunca | nuevo |
+| [P-2](#p-2) | **P1 — RESUELTO** | Paridad | `ColorMode = Gradient` significa cosas distintas en Dial y en Bar | nuevo |
+| [B-4](#b-4) | **P2 — RESUELTO** | Bar | `Surface = Theme panel` es un no-op que cuesta un objeto LVGL | nuevo |
+| [B-5](#b-5) | **P2 — RESUELTO** | Bar | El pulso de crítico deja el relleno en `#bd3c4a`, fuera de la ventana de luminancia | nuevo |
+| [B-6](#b-6) | **P2 — RESUELTO** | Bar | La cara `Steps` dibuja los escalones bajos como pelos de 1 px | nuevo |
+| [D-1](#d-1) | **P2 — RESUELTO** | Dial | Static / Threshold / Gradient son **byte-idénticos** en estado normal | nuevo |
+| [D-2](#d-2) | **P2 — RESUELTO** | Dial | La aguja no arranca en el buje: hueco fijo de 0.07·R | reabre W-04 (mitad: el hueco sí, el desborde no) |
+| [B-7](#b-7) | **P3 — RESUELTO** | Bar | `ColorMode = Static` pinta con el verde que significa "normal" | reabre W-05 |
+| [D-3](#d-3) | **P3 — RESUELTO** | Dial | El marcador de valor de `NO SOURCE` se lee como una barra gris suelta | nuevo |
+| [H-1](#h-1) | **P2 — RESUELTO** | Utillaje | El emisor SVG usa `textLength` + `lengthAdjust`: el texto se rompe al rasterizar | nuevo |
+| [H-2](#h-2) | **P2 — RESUELTO** | Utillaje | 48 capturas byte-idénticas; el aviso no distingue "opción sin efecto" de "colapso del arnés" | amplía H-03 |
 
 ---
 
@@ -88,6 +218,8 @@ el carril inactivo como si estuviera lleno.
 ### B-1 — `BarOrigin = Zero` dibuja la marca de cero pero el relleno sigue naciendo en el extremo bajo {#b-1}
 
 **Severidad: P1.** La opción parece funcionar (aparece la marca) y miente sobre lo que mide la barra.
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 
 #### Evidencia — firmware real
 
@@ -173,6 +305,8 @@ Hipótesis a descartar por orden de coste, **con instrumentación en la radio**,
 ### B-2 — Tres presets pintan el dato en el amarillo del tema: 1.14:1 sobre el fondo {#b-2}
 
 **Severidad: P1.** No es un color mal elegido: es **la reintroducción, por otra puerta,
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 de un defecto que este mismo repositorio ya diagnosticó, arregló y documentó**.
 
 [`theme.lua:95-99`](../../theme.lua#L95), sobre por qué los colores de estado dejaron de
@@ -259,6 +393,8 @@ no se evalúa nunca.
 ### B-3 — Dual Rail pinta el carril del signo contrario a longitud completa y en rojo crítico {#b-3}
 
 **Severidad: P1** (riesgo de lectura invertida en la cara pensada precisamente para
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 mandos bidireccionales).
 
 #### Evidencia
@@ -319,6 +455,8 @@ Dos decisiones se suman:
 
 **Severidad: P2.**
 
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
+
 `075_barra_br-surface-clear.png` y `076_barra_br-surface-theme.png` tienen **histogramas
 de color idénticos** (`#e7eff7` 373654 px, `#ce6100` 3642, `#6396bd` 3554, …). También
 `114 f4-hex-rich`, que declara `Surface=Theme panel`, es indistinguible de su equivalente
@@ -345,6 +483,8 @@ objeto. Lo segundo es gratis y honesto; lo primero requiere decisión de diseño
 ### B-5 — El pulso de crítico deja el relleno en `#bd3c4a`, fuera de la ventana de luminancia {#b-5}
 
 **Severidad: P2.**
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 
 Medido en `071_barra_br-maximum.png` y `062_barra_br-crit.png`: el relleno en estado
 CRIT es `#bd3c4a`, mientras la píldora y el valor son `#ff0000`. El árbol de objetos lo
@@ -375,6 +515,8 @@ siga dentro de la ventana. Y medir la ventana **después** de aplicar opacidad, 
 ### B-6 — La cara `Steps` dibuja los escalones bajos como pelos de 1 px {#b-6}
 
 **Severidad: P2.** Visible en `107`…`111`, `118`, `119`, `161`, `162`
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 (ver [`bar-caras.png`](analisis-2026-08-11/bar-caras.png)).
 
 Altura de columna medida en `107_caras4_f4-steps-static.png` (barra x = 408…792,
@@ -403,6 +545,8 @@ y recorte del número de escalones cuando ese suelo no cabe, en vez de degradar 
 ### B-7 — `ColorMode = Static` pinta con el verde que significa "normal" (W-05, abierto) {#b-7}
 
 **Severidad: P3.** Confirmado en `078_barra_br-mode-static.png`: relleno `#21925a`
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 (exactamente el color del estado normal) con la píldora **WARN** visible al lado.
 
 Causa en [`ui_core.lua`](../../ui_core.lua) `resolveColor`: `if key == "static" then
@@ -420,6 +564,8 @@ semántica de color" y obligar a que la píldora esté siempre visible en ese mo
 ### D-1 — Static, Threshold y Gradient son byte-idénticos en estado normal {#d-1}
 
 **Severidad: P2.**
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 
 `RUN_SUMMARY.md` lo dice sin ambigüedad: `005_color_color-static-ok.png`,
 `007_color_color-threshold-ok.png` y `011_color_color-gradient-ok.png` son
@@ -443,6 +589,8 @@ umbral que **sí** dibuja la barra (`br-mode-threshold`); es su significado decl
 ### P-2 — `ColorMode = Gradient` significa cosas distintas en Dial y en Bar {#p-2}
 
 **Severidad: P1 de paridad** (`DEVELOPMENT_GUIDE.md` §5: *"Mismo significado de
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 ColorMode | obligatorio; representación radial | obligatorio; representación lineal"*).
 
 - **Bar**: gradiente **espacial**. `bar_faces.lua` construye N slices a lo largo del eje,
@@ -466,6 +614,8 @@ exige la §12 del guía de desarrollo para toda excepción.
 ### P-1 — `ShowMinMax = "Markers + text"` no muestra texto {#p-1}
 
 **Severidad: P1 de paridad.** Es una opción de los **slots compartidos 1–9**, que deben
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 ser idénticos en key, tipo, default y **semántica** en ambas familias.
 
 #### Bar: nunca, en ningún tamaño
@@ -510,6 +660,8 @@ guardados, así que el camino correcto es implementarla.
 
 **Severidad: P2.**
 
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
+
 ```lua
 L.pivotRadius = clamp(floor(L.radius * T.ratio.pivotRadius), ...)  -- ratio 0.09
 L.needleInner = clamp(floor(L.radius * 0.16), T.px(3), T.px(20))
@@ -538,6 +690,8 @@ y estudiar acortar `markOuter` para que la marca de historial no cruce toda la p
 ### D-3 — El marcador de valor de `NO SOURCE` se lee como una barra gris suelta {#d-3}
 
 **Severidad: P3.** En `004_estado_st-nosource.png` el hueco del valor se rellena con un
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 guion a cuerpo 29 px, que en el firmware real se pinta como un rectángulo gris macizo
 flotando encima de la píldora `NO SOURCE`, desalineado con ella. Se lee como un artefacto
 de render, no como "sin dato".
@@ -552,6 +706,8 @@ mismo color apagado de la píldora.
 ### H-1 — El emisor SVG usa `textLength` + `lengthAdjust`: el texto se rompe al rasterizar {#h-1}
 
 **Severidad: P2 para la validez de cualquier revisión visual futura.**
+
+> **RESUELTO** — ver [§0](#0-reparaciones-aplicadas) y la [verificación](#verificacion).
 
 `dev/svgkit.lua` emite cada etiqueta con el ancho medido de la fuente EdgeTX:
 
@@ -641,15 +797,40 @@ haciendo RLE de la scanline con más píxeles no-fondo de la zona.
 
 ---
 
-## 8. Orden de ataque recomendado
+## 8. Orden de ataque recomendado — ejecutado
 
-1. **[B-1]** instrumentar y cerrar el origen cero: es una opción publicada que miente.
-2. **[B-2]** el guardián de contraste contra la superficie: barato, y cierra de golpe
-   tres presets y cualquier tema futuro.
-3. **[P-1]** implementar el texto min/max en la barra: es un slot compartido roto.
+El plan original se ejecutó en este orden, y cada punto está cerrado y
+verificado en [§0](#0-reparaciones-aplicadas):
+
+1. **[B-1]** instrumentar y cerrar el origen cero. La instrumentación en el
+   simulador real encontró algo mayor de lo previsto: la causa no estaba en el
+   widget sino en la aritmética del firmware ([R-0](#r-0)).
+2. **[B-2]** guardián de contraste contra la superficie — cerró de golpe los
+   tres presets y protege cualquier tema futuro.
+3. **[P-1]** texto min/max en la barra.
 4. **[B-3]** carriles inactivos en color de pista.
-5. **[P-2]** decidir la semántica de Gradient y documentarla o unificarla.
-6. **[B-4]**, **[B-5]**, **[B-6]**, **[D-1]**, **[D-2]** — cosméticos con causa conocida
-   y arreglo acotado.
-7. **[H-1]**, **[H-2]** — sin esto, la próxima revisión visual vuelve a pagar el mismo
-   peaje de discriminar artefactos.
+5. **[P-2]** semántica de Gradient unificada en el core, consumida por las dos
+   familias.
+6. **[B-4]**, **[B-5]**, **[B-6]**, **[D-1]**, **[D-2]**, **[D-3]**.
+7. **[H-1]**, **[H-2]** — el utillaje ya no inventa recortes de texto ni ahoga
+   la señal en 48 avisos sin triar.
+
+## 9. Lo que queda para el propietario
+
+Nada de esto es trabajo pendiente del widget; son decisiones que no me
+corresponde tomar:
+
+1. **`LUA_FLOORN2I 1` en `radio/src/thirdparty/Lua/src/luaconf.h:164`.** El
+   widget ya no depende de esa comparación, pero el resto de scripts Lua del
+   fork sí puede. Cambiarlo altera la semántica numérica de todo el firmware;
+   la evidencia para decidirlo está en [R-0](#r-0).
+2. **`ColorMode = Static`** conserva el verde de acento por defecto, que es
+   también el color semántico de "normal". La contradicción está mitigada
+   (la píldora siempre anuncia el estado, fijado por el test `P-1b`), pero si
+   se prefiere un acento neutro por defecto es un cambio de una línea con
+   impacto visible en modelos ya guardados.
+3. **Cobertura de fuentes en el emulador.** Las 16 escenas saltadas y los
+   grupos de capturas idénticas que quedan se deben todos a que el arnés
+   inyecta `TX_VOLTAGE` en lugar de sensores reales (limitación documentada en
+   el README del kit). Resolverlo daría cobertura real a CELLS, staleness y
+   pérdida de enlace.

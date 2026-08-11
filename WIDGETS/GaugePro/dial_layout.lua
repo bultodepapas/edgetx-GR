@@ -38,7 +38,13 @@ local function dialLayout(widget, cfg, L, w, h)
   -- badge rides ON the dial and was never part of the budget.
   L.showState = mode ~= "micro"
   L.showMarkers = (cfg.showMinMax or 1) > 1 and mode ~= "micro"
-  L.showMinMaxText = (cfg.showMinMax or 1) > 2 and mode == "large"
+  -- No `mode == "large"` gate. That gate wanted a short side of 180 * LCD_SCALE
+  -- (~300 px on an 800x480 radio), which the most common half-screen zone -
+  -- 400x240 - never reaches, so the third choice of a published option did
+  -- nothing on the layouts people actually use. Fit is decided lower down by
+  -- minMaxTextFits() against the real captions, which is the honest test and
+  -- already degrades to the marks when the cells are too narrow.
+  L.showMinMaxText = (cfg.showMinMax or 1) > 2 and mode ~= "micro"
   -- a full ring starts and ends at the same point: two scale labels would sit
   -- on top of each other
   L.showScale = (mode == "large") and (L.sweep < 360)
@@ -244,7 +250,16 @@ local function dialLayout(widget, cfg, L, w, h)
   L.showNeedle = (cfg.style == C.STYLE_NEEDLE)
     or (cfg.style == C.STYLE_AUTO and mode ~= "micro")
   if L.showNeedle then
-    L.needleInner = clamp(floor(L.radius * 0.16), T.px(3), T.px(20))
+    L.pivotRadius = clamp(floor(L.radius * T.ratio.pivotRadius),
+                          T.px(3), T.px(9))
+    -- The blade has to START inside the hub. It used to begin at 0.16 * radius
+    -- while the hub ended at 0.09 * radius (T.ratio.pivotRadius), so a gap of
+    -- 0.07 * radius - 4 px on a 200x160 zone - always separated the needle
+    -- from its own pivot and the needle read as floating. Overlapping by one
+    -- pixel is what makes the two look like one object at every size; the hub
+    -- is drawn after the blade, so the overlap is never visible as a seam.
+    L.needleInner = min(clamp(floor(L.radius * 0.16), T.px(3), T.px(20)),
+                        max(0, L.pivotRadius - 1))
     L.needleOuter = L.radius - floor(L.trackThickness / 2) - T.px(1)
     L.needleHalf = clamp(floor(L.radius * T.ratio.needleWidth), T.px(2), T.px(7))
     -- Tapered blade from three LINES (P2-1 keeps the needle a line family):
@@ -267,8 +282,6 @@ local function dialLayout(widget, cfg, L, w, h)
                            L.needleBodyOuter - floor(L.needleMidHalf * 2 * 0.75))
     L.needleTipInner = max(L.needleMidInner,
                            L.needleMidOuter - floor(L.needleTipThickness * 0.75))
-    L.pivotRadius = clamp(floor(L.radius * T.ratio.pivotRadius),
-                          T.px(3), T.px(9))
   end
 
   -- typography and text regions

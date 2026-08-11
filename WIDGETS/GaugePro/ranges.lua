@@ -58,7 +58,10 @@ end
 -- Deadband width for a range, as a fraction of the span (default 2%).
 function M.deadband(minimum, maximum, fraction)
   local span = math.abs(maximum - minimum)
-  if span == 0 then return 0 end
+  -- `not (span > 0)`, never `span == 0`: this firmware floors a float before
+  -- comparing it with an integer literal, so a 0.5 V span read as zero and
+  -- the whole scale lost its hysteresis (see geometry.isZero).
+  if span <= 0 then return 0 end
   return span * (fraction or 0.02)
 end
 
