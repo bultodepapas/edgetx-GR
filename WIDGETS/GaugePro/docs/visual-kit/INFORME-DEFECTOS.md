@@ -1,7 +1,9 @@
 # Gauge Pro — Informe de defectos detectados por análisis visual
 
 Análisis de la tanda de capturas `docs/visual-kit/screenshots/` (262 PNG,
-generadas 2026-08-10 16:52 por `tools/gaugepro-visual-kit/run.py all`).
+generadas originalmente 2026-08-10 16:52 por `tools/gaugepro-visual-kit/run.py
+all`). Regeneradas 2026-08-10 21:10 tras aplicar los fixes de [F-01](#f-01) y
+[H-01](#h-01) — `RUN_SUMMARY.md`/`CATALOG.md` reflejan esa segunda corrida.
 
 **Estado del documento:** vivo. Cada hallazgo se añade cuando está *confirmado*
 con medición sobre píxel, no cuando se sospecha. Si aparece información nueva
@@ -265,6 +267,16 @@ style — el arco de valor y las bandas de referencia quedan concéntricos con
 el track en las nueve configuraciones probadas. El estilo `bar` (que no pasa
 por este código) se confirmó sin regresión.
 
+**Actualización — confirmado en la corrida oficial completa.** Tras aplicar
+también el fix de [H-01](#h-01), se regeneró la tanda entera (262 capturas,
+`python run.py` vía `cmd_capture`/`cmd_report` reales, contra el `sdcard` del
+repo) y **todas las capturas de dial publicadas en `screenshots/` muestran
+ahora el arco de valor y las bandas concéntricas con el track** — no sólo las
+nueve configuraciones de la verificación aislada. `001_estado_st-normal.png`
+y `013_color_color-sections-ok.png` (las dos capturas que usé como ejemplo
+del defecto en la primera versión de este hallazgo) son la comprobación más
+directa: compárense contra su descripción original más arriba.
+
 ### Trabajo pendiente
 
 * **Portar el repro aislado al repo** como
@@ -430,22 +442,70 @@ valor por defecto de la opción) — confirmado sin cambios, no relacionado con
 la zona.
 
 **Con `flag_cross_case_duplicates` conectado**, estos dos grupos residuales
-pasarán a `WARN` en la próxima corrida completa (`python run.py all`) en vez
-de `PASS` silencioso, con la razón anotada en `RUN_SUMMARY.md` — que es
-exactamente el comportamiento que pedía la remediación #3: ya no hace falta
-leer duplicados "a ojo" para notar que un grupo de casos no se está
-diferenciando.
+pasan a `WARN` en vez de `PASS` silencioso, con la razón anotada en
+`RUN_SUMMARY.md` — exactamente el comportamiento que pedía la remediación #3.
+
+### Actualización — corrida oficial completa (262 capturas)
+
+Se regeneró la tanda entera contra el `sdcard` real del repo (no el scratch
+de 10 casos de arriba): `python run.py` vía `cmd_capture`/`cmd_report`
+reales — 206 Track 1 + 8 Track 2 + 48 temas, 262 capturas, 0 FAIL. Confirma
+lo de arriba a escala completa: `br-normal.png` ahora se ve como un widget
+compacto en la esquina superior derecha de un lienzo de 800×480 (zona real
+`Layout1P4 z1`, 400×120 px), no a pantalla completa, y `CATALOG.md` lo dice
+explícitamente en su columna "Zone (real)".
+
+**Hallazgo nuevo, no anticipado, al conectar `verify_dupes.py` de verdad:**
+la corrida completa marca **70 filas en `WARN`** (`RUN_SUMMARY.md`), muy por
+encima de los ~7 duplicados que cita el análisis original de arriba. Revisar
+esa lista entera muestra que la enorme mayoría **no es el bug de H-01** —
+H-01 está resuelto, el enrutado es correcto — sino tres causas ya conocidas
+o esperables que la comprobación, tal como se especificó, no distingue entre
+sí:
+
+1. **Colapso de zona real** ([H-02](#h-02), como ya se documentó arriba):
+   varios objetivos pequeños distintos siguen cayendo en la misma zona real
+   más cercana (`Layout1P4 z1`, 400×120) porque no existe nada más pequeño en
+   el catálogo `ZMAP` a 800×480.
+2. **Opciones que fijan su propio valor por defecto** ([H-03](#h-03) punto
+   3): ya documentado, sin cambios.
+3. **Coincidencia genuina de píxeles por diseño del propio caso de prueba,
+   categoría no anticipada al escribir la remediación original.** Ejemplo:
+   `color-static-ok`, `color-threshold-ok` y `color-gradient-ok` comparten el
+   mismo Min/Max/Warn/Crit y el mismo valor "cómodamente normal" — y para ese
+   valor, Static (acento fijo), Threshold (color por estado, que en "normal"
+   también resuelve a acento) y Gradient (rampa que en el extremo "normal"
+   converge al mismo acento) **producen el mismo verde por diseño**: la
+   diferencia entre esos tres modos sólo se manifiesta en warn/crítico, que
+   es precisamente lo que esos tres casos "-ok" no ejercitan. Lo mismo con
+   los trillizos `pal-preset-auto`/`f4-preset-hex`/`f4-auto-rssi` y
+   `f5-auto-ch1`/`f5-auto-thr` (los tres resuelven al mismo preset "Auto"
+   desde entradas distintas — coincidir es el punto de la prueba, no un
+   fallo). Esto no es un defecto del arnés ni del widget: es que la
+   comprobación byte-a-byte, aplicada sin distinguir *por qué* dos casos
+   coinciden, no puede diferenciar "el enrutado rompió el caso" de "el caso
+   coincide con otro a propósito".
+
+La remediación #3 tal como estaba escrita ("un grupo de duplicados entre
+casos con overrides distintos debe degradar a WARN") es *correcta* — el
+código hace exactamente eso — pero la especificación resultó más ruidosa de
+lo que parecía sobre el papel una vez se corrió contra la tanda real. No se
+ajustó el heurístico en esta pasada (habría requerido codificar qué pares de
+overrides "no deberían importar" caso por caso, un riesgo de sobre-ingeniería
+mayor que el problema que resuelve) — se deja documentado aquí para que la
+próxima persona que lea 70 warnings en `RUN_SUMMARY.md` sepa que la mayoría
+son ruido esperado y no repita esta misma investigación.
 
 ### Trabajo pendiente
 
-* **Corrida completa** (`python run.py all`, ~262 capturas) para regenerar
-  `CATALOG.md`/`INDEX.md`/`RUN_SUMMARY.md`/`screenshots/` con el fix — esta
-  verificación usó un `sdcard` de scratch y una selección de 10 casos, no la
-  tanda oficial. Los artefactos publicados en este directorio siguen siendo
-  los de la corrida anterior (pre-fix) hasta la próxima ejecución real.
-* Los duplicados residuales de la tabla de arriba no se resuelven solos con
-  H-01; requieren [H-02](#h-02) (una lista de tamaños objetivo para `zonas`
-  que sean alcanzables a 800×480) para reducirse más.
+* Los duplicados residuales de la categoría 1 (colapso de zona) no se
+  resuelven solos con H-01; requieren [H-02](#h-02) (una lista de tamaños
+  objetivo para `zonas` que sean alcanzables a 800×480).
+* Si el volumen de `WARN` en `RUN_SUMMARY.md` resulta molesto en la práctica,
+  la mejora más barata es dejar de listar como sospechosos los grupos cuyos
+  `overrides` sólo difieren en `ColorMode` cuando el caso es de la familia
+  "-ok" (no ejercita warn/crítico) — cubre la categoría 3 completa sin tocar
+  la lógica de detección de duplicados en sí.
 
 ---
 

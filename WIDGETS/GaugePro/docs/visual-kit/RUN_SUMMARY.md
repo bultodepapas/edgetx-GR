@@ -1,8 +1,81 @@
 # Gauge Pro Visual Kit -- Last Run Summary
 
-- Generated: 2026-08-10 16:52:41
+- Generated: 2026-08-10 21:10:52
 - Screens captured: **262**
-- Pass: 262
-- Warn: 0
+- Pass: 192
+- Warn: 70
 - Fail: 0
 - Skipped (documented, see CATALOG.md): 16
+
+## Warnings
+
+- st-normal (estado): byte-identical to 001_estado_st-normal__stock.png, 009_color_color-rail-ok.png, 009_color_color-rail-ok__stock.png, 027_dial_op-style-needle.png, 199_zonas_zone-160x160.png, 200_zonas_zone-200x160.png, 203_zonas_zone-300x150.png
+- st-crit (estado): byte-identical to 003_estado_st-crit__stock.png, 010_color_color-rail-crit.png, 010_color_color-rail-crit__stock.png, 029_dial_op-chip-off-crit.png
+- color-static-ok (color): byte-identical to 005_color_color-static-ok__stock.png, 007_color_color-threshold-ok.png, 007_color_color-threshold-ok__stock.png, 011_color_color-gradient-ok.png, 011_color_color-gradient-ok__stock.png
+- color-threshold-ok (color): byte-identical to 005_color_color-static-ok.png, 005_color_color-static-ok__stock.png, 007_color_color-threshold-ok__stock.png, 011_color_color-gradient-ok.png, 011_color_color-gradient-ok__stock.png
+- color-rail-ok (color): byte-identical to 001_estado_st-normal.png, 001_estado_st-normal__stock.png, 009_color_color-rail-ok__stock.png, 027_dial_op-style-needle.png, 199_zonas_zone-160x160.png, 200_zonas_zone-200x160.png, 203_zonas_zone-300x150.png
+- color-rail-crit (color): byte-identical to 003_estado_st-crit.png, 003_estado_st-crit__stock.png, 010_color_color-rail-crit__stock.png, 029_dial_op-chip-off-crit.png
+- color-gradient-ok (color): byte-identical to 005_color_color-static-ok.png, 005_color_color-static-ok__stock.png, 007_color_color-threshold-ok.png, 007_color_color-threshold-ok__stock.png, 011_color_color-gradient-ok__stock.png
+- color-sections-ok (color): byte-identical to 013_color_color-sections-ok__stock.png, 042_acento_ac-default.png
+- sc-preset (escala): byte-identical to 018_escala_sc-lowgood.png
+- sc-lowgood (escala): byte-identical to 015_escala_sc-preset.png
+- op-style-needle (dial): byte-identical to 001_estado_st-normal.png, 001_estado_st-normal__stock.png, 009_color_color-rail-ok.png, 009_color_color-rail-ok__stock.png, 199_zonas_zone-160x160.png, 200_zonas_zone-200x160.png, 203_zonas_zone-300x150.png
+- op-chip-off-crit (dial): byte-identical to 003_estado_st-crit.png, 003_estado_st-crit__stock.png, 010_color_color-rail-crit.png, 010_color_color-rail-crit__stock.png
+- op-mm-mark (dial): byte-identical to 032_dial_op-mm-text.png, 041_texto_tx-scalelabels.png, 201_zonas_zone-200x200.png, 202_zonas_zone-260x220.png, 204_zonas_zone-120x220.png, 205_zonas_zone-100x260.png, 206_zonas_zone-480x272.png
+- op-mm-text (dial): byte-identical to 031_dial_op-mm-mark.png, 041_texto_tx-scalelabels.png, 201_zonas_zone-200x200.png, 202_zonas_zone-260x220.png, 204_zonas_zone-120x220.png, 205_zonas_zone-100x260.png, 206_zonas_zone-480x272.png
+- tx-scalelabels (texto): byte-identical to 031_dial_op-mm-mark.png, 032_dial_op-mm-text.png, 201_zonas_zone-200x200.png, 202_zonas_zone-260x220.png, 204_zonas_zone-120x220.png, 205_zonas_zone-100x260.png, 206_zonas_zone-480x272.png
+- ac-default (acento): byte-identical to 013_color_color-sections-ok.png, 013_color_color-sections-ok__stock.png
+- pal-classic (paleta): byte-identical to 061_barra_br-warn.png, 075_barra_br-surface-clear.png, 076_barra_br-surface-theme.png, 080_barra_br-mode-rail.png
+- pal-preset-auto (paleta): byte-identical to 120_caras4_f4-preset-hex.png, 123_caras4_f4-auto-rssi.png
+- br-normal (barra): byte-identical to 067_barra_br-auto.png, 069_barra_br-medium.png, 072_barra_br-end-round.png, 195_zonas_zone-60x60.png, 196_zonas_zone-80x60.png, 197_zonas_zone-100x100.png, 198_zonas_zone-128x96.png
+- br-warn (barra): byte-identical to 045_paleta_pal-classic.png, 075_barra_br-surface-clear.png, 076_barra_br-surface-theme.png, 080_barra_br-mode-rail.png
+- br-crit (barra): byte-identical to 063_barra_br-narrow.png, 064_barra_br-short.png, 066_barra_br-nochip.png
+- br-narrow (barra): byte-identical to 062_barra_br-crit.png, 064_barra_br-short.png, 066_barra_br-nochip.png
+- br-short (barra): byte-identical to 062_barra_br-crit.png, 063_barra_br-narrow.png, 066_barra_br-nochip.png
+- br-nochip (barra): byte-identical to 062_barra_br-crit.png, 063_barra_br-narrow.png, 064_barra_br-short.png
+- br-auto (barra): byte-identical to 060_barra_br-normal.png, 069_barra_br-medium.png, 072_barra_br-end-round.png, 195_zonas_zone-60x60.png, 196_zonas_zone-80x60.png, 197_zonas_zone-100x100.png, 198_zonas_zone-128x96.png
+- br-medium (barra): byte-identical to 060_barra_br-normal.png, 067_barra_br-auto.png, 072_barra_br-end-round.png, 195_zonas_zone-60x60.png, 196_zonas_zone-80x60.png, 197_zonas_zone-100x100.png, 198_zonas_zone-128x96.png
+- br-end-round (barra): byte-identical to 060_barra_br-normal.png, 067_barra_br-auto.png, 069_barra_br-medium.png, 195_zonas_zone-60x60.png, 196_zonas_zone-80x60.png, 197_zonas_zone-100x100.png, 198_zonas_zone-128x96.png
+- br-surface-clear (barra): byte-identical to 045_paleta_pal-classic.png, 061_barra_br-warn.png, 076_barra_br-surface-theme.png, 080_barra_br-mode-rail.png
+- br-surface-theme (barra): byte-identical to 045_paleta_pal-classic.png, 061_barra_br-warn.png, 075_barra_br-surface-clear.png, 080_barra_br-mode-rail.png
+- br-mode-rail (barra): byte-identical to 045_paleta_pal-classic.png, 061_barra_br-warn.png, 075_barra_br-surface-clear.png, 076_barra_br-surface-theme.png
+- br-mode-gradient (barra): byte-identical to 084_barra_br-gradient-compact.png
+- br-gradient-compact (barra): byte-identical to 081_barra_br-mode-gradient.png
+- f4-preset-hex (caras4): byte-identical to 048_paleta_pal-preset-auto.png, 123_caras4_f4-auto-rssi.png
+- f4-auto-rssi (caras4): byte-identical to 048_paleta_pal-preset-auto.png, 120_caras4_f4-preset-hex.png
+- f5-auto-ch1 (ejes5): byte-identical to 193_ejes5_f5-auto-thr.png
+- f5-auto-thr (ejes5): byte-identical to 192_ejes5_f5-auto-ch1.png
+- zone-60x60 (zonas): byte-identical to 060_barra_br-normal.png, 067_barra_br-auto.png, 069_barra_br-medium.png, 072_barra_br-end-round.png, 196_zonas_zone-80x60.png, 197_zonas_zone-100x100.png, 198_zonas_zone-128x96.png
+- zone-80x60 (zonas): byte-identical to 060_barra_br-normal.png, 067_barra_br-auto.png, 069_barra_br-medium.png, 072_barra_br-end-round.png, 195_zonas_zone-60x60.png, 197_zonas_zone-100x100.png, 198_zonas_zone-128x96.png
+- zone-100x100 (zonas): byte-identical to 060_barra_br-normal.png, 067_barra_br-auto.png, 069_barra_br-medium.png, 072_barra_br-end-round.png, 195_zonas_zone-60x60.png, 196_zonas_zone-80x60.png, 198_zonas_zone-128x96.png
+- zone-128x96 (zonas): byte-identical to 060_barra_br-normal.png, 067_barra_br-auto.png, 069_barra_br-medium.png, 072_barra_br-end-round.png, 195_zonas_zone-60x60.png, 196_zonas_zone-80x60.png, 197_zonas_zone-100x100.png
+- zone-160x160 (zonas): byte-identical to 001_estado_st-normal.png, 001_estado_st-normal__stock.png, 009_color_color-rail-ok.png, 009_color_color-rail-ok__stock.png, 027_dial_op-style-needle.png, 200_zonas_zone-200x160.png, 203_zonas_zone-300x150.png
+- zone-200x160 (zonas): byte-identical to 001_estado_st-normal.png, 001_estado_st-normal__stock.png, 009_color_color-rail-ok.png, 009_color_color-rail-ok__stock.png, 027_dial_op-style-needle.png, 199_zonas_zone-160x160.png, 203_zonas_zone-300x150.png
+- zone-200x200 (zonas): byte-identical to 031_dial_op-mm-mark.png, 032_dial_op-mm-text.png, 041_texto_tx-scalelabels.png, 202_zonas_zone-260x220.png, 204_zonas_zone-120x220.png, 205_zonas_zone-100x260.png, 206_zonas_zone-480x272.png
+- zone-260x220 (zonas): byte-identical to 031_dial_op-mm-mark.png, 032_dial_op-mm-text.png, 041_texto_tx-scalelabels.png, 201_zonas_zone-200x200.png, 204_zonas_zone-120x220.png, 205_zonas_zone-100x260.png, 206_zonas_zone-480x272.png
+- zone-300x150 (zonas): byte-identical to 001_estado_st-normal.png, 001_estado_st-normal__stock.png, 009_color_color-rail-ok.png, 009_color_color-rail-ok__stock.png, 027_dial_op-style-needle.png, 199_zonas_zone-160x160.png, 200_zonas_zone-200x160.png
+- zone-120x220 (zonas): byte-identical to 031_dial_op-mm-mark.png, 032_dial_op-mm-text.png, 041_texto_tx-scalelabels.png, 201_zonas_zone-200x200.png, 202_zonas_zone-260x220.png, 205_zonas_zone-100x260.png, 206_zonas_zone-480x272.png
+- zone-100x260 (zonas): byte-identical to 031_dial_op-mm-mark.png, 032_dial_op-mm-text.png, 041_texto_tx-scalelabels.png, 201_zonas_zone-200x200.png, 202_zonas_zone-260x220.png, 204_zonas_zone-120x220.png, 206_zonas_zone-480x272.png
+- zone-480x272 (zonas): byte-identical to 031_dial_op-mm-mark.png, 032_dial_op-mm-text.png, 041_texto_tx-scalelabels.png, 201_zonas_zone-200x200.png, 202_zonas_zone-260x220.png, 204_zonas_zone-120x220.png, 205_zonas_zone-100x260.png
+- st-normal (themes): byte-identical to 001_estado_st-normal.png, 009_color_color-rail-ok.png, 009_color_color-rail-ok__stock.png, 027_dial_op-style-needle.png, 199_zonas_zone-160x160.png, 200_zonas_zone-200x160.png, 203_zonas_zone-300x150.png
+- st-crit (themes): byte-identical to 003_estado_st-crit.png, 010_color_color-rail-crit.png, 010_color_color-rail-crit__stock.png, 029_dial_op-chip-off-crit.png
+- color-static-ok (themes): byte-identical to 005_color_color-static-ok.png, 007_color_color-threshold-ok.png, 007_color_color-threshold-ok__stock.png, 011_color_color-gradient-ok.png, 011_color_color-gradient-ok__stock.png
+- color-threshold-ok (themes): byte-identical to 005_color_color-static-ok.png, 005_color_color-static-ok__stock.png, 007_color_color-threshold-ok.png, 011_color_color-gradient-ok.png, 011_color_color-gradient-ok__stock.png
+- color-rail-ok (themes): byte-identical to 001_estado_st-normal.png, 001_estado_st-normal__stock.png, 009_color_color-rail-ok.png, 027_dial_op-style-needle.png, 199_zonas_zone-160x160.png, 200_zonas_zone-200x160.png, 203_zonas_zone-300x150.png
+- color-rail-crit (themes): byte-identical to 003_estado_st-crit.png, 003_estado_st-crit__stock.png, 010_color_color-rail-crit.png, 029_dial_op-chip-off-crit.png
+- color-gradient-ok (themes): byte-identical to 005_color_color-static-ok.png, 005_color_color-static-ok__stock.png, 007_color_color-threshold-ok.png, 007_color_color-threshold-ok__stock.png, 011_color_color-gradient-ok.png
+- color-sections-ok (themes): byte-identical to 013_color_color-sections-ok.png, 042_acento_ac-default.png
+- st-normal (themes): byte-identical to 025_color_color-rail-ok__gaugeprolab-light.png
+- st-crit (themes): byte-identical to 026_color_color-rail-crit__gaugeprolab-light.png
+- color-static-ok (themes): byte-identical to 023_color_color-threshold-ok__gaugeprolab-light.png, 027_color_color-gradient-ok__gaugeprolab-light.png
+- color-threshold-ok (themes): byte-identical to 021_color_color-static-ok__gaugeprolab-light.png, 027_color_color-gradient-ok__gaugeprolab-light.png
+- color-rail-ok (themes): byte-identical to 017_estado_st-normal__gaugeprolab-light.png
+- color-rail-crit (themes): byte-identical to 019_estado_st-crit__gaugeprolab-light.png
+- color-gradient-ok (themes): byte-identical to 021_color_color-static-ok__gaugeprolab-light.png, 023_color_color-threshold-ok__gaugeprolab-light.png
+- st-normal (themes): byte-identical to 041_color_color-rail-ok__gaugeprolab-dark.png
+- st-crit (themes): byte-identical to 042_color_color-rail-crit__gaugeprolab-dark.png
+- color-static-ok (themes): byte-identical to 039_color_color-threshold-ok__gaugeprolab-dark.png, 043_color_color-gradient-ok__gaugeprolab-dark.png
+- color-threshold-ok (themes): byte-identical to 037_color_color-static-ok__gaugeprolab-dark.png, 043_color_color-gradient-ok__gaugeprolab-dark.png
+- color-rail-ok (themes): byte-identical to 033_estado_st-normal__gaugeprolab-dark.png
+- color-rail-crit (themes): byte-identical to 035_estado_st-crit__gaugeprolab-dark.png
+- color-gradient-ok (themes): byte-identical to 037_color_color-static-ok__gaugeprolab-dark.png, 039_color_color-threshold-ok__gaugeprolab-dark.png
