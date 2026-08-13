@@ -182,8 +182,8 @@ both during the transition.
 Stock Lua 5.3, no radio needed:
 
 ```sh
-lua5.3 tests/run_tests.lua  ./          # pure modules         (70 tests)
-lua5.3 tests/smoke_test.lua ./          # legacy lifecycle    (201 tests)
+lua5.3 tests/run_tests.lua  ./          # pure modules         (72 tests)
+lua5.3 tests/smoke_test.lua ./          # legacy lifecycle    (210 tests)
 lua5.3 tests/widgets_test.lua ./        # split contracts      (17 tests)
 lua5.3 dev/split_resources.lua ./       # chunks/RAM/callback gates
 lua5.3 dev/collide.lua      ./          # geometric collision audit
@@ -200,8 +200,20 @@ Real-firmware visual validation (from `tools/gaugepro-visual-kit/`):
 ```sh
 python run.py check                   # contracts + split model YAML, no simu
 python run.py capture --track2-only   # 8 real-firmware Dial/Bar layouts
-python run.py all                     # full catalog + generated report
+python run.py all                     # 272 fresh captures + generated report
+python settings_probe.py              # open/scroll the real Bar settings form
 ```
+
+The native visual track declares real model telemetry sensors and feeds scalar
+RSSI, RxBt, and T1 samples through the simulator's firmware telemetry path. It
+also controls link state and post-boot value transitions, so Auto source
+selection, NO LINK/NO DATA/STALE, history, low-is-good behavior, and Damping
+0/9 are screenshots of runtime behavior rather than painted fixtures. The
+current catalog has 216 option scenes, eight layout galleries, 48 theme
+captures, and eight explicit rich-source skips (CELLS tables, timer, and one
+descending-history sequence). See
+[`docs/visual-kit/RUN_SUMMARY.md`](docs/visual-kit/RUN_SUMMARY.md) and the
+[real settings evidence](docs/visual-kit/settings/S02-settings-top.png).
 
 The mock enforces the firmware's real contract — property allow-lists per
 object type, `{x, y}` point arrays, the missing string metatable, 10 ms

@@ -661,11 +661,13 @@ test("Phase 2: min and max bar markers hide and show independently", function()
   })
   mock.setValue(ID_STICK, 50); refresh(w)
   w.history.min, w.history.max = nil, 80
+  w.history.gen = (w.history.gen or 0) + 1
   w.mods.bar.update(w)
   assertEq(w.ui.minMark.visible, false, "minimum absent")
   assertEq(w.ui.maxMark.visible, true, "maximum remains")
   assertEq(w.ui.ghost.visible, false, "ghost requires a complete sweep")
   w.history.min, w.history.max = 20, nil
+  w.history.gen = (w.history.gen or 0) + 1
   w.mods.bar.update(w)
   assertEq(w.ui.minMark.visible, true, "minimum remains")
   assertEq(w.ui.maxMark.visible, false, "maximum absent")
@@ -3220,6 +3222,38 @@ test("every layout keeps its objects inside the zone", function()
     end
   end
   lvgl.LCD_SCALE = 1.0
+end)
+
+test("fullscreen Bar composes value, rail and history as one instrument", function()
+  local w = newWidget({ x = 0, y = 0, w = 800, h = 480 }, {
+    Source = ID_RSSI, Style = "Bar", ShowMinMax = "Markers + text",
+  }, nil, nil, 1.375)
+  refresh(w)
+  local L = w.layout
+  assertEq(L.fullscreenBar, true)
+  local valueBottom = L.valueBox.y + L.valueBox.h
+  local gap = L.barOuter.y - valueBottom
+  assertTrue(gap >= 0 and gap <= w.mods.theme.px(24),
+    "value-to-rail gap is bounded, got " .. tostring(gap))
+  assertTrue(L.barOuter.h >= w.mods.theme.px(20),
+    "fullscreen rail is glanceable")
+  assertEq(L.minMaxFont, w.mods.theme.FONTS.XS,
+    "fullscreen history captions are promoted one font step")
+end)
+
+test("explicit Bar LIMIT stays visible when quiet chips are disabled", function()
+  local w = newWidget({ x = 0, y = 0, w = 400, h = 120 }, {
+    Source = ID_RSSI, Style = "Bar", ShowChip = false,
+    BarFace = "Hex", Segments = "24",
+  })
+  refresh(w, 5)
+  assertTrue(w.limitNotice ~= nil,
+    "notice missing; downgrades=" .. table.concat(w.barVisual.downgrades, ","))
+  assertEq(w.frame.stateStr, "LIMIT",
+    "notice=" .. tostring(w.limitNotice.reason)
+      .. " frame=" .. tostring(w.frame.chipNotice))
+  assertEq(w.frame.chipShown, true)
+  assertEq(w.ui.stateLabel.visible, true)
 end)
 
 test("P1-2: the bar's degradation ladder is monotonic at every scale", function()

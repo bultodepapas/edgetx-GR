@@ -1021,7 +1021,12 @@ M.sections = {
           ctx.mock.setValue(ctx.srcId, 75)
           ctx.mock.advance(50)
           ctx.mod.refresh(ctx.widget)
-        end },
+         end },
+      { name = "br-limit-segments", title = "LIMIT / explicit Hex 24 -> responsive",
+        zone = { 100, 70 }, opts = {
+          Style = "Bar", BarFace = "Hex", Segments = "24",
+          Damping = 0,
+        }, value = 78 },
       { name = "br-desc-history", title = "descending / min max ghost",
         zone = { 320, 90 }, source = "Thr", opts = {
           Style = "Bar", Scale = "Manual", Min = 100, Max = 0,

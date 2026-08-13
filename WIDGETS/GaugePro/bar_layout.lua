@@ -42,6 +42,13 @@ local function barLayout(widget, cfg, L, w, h)
   L.nameFont = T.FONTS.XS
   L.stateFont = T.FONTS.XS
   L.minMaxFont = T.FONTS.XXS
+  -- A real fullscreen landscape instrument needs a composed visual block,
+  -- not a value centred in all remaining height with a rail pinned to the
+  -- bottom. This flag changes pixels only; the stored option contract and all
+  -- compact degradation rules remain untouched.
+  local fullscreen = w >= T.px(400) and h >= T.px(240)
+  L.fullscreenBar = fullscreen
+  if fullscreen then L.minMaxFont = T.FONTS.XS end
   local nameH = T.fontHeight(L.nameFont)
   local stateH = T.fontHeight(L.stateFont)
   -- the smallest font the value can use: the value region must never drop
@@ -147,7 +154,16 @@ local function barLayout(widget, cfg, L, w, h)
     barH = max(h - textH - max(rowH, L.markOverhang) - pad * 3, T.px(2))
   end
 
-  local valueRegion = box(pad, pad, w - pad * 2, textH)
+  local groupTop = pad
+  if fullscreen then
+    barH = clamp(floor(h * 0.09), T.px(24), T.px(42))
+    textH = clamp(floor(h * 0.26), T.fontHeight(T.FONTS.XL), T.px(124))
+    local below = max(rowH, L.markOverhang)
+    local groupH = textH + barH + below + pad * 3
+    groupTop = max(pad, floor((h - groupH) / 2))
+  end
+
+  local valueRegion = box(pad, groupTop, w - pad * 2, textH)
   placeValue(L, valueRegion, F.widestSample(widget),
              L.showUnit and widget.unitText or "",
              (h < T.px(60)) and T.FONTS.M or nil)
@@ -179,7 +195,7 @@ local function barLayout(widget, cfg, L, w, h)
     end
   end
 
-  L.bar = box(pad, pad + textH + pad, w - pad * 2, barH)
+  L.bar = box(pad, groupTop + textH + pad, w - pad * 2, barH)
   -- Below roughly 24 px of zone height nothing fits honestly any more: textH
   -- has already been floored at the smallest font in the ramp (P1-4) and barH
   -- at px(2), and the two plus the padding still exceed the zone. Slide the
@@ -369,7 +385,7 @@ function M.applyBarVisual(L, visual, cfg)
   elseif visual.thickness == "maximum" then
     wanted = maximum
   else
-    wanted = T.px(large and 14 or 10)
+    wanted = T.px((large and L.fullscreenBar) and 20 or large and 14 or 10)
   end
   wanted = clamp(wanted, min(maximum, T.px(2)), maximum)
 

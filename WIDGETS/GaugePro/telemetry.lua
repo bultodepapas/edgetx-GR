@@ -273,8 +273,20 @@ local function readHistorySiblings(widget)
   local lo = s.minId and getSourceValue(s.minId) or nil
   local hi = s.maxId and getSourceValue(s.maxId) or nil
   local gotAny = false
-  if type(lo) == "number" then h.min = lo; gotAny = true end
-  if type(hi) == "number" then h.max = hi; gotAny = true end
+  local changed = false
+  if type(lo) == "number" then
+    gotAny = true
+    if h.min == nil or lo < h.min or h.min < lo then
+      h.min, changed = lo, true
+    end
+  end
+  if type(hi) == "number" then
+    gotAny = true
+    if h.max == nil or hi < h.max or h.max < hi then
+      h.max, changed = hi, true
+    end
+  end
+  if changed then h.gen = (h.gen or 0) + 1 end
   return gotAny
 end
 
@@ -307,12 +319,15 @@ M.historyTrustworthy = historyTrustworthy
 -- for this reading's units, not only when the source has no sibling sensors.
 local function trackHistory(widget, value)
   local h = widget.history
+  local changed = false
   if h.min == nil then
     h.min, h.max = value, value
+    changed = true
   else
-    if value < h.min then h.min = value end
-    if value > h.max then h.max = value end
+    if value < h.min then h.min, changed = value, true end
+    if value > h.max then h.max, changed = value, true end
   end
+  if changed then h.gen = (h.gen or 0) + 1 end
 end
 
 -- Read the source and update widget.data.
@@ -436,6 +451,7 @@ end
 function M.resetHistory(widget)
   widget.history.min = nil
   widget.history.max = nil
+  widget.history.gen = (widget.history.gen or 0) + 1
 end
 
 return M

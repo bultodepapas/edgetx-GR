@@ -9,10 +9,10 @@
  *   simu.armCapture(path)        - deterministic one-shot PNG of the next frame
  *   simu.reset()                 - full simulator reset (hot reload)
  *
- * Telemetry injection is intentionally NOT here: the public global
- * setTelemetryValue(id, subId, instance, value, unit, prec, name) already
- * registers real sensors through the real sensor registry, which is what the
- * harness needs for truthful getValue()/getFieldInfo()/CELLS behaviour.
+ * Telemetry values stay on the public setTelemetryValue() path.  The public
+ * API does not, however, emulate receiver streaming or telemetryData.rssi;
+ * setTelemetryLink() supplies that simulator-only transport state so Lua
+ * values exercise the same availability contract as live radio packets.
  *
  * License GPLv2: http://www.gnu.org/licenses/gpl-2.0.html
  */
@@ -27,6 +27,8 @@
 #include "switches.h"
 #include "strhelpers.h"
 #include "hal/adc_driver.h"
+#include "telemetry/telemetry.h"
+#include "telemetry/frsky.h"
 
 #if defined(SIMU) && defined(WIDGET_STUDIO)
 
@@ -85,6 +87,18 @@ static int luaSimuArmCapture(lua_State* L)
   return 1;
 }
 
+static int luaSimuSetTelemetryLink(lua_State* L)
+{
+  int rssi = luaL_checkinteger(L, 1);
+  if (rssi < 0) rssi = 0;
+  if (rssi > 99) rssi = 99;
+  simuTelemetryLinkRssi = (uint8_t)rssi;
+  telemetryData.rssi.set((uint8_t)rssi);
+  telemetryStreaming = rssi > 0 ? TELEMETRY_TIMEOUT10ms : 0;
+  lua_pushboolean(L, true);
+  return 1;
+}
+
 static int luaSimuReset(lua_State* L)
 {
   // Deliberately async: the native simu main loop consumes the request between
@@ -98,6 +112,7 @@ extern "C" {
 LROT_BEGIN(simulib, NULL, 0)
   LROT_FUNCENTRY( setSwitch, luaSimuSetSwitch )
   LROT_FUNCENTRY( setAnalog, luaSimuSetAnalog )
+  LROT_FUNCENTRY( setTelemetryLink, luaSimuSetTelemetryLink )
   LROT_FUNCENTRY( armCapture, luaSimuArmCapture )
   LROT_FUNCENTRY( reset, luaSimuReset )
 LROT_END(simulib, NULL, 0)

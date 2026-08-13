@@ -13,16 +13,30 @@
 
 local DATA_PATH = "/SCRIPTS/gpvk_telemetry.lua"
 local appliedGeneration = -1
+local current = { link = false, feed = false, sensors = {} }
 
 local function apply()
   local chunk = loadScript(DATA_PATH, "t")
-  if not chunk then return end
-  local ok, data = pcall(chunk)
-  if not ok or type(data) ~= "table" then return end
-  if data.generation == appliedGeneration then return end
+  if chunk then
+    local ok, data = pcall(chunk)
+    if ok and type(data) == "table"
+        and data.generation ~= appliedGeneration then
+      current = data
+      appliedGeneration = data.generation
+    end
+  end
 
-  for i = 1, #data.sensors do
-    local s = data.sensors[i]
+  -- setTelemetryValue() owns real sensor values/currentness, but it does not
+  -- raise EdgeTX's receiver-streaming flag. The Widget Studio-only hook fills
+  -- that transport layer. Guard it so this helper remains harmless if copied
+  -- to a normal radio by mistake.
+  if type(simu) == "table" and type(simu.setTelemetryLink) == "function" then
+    simu.setTelemetryLink(current.link == false and 0 or (current.rssi or 90))
+  end
+  if current.feed == false then return end
+
+  for i = 1, #(current.sensors or {}) do
+    local s = current.sensors[i]
     -- First call registers the sensor (its value is ignored on that call
     -- per the setTelemetryValue contract); call again immediately so the
     -- value takes effect the same frame instead of one generation late.
@@ -33,7 +47,6 @@ local function apply()
         s.unit or 0, s.prec or 0)
     end
   end
-  appliedGeneration = data.generation
 end
 
 local function create(zone)

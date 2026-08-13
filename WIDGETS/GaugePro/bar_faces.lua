@@ -1078,17 +1078,22 @@ local function segmentedPalette(widget, objects, palette, state)
   end
   local stateColored = widget.config.colorMode ~= R.COLOR_GRADIENT
     and widget.config.colorMode ~= R.COLOR_SECTIONS
-  for i = 1, #objects.faceCells do
-    local cell = objects.faceCells[i]
-    if paletteChanged then
-      if not cell.role then
-        cell.role = roleAt(objects.faceRoleBands, cell.position)
+  -- The cell loop is the dominant ordinary-frame tax on true Hex (three LVGL
+  -- primitives per cell). Palette and semantic fill are normally stable, so
+  -- do not scan a retained array merely to take neither branch ten times.
+  if paletteChanged or (colorChanged and stateColored) then
+    for i = 1, #objects.faceCells do
+      local cell = objects.faceCells[i]
+      if paletteChanged then
+        if not cell.role then
+          cell.role = roleAt(objects.faceRoleBands, cell.position)
+        end
+        cell.referenceColor, cell.activeColor = colorsForCell(
+          widget, cell, palette, fill)
+        cell.baseOpacity = baseOpacity(widget, cell, palette)
+      else
+        cell.activeColor = fill
       end
-      cell.referenceColor, cell.activeColor = colorsForCell(
-        widget, cell, palette, fill)
-      cell.baseOpacity = baseOpacity(widget, cell, palette)
-    elseif colorChanged and stateColored then
-      cell.activeColor = fill
     end
   end
   objects.repaintAll = paletteChanged

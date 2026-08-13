@@ -145,6 +145,77 @@ local function pick(index, values, inherited)
   return values[index] or inherited
 end
 
+local function hasReason(list, reason)
+  for i = 1, #list do
+    if list[i] == reason then return true end
+  end
+  return false
+end
+
+local function addDowngrade(visual, reason)
+  if not hasReason(visual.downgrades, reason) then
+    visual.downgrades[#visual.downgrades + 1] = reason
+  end
+end
+
+-- Convert renderer-facing downgrade strings into a user-facing diagnostic
+-- only when the pilot made an explicit choice that could not be honoured.
+-- Auto/preset responsiveness remains silent: it is the purpose of Auto.
+-- The full reason stays available for support while the retained UI only has
+-- to render the bounded, translated-independent word "LIMIT".
+function M.syncNotices(visual, cfg)
+  if not visual then return nil end
+  cfg = cfg or {}
+  local notices = {}
+  for i = 1, #(visual.downgrades or {}) do
+    local reason = visual.downgrades[i]
+    local explicit, requested, effective = false, reason, "responsive"
+    if reason == "motion-responsive" then
+      explicit = cfg.motion == 5
+      requested, effective = "expressive", visual.effectiveMotion
+    elseif reason == "dual-rail-requires-zero-origin"
+        or reason == "dual-rail-zero-outside-range" then
+      explicit = cfg.barFace == 7 or cfg.barPreset == 7
+        or (cfg.barOrigin or 1) > 1
+      requested, effective = "dual-rail", visual.face
+    elseif reason == "zero-origin-clamped" then
+      explicit = cfg.barOrigin == 3 or cfg.barPreset == 7
+      requested, effective = "zero", "scale-bound"
+    elseif string.sub(reason, 1, 8) == "segments" then
+      explicit = (cfg.segments or 1) > 1
+      requested = SEGMENTS[cfg.segments] or visual.segments
+      effective = visual.renderedSegments or visual.segments
+    elseif reason == "blocks-chamfer-to-square" then
+      explicit = cfg.barEnds == 4
+      requested, effective = "chamfer", visual.ends
+    elseif reason == "surface-compact" then
+      explicit = (cfg.surface or 1) > 1
+      requested, effective = SURFACE[cfg.surface] or "panel", visual.surface
+    elseif reason == "hex-compact-blocks" then
+      explicit = cfg.barFace == 4 or cfg.barPreset == 4
+      requested, effective = "hex", "compact-blocks"
+    elseif string.sub(reason, 1, 19) == "face-phase-pending:" then
+      explicit = (cfg.barFace or 1) > 1
+      requested, effective = visual.requestedFace, "continuous"
+    elseif string.sub(reason, 1, 6) == "theme-" then
+      explicit = (cfg.palette or 1) > 1 or (cfg.surface or 1) > 1
+      requested, effective = "theme-role", "safe-color"
+    end
+    if explicit then
+      notices[#notices + 1] = {
+        requested = requested,
+        effective = effective,
+        reason = reason,
+        explicit = true,
+        text = "LIMIT",
+      }
+    end
+  end
+  visual.notices = notices
+  visual.notice = notices[1]
+  return visual.notice
+end
+
 local function zoneProfile(zone)
   local w = max(1, tonumber(zone and zone.w) or 1)
   local h = max(1, tonumber(zone and zone.h) or 1)
@@ -424,6 +495,7 @@ function M.resolve(widget, cfg)
      and (profile.family == "micro" or profile.family == "short") then
     visual.effectiveMotion = "refined"
     visual.motionReduced = true
+    addDowngrade(visual, "motion-responsive")
   end
   visual.face = visual.requestedFace
   if visual.direction == "auto" then visual.direction = autoDirection(profile) end
@@ -432,7 +504,7 @@ function M.resolve(widget, cfg)
     visual.origin = "zero"
   elseif visual.face == "dual-rail" and visual.origin ~= "zero" then
     visual.face = "continuous"
-    visual.downgrades[#visual.downgrades + 1] = "dual-rail-requires-zero-origin"
+    addDowngrade(visual, "dual-rail-requires-zero-origin")
   end
 
   local lo, hi = min(cfg.min or 0, cfg.max or 0), max(cfg.min or 0, cfg.max or 0)
@@ -440,12 +512,12 @@ function M.resolve(widget, cfg)
   local signedZero = lo < 0 and hi > 0
   visual.zeroInside = zeroInside
   if visual.origin == "zero" and not zeroInside then
-    visual.downgrades[#visual.downgrades + 1] = "zero-origin-clamped"
+    addDowngrade(visual, "zero-origin-clamped")
   end
   if visual.face == "dual-rail" and not signedZero then
     visual.face = "continuous"
     visual.origin = "scale-low"
-    visual.downgrades[#visual.downgrades + 1] = "dual-rail-zero-outside-range"
+    addDowngrade(visual, "dual-rail-zero-outside-range")
   end
 
   if visual.face == "ticks" and visual.segmentsAuto
@@ -457,15 +529,15 @@ function M.resolve(widget, cfg)
   if visual.segments ~= requestedCount then
     local reason = (not profile.compact and visual.segments < requestedCount)
       and "segments-object-budget" or "segments-responsive"
-    visual.downgrades[#visual.downgrades + 1] = reason
+    addDowngrade(visual, reason)
   end
   if visual.face == "blocks" and visual.ends == "chamfer" then
     visual.ends = "square"
-    visual.downgrades[#visual.downgrades + 1] = "blocks-chamfer-to-square"
+    addDowngrade(visual, "blocks-chamfer-to-square")
   end
   if profile.family == "micro" and visual.surface ~= "transparent" then
     visual.surface = "transparent"
-    visual.downgrades[#visual.downgrades + 1] = "surface-compact"
+    addDowngrade(visual, "surface-compact")
   end
 
   visual.configSig = M.configSignature(cfg)
@@ -495,8 +567,9 @@ function M.resolve(widget, cfg)
   -- input signature, so the reason has to be copied here on every resolve
   -- rather than appended inside paletteFor, which would duplicate it.
   if palette.themeDowngrade then
-    visual.downgrades[#visual.downgrades + 1] = palette.themeDowngrade
+    addDowngrade(visual, palette.themeDowngrade)
   end
+  M.syncNotices(visual, cfg)
   if widget then
     local now = (type(getTime) == "function") and getTime() or 0
     if palette ~= previous or widget.barThemeCheckAt == nil then

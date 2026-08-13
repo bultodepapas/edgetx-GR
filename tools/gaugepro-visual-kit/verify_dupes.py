@@ -17,12 +17,17 @@ Usage: python verify_dupes.py
 """
 
 import hashlib
+import json
 import os
 import re
+import sys
 
 SHOTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "..", "..", "WIDGETS", "GaugePro", "docs",
                           "visual-kit", "screenshots")
+RUNLOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "..", "..", "WIDGETS", "GaugePro", "dev",
+                           "visual-kit-run", "run.log.jsonl")
 
 # Case-name pairs that SHOULD render identically, with the reason. Everything
 # else in a duplicate group is signal.
@@ -47,11 +52,9 @@ EXPECTED_IDENTICAL = [
      "compact differs only in a canvas size this track renders full-screen"),
     (r"^zone-\d+x\d+$",
      "zone sizes that map onto the same real EdgeTX layout zone"),
-    (r"^(sc-preset|sc-lowgood)$",
-     "known limitation: every scene drives TX_VOLTAGE, so cases that "
-     "differed only by SOURCE collapse (see README)"),
-    (r"^f5-auto-(ch1|thr)$",
-     "same limitation: both resolve through the same injected source"),
+    (r"^(st-nolink|op-chip-on)$",
+     "ShowChip defaults to On, so the explicit On case intentionally "
+     "restates the same NO LINK state"),
     (r"^(ac-default|color-sections-ok)$",
      "the default accent case IS the Sections case: identical option sets"),
     (r"^(op-mm-text|tx-scalelabels|zone-\d+x\d+)$",
@@ -85,7 +88,8 @@ def classify_group(names):
     return None, cases
 
 
-def find_duplicate_groups(shots_dir=SHOTS_DIR, only_unexpected=False):
+def find_duplicate_groups(shots_dir=SHOTS_DIR, only_unexpected=False,
+                          allowed_files=None):
     """{sha1: [filename, ...]} for every group of 2+ byte-identical PNGs in
     `shots_dir`, filenames sorted for determinism. Empty dict if the
     directory doesn't exist yet (a fresh checkout before the first run).
@@ -95,7 +99,9 @@ def find_duplicate_groups(shots_dir=SHOTS_DIR, only_unexpected=False):
     if not os.path.isdir(shots_dir):
         return {}
     by_hash = {}
-    files = sorted(f for f in os.listdir(shots_dir) if f.endswith(".png"))
+    files = sorted(f for f in os.listdir(shots_dir)
+                   if f.endswith(".png") and
+                   (allowed_files is None or f in allowed_files))
     for f in files:
         path = os.path.join(shots_dir, f)
         with open(path, "rb") as fh:
@@ -109,12 +115,31 @@ def find_duplicate_groups(shots_dir=SHOTS_DIR, only_unexpected=False):
 
 
 def main():
-    dupes = find_duplicate_groups()
-    total = sum(1 for f in os.listdir(SHOTS_DIR) if f.endswith(".png")) \
-        if os.path.isdir(SHOTS_DIR) else 0
+    rows = []
+    if os.path.isfile(RUNLOG_PATH):
+        with open(RUNLOG_PATH, "r", encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+    expected = {r["file"] for r in rows if r.get("file")}
+    actual = ({f for f in os.listdir(SHOTS_DIR) if f.endswith(".png")}
+              if os.path.isdir(SHOTS_DIR) else set())
+    missing = sorted(expected - actual)
+    unreferenced = sorted(actual - expected)
+    capture_rows = [r for r in rows if r.get("file")]
+    run_ids = {r.get("run_id") for r in capture_rows}
+    provenance_error = (not capture_rows or len(run_ids) != 1 or None in run_ids or
+                        any(not r.get("fresh") for r in capture_rows))
+
+    dupes = find_duplicate_groups(allowed_files=expected)
+    total = len(expected)
     unique = total - sum(len(v) - 1 for v in dupes.values())
     print("%d files, %d unique, %d duplicate groups" %
           (total, unique, len(dupes)))
+    if missing:
+        print("  ERROR: %d referenced PNG(s) missing" % len(missing))
+    if unreferenced:
+        print("  ERROR: %d unreferenced PNG(s) present" % len(unreferenced))
+    if provenance_error:
+        print("  ERROR: run log is missing a single all-fresh run provenance")
     unexpected = 0
     for _h, names in sorted(dupes.items(), key=lambda kv: kv[1][0]):
         reason, cases = classify_group(names)
@@ -126,8 +151,8 @@ def main():
             unexpected += 1
             print("  UNEXPECTED:", ", ".join(cases))
     print("%d unexpected duplicate group(s)" % unexpected)
-    return dupes
+    return 1 if missing or unreferenced or provenance_error or unexpected else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -66,6 +66,10 @@ struct telemetry_buffer {
 };
 
 uint8_t telemetryStreaming = 0;
+#if defined(SIMU) && defined(WIDGET_STUDIO)
+uint8_t simuTelemetryLinkRssi = 0;
+static uint8_t simuTelemetryLinkTicks = 0;
+#endif
 uint8_t telemetryState = TELEMETRY_INIT;
 
 TelemetryData telemetryData;
@@ -392,6 +396,26 @@ void telemetryWakeup()
 
 void telemetryInterrupt10ms()
 {
+#if defined(SIMU) && defined(WIDGET_STUDIO)
+  // A fullscreen main-view layout does not refresh topbar widgets. Once the
+  // harness declares a link, refresh its transport timeout here just as a
+  // continuing packet stream would. Sensor values themselves still travel
+  // through setTelemetryValue(), preserving the real registry/currentness
+  // path used by Gauge Pro.
+  if (simuTelemetryLinkRssi > 0) {
+    // Pose a 10 Hz receiver packet stream instead of pinning the timeout on
+    // every 10 ms interrupt. The cadence keeps the transport alive while
+    // still allowing TelemetryItem::timeout to age naturally when a single
+    // sensor stops publishing (the real STALE contract).
+    if (++simuTelemetryLinkTicks >= 10) {
+      simuTelemetryLinkTicks = 0;
+      telemetryData.rssi.set(simuTelemetryLinkRssi);
+      telemetryStreaming = TELEMETRY_TIMEOUT10ms;
+    }
+  } else {
+    simuTelemetryLinkTicks = 0;
+  }
+#endif
   if (telemetryStreaming > 0) {
     bool tick160ms = (telemetryStreaming & 0x0F) == 0;
     for (int i=0; i<MAX_TELEMETRY_SENSORS; i++) {

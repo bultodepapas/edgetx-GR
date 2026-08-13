@@ -16,10 +16,11 @@ local M = {}
 
 local abs, floor, max = math.abs, math.floor, math.max
 
-local T, G, F, R, Faces, Motion  -- shared helpers + retained face registry
+local T, G, F, R, Faces, Motion, BarStyle
 
-function M.setup(theme, geometry, format, renderer, faces, motion)
-  T, G, F, R, Faces, Motion = theme, geometry, format, renderer, faces, motion
+function M.setup(theme, geometry, format, renderer, faces, motion, barStyle)
+  T, G, F, R, Faces, Motion, BarStyle =
+    theme, geometry, format, renderer, faces, motion, barStyle
   -- Source-edit text path: shared with the dial (Tanda 6 F-15). The bar has
   -- no scale labels, so the shared helper's guarded fields no-op here. The
   -- alias is assigned HERE - R is nil until setup runs.
@@ -91,6 +92,9 @@ function M.build(widget)
   visual.faceFallback = fallback
   if fallback then visual.downgrades[#visual.downgrades + 1] = fallback end
   assert(face.build(widget, b, visual), "GaugePro: bar face build failed")
+  if BarStyle then
+    widget.limitNotice = BarStyle.syncNotices(visual, cfg)
+  end
 
   -- threshold marks on the track, the linear equivalent of the dial's rail.
   -- Compare the NORMALISED position, not the raw value against cfg.min/max:
@@ -266,6 +270,21 @@ end
 local function updateHistory(widget)
   local ui, frame = widget.ui, widget.frame
   local h = widget.history
+  local historyGen = h.gen or 0
+  if frame.historyGen == historyGen then return end
+  frame.historyGen = historyGen
+  -- History changes far less often than telemetry. Gate on the authored
+  -- extrema before normalising/formatting them: the previous path recomputed
+  -- three axis positions and two strings on every moving frame even while the
+  -- extrema were unchanged. Ordering is used instead of mixed int/float `==`
+  -- for the same EdgeTX Lua-number reason as the segmented renderer.
+  local minSame = h.min ~= nil and frame.historyMin ~= nil
+    and h.min >= frame.historyMin and frame.historyMin >= h.min
+  local maxSame = h.max ~= nil and frame.historyMax ~= nil
+    and h.max >= frame.historyMax and frame.historyMax >= h.max
+  local minChanged = not minSame and (h.min ~= nil or frame.historyMin ~= nil)
+  local maxChanged = not maxSame and (h.max ~= nil or frame.historyMax ~= nil)
+  frame.historyMin, frame.historyMax = h.min, h.max
   -- Both marks LEAVE when the history is cleared (the reset switch, a source
   -- change, a range edit). They used to stay behind pointing at a peak that
   -- no longer existed, and only corrected themselves on the next valid
@@ -280,49 +299,53 @@ local function updateHistory(widget)
       -- bounds are required: readHistorySiblings can populate one alone, and
       -- the descending peak picks either one (Tanda 6 F-8 hardens the guard).
       local peak = (widget.config.max >= widget.config.min) and h.max or h.min
-      local position = markPosition(widget, peak)
-      if position ~= frame.ghostPos then
+      local peakSame = frame.historyPeak ~= nil
+        and peak >= frame.historyPeak and frame.historyPeak >= peak
+      if not peakSame then
+        frame.historyPeak = peak
+        local position = markPosition(widget, peak)
         frame.ghostPos, frame.ghostX = position, position
         moveMark(ui, "ghost", widget.layout.axis, position)
       end
     elseif frame.ghostX ~= -1 then
+      frame.historyPeak = nil
       frame.ghostX, frame.ghostPos = -1, -1
       lvgl.hide(ui.ghost)
     end
   end
   if ui.minMark then
-    if h.min then
+    if h.min and minChanged then
       local position = markPosition(widget, h.min)
-      if position ~= frame.minPos then
-        frame.minPos, frame.minX = position, position
-        moveMark(ui, "minMark", widget.layout.axis, position)
-      end
+      frame.minPos, frame.minX = position, position
+      moveMark(ui, "minMark", widget.layout.axis, position)
     elseif frame.minX ~= -1 then
-      frame.minX, frame.minPos = -1, -1
-      lvgl.hide(ui.minMark)
+      if not h.min then
+        frame.minX, frame.minPos = -1, -1
+        lvgl.hide(ui.minMark)
+      end
     end
   end
   if ui.maxMark then
-    if h.max then
+    if h.max and maxChanged then
       local position = markPosition(widget, h.max)
-      if position ~= frame.maxPos then
-        frame.maxPos, frame.maxX = position, position
-        moveMark(ui, "maxMark", widget.layout.axis, position)
-      end
+      frame.maxPos, frame.maxX = position, position
+      moveMark(ui, "maxMark", widget.layout.axis, position)
     elseif frame.maxX ~= -1 then
-      frame.maxX, frame.maxPos = -1, -1
-      lvgl.hide(ui.maxMark)
+      if not h.max then
+        frame.maxX, frame.maxPos = -1, -1
+        lvgl.hide(ui.maxMark)
+      end
     end
   end
   if ui.minText then
-    local mn = h.min and F.display(widget, h.min) or ""
-    local mx = h.max and F.display(widget, h.max) or ""
-    if mn ~= frame.minStr then
+    if minChanged then
+      local mn = h.min and F.display(widget, h.min) or ""
       frame.minStr = mn
       R.setProp(widget, ui.minText, "text",
                 (mn ~= "") and ("min " .. mn) or "")
     end
-    if mx ~= frame.maxStr then
+    if maxChanged then
+      local mx = h.max and F.display(widget, h.max) or ""
       frame.maxStr = mx
       R.setProp(widget, ui.maxText, "text",
                 (mx ~= "") and ("max " .. mx) or "")
@@ -450,10 +473,13 @@ function M.update(widget)
   if ui.stateLabel then
     -- State text can change only with semantic state or availability; value
     -- motion inside one band must not re-run the label classifier.
+    local noticeReason = widget.limitNotice and widget.limitNotice.reason
     if state.state ~= frame.chipState
-       or state.availability ~= frame.chipAvailability then
+       or state.availability ~= frame.chipAvailability
+       or noticeReason ~= frame.chipNotice then
       frame.chipState = state.state
       frame.chipAvailability = state.availability
+      frame.chipNotice = noticeReason
       local s = R.stateText(widget)
       frame.stateStr = s
       R.setProp(widget, ui.stateLabel, "text", s)
