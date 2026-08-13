@@ -179,23 +179,29 @@ M.ratio = {
   unitToValue     = 0.55,  -- unit font relative to the value font
   trackToRadius   = 0.14,
   railToTrack     = 0.34,
-  needleWidth     = 0.06,  -- half-width of the needle base, relative to radius
+  -- Needle keeps the track as the quiet reference and the active arc as a
+  -- subordinate position cue. Arc style does not consume this ratio: its arc
+  -- remains the full track thickness because it is the only value geometry.
+  needleArcToTrack = 0.62,
+  -- Exact Threshold marks cross the track and extend slightly towards the
+  -- ticks. The layout clamps the resulting physical lip to 1..2 pixels.
+  thresholdLipToTrack = 0.15,
+  needleWidth     = 0.055, -- half-width of the needle base, relative to radius
   -- Three-part taper (owner request, Tanda 5): two steps (thick body ->
   -- thin tip, review P-A) read as a paddle with a toothpick glued to the
   -- end - the width more than halves in one jump with almost no blend.
   -- A middle segment splits that single big step into two smaller ones.
-  needleBodyReach = 0.38,  -- base ends here (fraction of the inner->outer
-                           -- reach) - shorter than before, closest to the
-                           -- hub, to leave room for the mid segment
-  needleMidReach  = 0.72,  -- mid ends here; the tip carries the rest
+  needleBodyReach = 0.30,  -- short base establishes direction without reading
+                           -- as a second hub
+  needleMidReach  = 0.66,  -- longer mid/tip transitions make taper visible
   -- 0.62 looked right on paper but `floor(needleHalf * ratio)` collapses
   -- mid onto the tip's width at the canonical 200x160 base (needleHalf=3:
   -- floor(3*0.62)=1, same as the tip) - the 3rd step silently disappeared
   -- at the most common size. 0.7 clears that floor (floor(3*0.7)=2).
-  needleMidToHalf = 0.7,   -- mid half-width relative to the BASE half-width
-  needleTipToHalf = 0.35,  -- tip half-width relative to the base half-width
-                           -- (unchanged - already the minimum legible 2 px)
-  pivotRadius     = 0.09,
+  needleMidToHalf = 0.68,  -- mid half-width relative to the BASE half-width
+  needleTipToHalf = 0.32,  -- tip half-width relative to the base half-width;
+                           -- layout still enforces the legible 2 px minimum
+  pivotRadius     = 0.08,  -- one physical step smaller at the reference size
 }
 
 -- Physical size helper: LCD_SCALE is 0.8 / 1.0 / 1.375 for 320 / 480 / 800 px

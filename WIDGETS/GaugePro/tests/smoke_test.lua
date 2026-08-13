@@ -36,8 +36,8 @@ end
 -- ---- simulated radio -----------------------------------------------------
 
 local ID_RSSI, ID_CELLS, ID_TEMP_T1, ID_TIMER1, ID_STICK, ID_RXBT,
-      ID_AIL, ID_CH1, ID_TRIM, ID_GVAR =
-  3072, 3075, 3078, 200, 100, 3081, 101, 201, 202, 203
+      ID_AIL, ID_CH1, ID_TRIM, ID_GVAR, ID_TXV, ID_TXV_UP, ID_CUSTOM =
+  3072, 3075, 3078, 200, 100, 3081, 101, 201, 202, 203, 103, 104, 3090
 local ID_RSSI_MIN, ID_RSSI_MAX = 3073, 3074
 local ID_RXBT_MIN, ID_RXBT_MAX = 3082, 3083
 
@@ -58,6 +58,9 @@ local function setupRadio()
   mock.addField(ID_CH1, "CH1")
   mock.addField(ID_TRIM, "TrmA")
   mock.addField(ID_GVAR, "GV1")
+  mock.addField(ID_TXV, "tx-voltage")
+  mock.addField(ID_TXV_UP, "TX_VOLTAGE")
+  mock.addField(ID_CUSTOM, "custom_sensor", 1)
   mock.sim.sensors[0] = { name = "RSSI", prec = 0, unit = 17 }
   mock.sim.sensors[1] = { name = "RxBt", prec = 2, unit = 1 }
   mock.setValue(ID_RSSI, 70)
@@ -2735,6 +2738,287 @@ test("G-13: a wide horizontal zone grows the dial to the full height", function(
     "the value must fit the (narrower) text column")
 end)
 
+test("Phase 1: horizontal Dial composes header, main and optional footer", function()
+  local function inside(inner, outer)
+    return inner.x >= outer.x and inner.y >= outer.y
+      and inner.x + inner.w <= outer.x + outer.w
+      and inner.y + inner.h <= outer.y + outer.h
+  end
+  local function separated(a, b)
+    return a.y + a.h <= b.y or b.y + b.h <= a.y
+  end
+
+  -- 400x160 is the product-reference normal mode; 480x272 protects the same
+  -- composition in large mode. Only the normal case requests a footer so both
+  -- code paths (present/absent) are observable here.
+  for _, c in ipairs({
+    { w = 400, h = 160, mode = "normal", history = true },
+    { w = 480, h = 272, mode = "large", history = false },
+  }) do
+    local opts = { Source = ID_RSSI, Sweep = "270 deg" }
+    if c.history then opts.ShowMinMax = "Markers + text" end
+    local w = newWidget({ x = 0, y = 0, w = c.w, h = c.h }, opts)
+    local L = w.layout
+    assertEq(L.mode, c.mode)
+    assertEq(L.orientation, "horizontal")
+    assertTrue(L.horizontalInstrument, "the structured family is explicit")
+    assertTrue(L.headerBox and L.mainBox and L.footerBox,
+      "header/main/footer boxes must be first-class layout data")
+    assertTrue(separated(L.headerBox, L.mainBox),
+      "header and main bands must not intersect")
+    if L.showMinMaxText then
+      assertTrue(separated(L.mainBox, L.footerBox),
+        "main and visible footer bands must not intersect")
+      assertTrue(inside(L.minMaxBox, L.footerBox),
+        "min/max text belongs to the footer")
+    else
+      assertEq(L.footerBox.h, 0, "an absent footer reserves no height")
+    end
+    assertTrue(inside(L.nameBox, L.headerBox), "name belongs to the header")
+    -- The state label is centred in the taller badge footprint; its text box
+    -- itself remains within the header and horizontally disjoint from title.
+    assertTrue(inside(L.stateBox, L.headerBox), "state belongs to the header")
+    assertTrue(L.nameBox.x + L.nameBox.w <= L.stateBox.x,
+      "title and maximum badge reserve must not overlap")
+    assertTrue(inside(L.valueBox, L.mainBox), "value belongs to main")
+    assertTrue(inside(L.unitBox, L.mainBox), "unit belongs to main")
+  end
+end)
+
+test("Phase 1: horizontal state changes never relayout the instrument", function()
+  local w = newWidget({ x = 0, y = 0, w = 400, h = 160 },
+    { Source = ID_RSSI, Sweep = "270 deg" })
+  mock.setValue(ID_RSSI, 78)
+  refresh(w, 2)
+  assertTrue(not w.ui.chip.visible, "NORMAL remains visually silent")
+  local L = w.layout
+  local before = {
+    headerY = L.headerBox.y, mainY = L.mainBox.y,
+    valueY = L.valueBox.y, nameY = L.nameBox.y, stateY = L.stateBox.y,
+  }
+  mock.setValue(ID_RSSI, 22)
+  refresh(w, 2)
+  assertEq(w.frame.stateStr, "CRIT")
+  assertTrue(w.ui.chip.visible, "CRIT uses the reserved header badge")
+  assertEq(w.layout.headerBox.y, before.headerY)
+  assertEq(w.layout.mainBox.y, before.mainY)
+  assertEq(w.layout.valueBox.y, before.valueY)
+  assertEq(w.layout.nameBox.y, before.nameY)
+  assertEq(w.layout.stateBox.y, before.stateY)
+end)
+
+test("Phase 1: a rejected horizontal footer returns its height to main", function()
+  local off = newWidget({ x = 0, y = 0, w = 400, h = 160 },
+    { Source = ID_RSSI, ShowMinMax = "Markers" })
+  local noFooterH = off.layout.mainBox.h
+  local text = newWidget({ x = 0, y = 0, w = 400, h = 160 },
+    { Source = ID_RSSI, ShowMinMax = "Markers + text" })
+  assertTrue(text.layout.showMinMaxText, "reference footer must fit")
+  assertTrue(noFooterH > text.layout.mainBox.h,
+    "without text, footer and its gap are returned to main")
+  assertTrue(text.layout.showScale,
+    "270-degree endpoints are enabled by real fit in 400x160")
+  local closed = newWidget({ x = 0, y = 0, w = 400, h = 160 },
+    { Source = ID_RSSI, Sweep = "360 deg" })
+  assertTrue(not closed.layout.showScale,
+    "a closed ring still suppresses coincident endpoints")
+end)
+
+test("Phase 2: horizontal Dial resolves value and unit hierarchy", function()
+  for _, scale in ipairs({ 0.8, 1.0, 1.375 }) do
+    local w = newWidget({ x = 0, y = 0, w = 400, h = 160 },
+      { Source = ID_RXBT, Precision = "1" }, nil, false, scale)
+    local L, theme = w.layout, w.mods.theme
+    assertTrue(L.horizontalInstrument, "the policy is horizontal-only")
+    assertEq(L.unitGap, theme.px(theme.space.sm),
+      "horizontal value/unit gap at scale " .. tostring(scale))
+
+    local valueH, unitH = L.valueBox.h, L.unitBox.h
+    assertTrue(valueH <= math.floor(160 * 0.45),
+      "value must not exceed 45% of the reference-zone height")
+    -- At 0.8 the largest firmware font is 54 px (33.75%); there is no
+    -- scalable/intermediate face with which to hit the 35% soft target.
+    assertTrue(valueH >= math.floor(160 * 0.33),
+      "the discrete font ramp must stay close to the 35% soft floor")
+    assertTrue(unitH / valueH <= 0.50,
+      "unit must remain at or below half the value height")
+
+    local valueIndex, xsIndex
+    for i, font in ipairs(theme.RAMP) do
+      if font == L.valueFont then valueIndex = i end
+      if font == theme.FONTS.XS then xsIndex = i end
+    end
+    assertTrue(valueIndex and xsIndex and valueIndex < xsIndex,
+      "the reference zones must leave a smaller-font search range")
+    local expected, bestDelta
+    for i = valueIndex + 1, xsIndex do
+      local candidate = theme.RAMP[i]
+      local ratio = theme.fontHeight(candidate) / theme.fontHeight(L.valueFont)
+      if ratio <= 0.50 then
+        local delta = math.abs(ratio - 0.40)
+        if not bestDelta or delta < bestDelta then
+          expected, bestDelta = candidate, delta
+        end
+      end
+    end
+    assertEq(L.unitFont, expected,
+      "unit font closest to 40% at scale " .. tostring(scale))
+    assertEq(L.unitBox.x - (L.valueBox.x + L.valueBox.w), L.unitGap,
+      "layout consumes the same resolved gap at scale " .. tostring(scale))
+  end
+  lvgl.LCD_SCALE = 1.0
+end)
+
+test("Phase 2: live values and placeholder keep one stable visible group", function()
+  local w = newWidget({ x = 0, y = 0, w = 400, h = 160 }, {
+    Source = ID_RXBT, Precision = "1", Scale = "Manual", Min = -20, Max = 20,
+  })
+  local theme = w.mods.theme
+  local function groupCenter()
+    local L = w.layout
+    local vp, up = w.ui.valueLabel.props, w.ui.unitLabel.props
+    local valueW = theme.measureWidth(vp.text, vp.font)
+    local valueLeft = L.valueBox.x + math.floor((L.valueBox.w - valueW) / 2)
+    assertEq(up.x - (valueLeft + valueW), L.unitGap,
+      "renderer must consume the layout's resolved gap for " .. vp.text)
+    return (valueLeft + up.x + theme.measureWidth(up.text, up.font)) / 2
+  end
+
+  refresh(w)
+  assertEq(w.frame.valueStr, "--", "initial placeholder participates")
+  local centres = { groupCenter() }
+  for _, value in ipairs({ 9.9, 10.0, -8.8 }) do
+    mock.setValue(ID_RXBT, value)
+    refresh(w)
+    centres[#centres + 1] = groupCenter()
+  end
+  for i = 2, #centres do
+    assertTrue(math.abs(centres[i] - centres[1]) <= 1,
+      string.format("visible group moved %.1f px at sample %d",
+        math.abs(centres[i] - centres[1]), i))
+  end
+end)
+
+test("Phase 2: default Dial and Bar typography stay pixel-compatible", function()
+  local dial = newWidget({ x = 0, y = 0, w = 200, h = 200 },
+    { Source = ID_RXBT })
+  local L, theme = dial.layout, dial.mods.theme
+  assertEq(L.orientation, "balanced")
+  assertEq(L.unitGap, theme.px(theme.space.md), "balanced Dial keeps md gap")
+  assertEq(L.unitFont, theme.smallerFont(L.valueFont, 1),
+    "balanced Dial keeps legacy one-step unit font")
+
+  local bar = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+    { Source = ID_RXBT, Style = "Bar" })
+  L, theme = bar.layout, bar.mods.theme
+  assertEq(L.unitGap, theme.px(theme.space.md), "Bar keeps md gap")
+  assertEq(L.unitFont, theme.smallerFont(L.valueFont, 1),
+    "Bar keeps legacy one-step unit font")
+  assertEq(L.valueBox.x, 127, "Bar value x")
+  assertEq(L.valueBox.y, 5, "Bar value y")
+  assertEq(L.valueBox.w, 33, "Bar value width")
+  assertEq(L.valueBox.h, 12, "Bar value height")
+  assertEq(L.unitBox.x, 166, "Bar unit x")
+  assertEq(L.unitBox.y, 4, "Bar unit y")
+  assertEq(L.unitBox.w, 6, "Bar unit width")
+  assertEq(L.unitBox.h, 12, "Bar unit height")
+end)
+
+test("Phase 3: Needle arc is subordinate and Arc keeps full weight", function()
+  for _, scale in ipairs({ 0.8, 1.0, 1.375 }) do
+    local zone = { x = 0, y = 0, w = 400, h = 160 }
+    local opts = { Source = ID_RSSI, ColorMode = "Threshold" }
+    local needle = newWidget(zone, withOption(opts, "Style", "Needle"),
+      nil, false, scale)
+    local arc = newWidget(zone, withOption(opts, "Style", "Arc"),
+      nil, false, scale)
+    local NL, AL = needle.layout, arc.layout
+
+    assertTrue(NL.showNeedle and not AL.showNeedle,
+      "the presentation styles must remain structurally distinct")
+    assertEq(NL.trackThickness, AL.trackThickness,
+      "style must not change the neutral reference track")
+    assertTrue(NL.arcThickness / NL.trackThickness >= 0.55
+      and NL.arcThickness / NL.trackThickness <= 0.70,
+      "Needle active arc must stay within the approved 55..70% band")
+    assertEq(AL.arcThickness, AL.trackThickness,
+      "Arc is the value geometry and must keep the full track weight")
+    assertEq(needle.ui.valueArc.props.thickness, NL.arcThickness)
+    assertEq(arc.ui.valueArc.props.thickness, AL.arcThickness)
+    assertEq(#needle.ui.thresholdMarks, #arc.ui.thresholdMarks,
+      "the style change must not add or remove exact boundaries")
+  end
+  lvgl.LCD_SCALE = 1.0
+end)
+
+test("Phase 3: Threshold marks cross the track and clear normal ticks", function()
+  for _, scale in ipairs({ 0.8, 1.0, 1.375 }) do
+    local w = newWidget({ x = 0, y = 0, w = 400, h = 160 }, {
+      Source = ID_RSSI, Style = "Needle", ColorMode = "Threshold",
+      Scale = "Manual", Min = 0, Max = 100, Warn = 45, Crit = 20,
+    }, nil, false, scale)
+    local L, geometry = w.layout, w.mods.geometry
+    local expected = {}
+    for _, range in ipairs(w.ranges) do
+      local t = geometry.normalize(range.to, w.config.min, w.config.max)
+      if t > 0 and t < 1 then
+        expected[#expected + 1] = geometry.linePoints(L.cx, L.cy,
+          L.thresholdInner, L.thresholdOuter,
+          w.mods.dial_renderer.angleOf(w, range.to))
+      end
+    end
+    assertEq(#w.ui.thresholdMarks, #expected,
+      "one retained line per interior threshold")
+    assertTrue(L.thresholdInner <= L.radius - math.floor(L.trackThickness / 2),
+      "the exact mark reaches the complete inner track edge")
+    assertTrue(L.thresholdOuter
+        >= L.radius + math.floor((L.trackThickness + 1) / 2) + 1,
+      "the exact mark grows a physical outer lip")
+    assertTrue(L.thresholdOuter <= L.tickInner,
+      "the lip must stop before the scale ticks")
+    assertTrue(L.thresholdThickness > L.tickThickness,
+      "an exact boundary must be thicker than a normal tick")
+
+    for i, mark in ipairs(w.ui.thresholdMarks) do
+      assertEq(mark.kind, "line")
+      assertEq(mark.props.thickness, L.thresholdThickness)
+      for p = 1, 2 do
+        assertTrue(math.abs(mark.props.pts[p][1] - expected[i][p][1]) < 0.001
+          and math.abs(mark.props.pts[p][2] - expected[i][p][2]) < 0.001,
+          "threshold line must stay on its exact configured angle")
+      end
+    end
+  end
+  lvgl.LCD_SCALE = 1.0
+end)
+
+test("Phase 3: reference needle has gradual taper and a smaller hub", function()
+  local w = newWidget({ x = 0, y = 0, w = 400, h = 160 },
+    { Source = ID_RSSI, Style = "Needle", ColorMode = "Threshold" })
+  local L = w.layout
+  local reach = L.needleOuter - L.needleInner
+  local bodyRatio = (L.needleBodyOuter - L.needleInner) / reach
+  local midRatio = (L.needleMidOuter - L.needleInner) / reach
+  assertTrue(bodyRatio >= 0.25 and bodyRatio <= 0.35,
+    "the base owns only the first third of the blade")
+  assertTrue(midRatio >= 0.60 and midRatio <= 0.70,
+    "the mid segment carries the gradual taper")
+  assertTrue(w.ui.needle.props.thickness > w.ui.needleMid.props.thickness
+    and w.ui.needleMid.props.thickness > w.ui.needleTip.props.thickness,
+    "all three width steps must remain visible at 400x160")
+  assertEq(L.pivotRadius, 4, "reference hub is one pixel smaller")
+
+  local objects = mock.objectCount()
+  local base, mid, tip, hub = w.ui.needle, w.ui.needleMid,
+    w.ui.needleTip, w.ui.pivotRing
+  mock.setValue(ID_RSSI, 20)
+  refresh(w, 3)
+  assertEq(mock.objectCount(), objects, "motion creates no new objects")
+  assertTrue(w.ui.needle == base and w.ui.needleMid == mid
+      and w.ui.needleTip == tip and w.ui.pivotRing == hub,
+    "all needle primitives remain retained while moving")
+end)
+
 test("G-11: at 180 degrees both scale labels clear their end ticks", function()
   -- The 180 deg arc ends at 9/3 o'clock, exactly at the extreme marks; on a
   -- zone just wide enough for the dial, the zone clamp used to pull the max
@@ -3394,6 +3678,35 @@ test("name and unit overrides win over the sensor", function()
   assertEq(w.nameText, "LINK")
   assertEq(w.unitText, "dBm")
   assertEq(w.ui.nameLabel.props.text, "LINK")
+end)
+
+test("Phase 4: source aliases are presentational, exact and shared", function()
+  for _, id in ipairs({ ID_TXV, ID_TXV_UP }) do
+    local dial = newWidget({ x = 0, y = 0, w = 400, h = 160 },
+      { Source = id, Style = "Needle" })
+    assertEq(dial.source.name,
+      id == ID_TXV and "tx-voltage" or "TX_VOLTAGE",
+      "the telemetry identifier must remain untouched")
+    assertEq(dial.nameText, "TX VOLTAGE")
+    assertEq(dial.ui.nameLabel.props.text, "TX VOLTAGE")
+
+    local bar = newWidget({ x = 0, y = 0, w = 300, h = 70 },
+      { Source = id, Style = "Bar" })
+    assertEq(bar.nameText, "TX VOLTAGE",
+      "Bar and Dial must share the presentation rule")
+    assertEq(bar.ui.nameLabel.props.text, "TX VOLTAGE")
+  end
+
+  local custom = newWidget(nil, { Source = ID_CUSTOM })
+  assertEq(custom.nameText, "custom_sensor",
+    "unknown third-party names must not be normalized")
+  assertEq(custom.ui.nameLabel.props.text, "custom_sensor")
+
+  local overridden = newWidget({ x = 0, y = 0, w = 400, h = 160 },
+    { Source = ID_TXV, Label = "PACK", Style = "Needle" })
+  assertEq(overridden.source.name, "tx-voltage")
+  assertEq(overridden.nameText, "PACK", "Label has absolute priority")
+  assertEq(overridden.ui.nameLabel.props.text, "PACK")
 end)
 
 test("P0-6: editing the Name override updates the label without a rebuild", function()

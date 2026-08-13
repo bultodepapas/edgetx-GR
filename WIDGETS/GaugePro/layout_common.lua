@@ -186,16 +186,69 @@ end
 -- The G-6 guarantee is unchanged - still the chord at the bottom of the box
 -- that actually gets drawn, still minus px(1) - it is simply no longer
 -- computed for a box nobody uses.
-local function pickValueFont(sample, unitText, maxW, maxH, cap, chordCtx)
+-- Resolve the unit font for one value candidate. With no policy this is the
+-- established one-ramp-step behavior used by BarPro and every non-horizontal
+-- dial. A policy may instead select the available font closest to a target
+-- height ratio, while refusing candidates above a practical maximum and below
+-- its legibility floor.
+local function pickUnitFont(valueFont, policy)
+  if not policy then return T.smallerFont(valueFont, 1) end
   local ramp = T.RAMP
-  local gap = T.px(T.space.md)
+  local valueIndex
+  for i = 1, #ramp do
+    if ramp[i] == valueFont then valueIndex = i break end
+  end
+  if not valueIndex then return valueFont end
+
+  local minIndex = #ramp
+  if policy.unitMinFont then
+    for i = 1, #ramp do
+      if ramp[i] == policy.unitMinFont then minIndex = i break end
+    end
+  end
+  -- A policy is never allowed to promote the unit above the value. When the
+  -- value already sits at/below the floor, equal size is the only legible
+  -- fallback (this cannot occur in the normal/large horizontal caller).
+  if minIndex <= valueIndex then return valueFont end
+
+  local valueH = T.fontHeight(valueFont)
+  local target = policy.unitTargetRatio or 0.40
+  local maxRatio = policy.unitMaxRatio or 0.50
+  local best, bestDelta
+  for i = valueIndex + 1, minIndex do
+    local candidate = ramp[i]
+    local ratio = T.fontHeight(candidate) / valueH
+    if ratio <= maxRatio then
+      local delta = math.abs(ratio - target)
+      -- Strictly-less keeps the first candidate on a tie: the minimum number
+      -- of ramp steps that satisfies the same visual target.
+      if not bestDelta or delta < bestDelta then
+        best, bestDelta = candidate, delta
+      end
+    end
+  end
+  return best or ramp[minIndex] or valueFont
+end
+
+local function valueUnitGap(policy)
+  return (policy and policy.unitGap) or T.px(T.space.md)
+end
+
+local function pickValueFont(sample, unitText, maxW, maxH, cap, chordCtx,
+                             policy)
+  local ramp = T.RAMP
+  local gap = valueUnitGap(policy)
+  local heightLimit = maxH
+  if policy and policy.valueMaxHeight then
+    heightLimit = min(heightLimit, policy.valueMaxHeight)
+  end
   local started = (cap == nil)
   for i = 1, #ramp do
     local font = ramp[i]
     if not started and font == cap then started = true end
     if started then
       local fh = T.fontHeight(font)
-      if fh <= maxH then
+      if fh <= heightLimit then
         local avail = maxW
         if chordCtx then
           local r = chordCtx.region
@@ -204,11 +257,11 @@ local function pickValueFont(sample, unitText, maxW, maxH, cap, chordCtx)
           local c = floor(chordAt(chordCtx.L, y0, y0 + fh)) - T.px(1)
           if c < avail then avail = c end
         end
-        -- The unit is one ramp step below the value (review P-D): two steps
-        -- shrank the `B` of `dB` to where it blurred into an `E` at small
-        -- sizes; one step keeps it secondary and legible where the width
-        -- allows (the fit check below is the arbiter).
-        local unitFont = T.smallerFont(font, 1)
+        -- The default unit is one ramp step below the value (review P-D): two
+        -- steps shrank the `B` of `dB` to where it blurred into an `E` at
+        -- small sizes. A caller-supplied policy may choose a ratio-based font;
+        -- the same width fit below remains the final arbiter in both cases.
+        local unitFont = pickUnitFont(font, policy)
         local w = T.textWidth(sample, font)
         local uw = 0
         if unitText and unitText ~= "" then
@@ -226,7 +279,7 @@ local function pickValueFont(sample, unitText, maxW, maxH, cap, chordCtx)
   -- sample carries a slack character (P1-3/P1-4) - would push its corners
   -- onto the ring. The value itself is always narrower than the sample.
   local font = ramp[#ramp]
-  local unitFont = font
+  local unitFont = pickUnitFont(font, policy)
   local uw = 0
   if unitText and unitText ~= "" then
     uw = T.textWidth(unitText, unitFont) + gap
@@ -249,14 +302,17 @@ end
 -- `chordCtx` is forwarded to pickValueFont; when present the group is centred
 -- on the DIAL centre rather than on the region, because the width it was
 -- fitted against is the ring's chord (symmetric about L.cx), not the region.
-local function placeValue(L, region, sample, unitText, cap, chordCtx)
+local function placeValue(L, region, sample, unitText, cap, chordCtx, policy)
   local valueFont, unitFont, vw, uw, avail =
-    pickValueFont(sample, unitText, region.w, region.h, cap, chordCtx)
+    pickValueFont(sample, unitText, region.w, region.h, cap, chordCtx, policy)
   L.valueFont = valueFont
   L.unitFont = unitFont
   local vh = T.fontHeight(valueFont)
   local uh = T.fontHeight(unitFont)
-  local gap = T.px(T.space.md)
+  local gap = valueUnitGap(policy)
+  -- Shared with ui_core.anchorUnit: the reserved box and every live re-anchor
+  -- must read one resolved gap or the unit jumps after the first refresh.
+  L.unitGap = gap
   local groupW = vw + uw
   -- A trailing unit adds visual weight on the right of the group, so centre
   -- it ~1 px left of the geometric centre when a unit is shown (review

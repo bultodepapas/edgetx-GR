@@ -171,8 +171,6 @@ end
 -- whether the arc has reached it or not.
 local function buildThresholdMarks(widget)
   local ui, L, cfg = widget.ui, widget.layout, widget.config
-  local inner = L.radius - floor(L.arcThickness / 2)
-  local outer = L.radius + floor(L.arcThickness / 2)
   ui.thresholdMarks = {}
   for i = 1, #widget.ranges do
     local r = widget.ranges[i]
@@ -181,8 +179,8 @@ local function buildThresholdMarks(widget)
     if t > 0 and t < 1 then
       local a = angleOf(widget, r.to)
       ui.thresholdMarks[#ui.thresholdMarks + 1] = lvgl.line{
-        pts = G.linePoints(L.cx, L.cy, inner, outer, a),
-        thickness = max(1, L.tickThickness),
+        pts = G.linePoints(L.cx, L.cy, L.thresholdInner, L.thresholdOuter, a),
+        thickness = L.thresholdThickness,
         color = T.stateColor(r.role, widget.accent),
       }
     end

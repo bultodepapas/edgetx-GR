@@ -63,7 +63,14 @@ mock.advance(50); w1.mod.refresh(w1)
 census(w1, "dial 200x200 needle/Sections/270/markers+text CRIT")
 local w2 = build({ x = 0, y = 0, w = 200, h = 160 },
   { Style = 2, ColorMode = 2 })
-census(w2, "dial 200x200x160 needle/Threshold")
+census(w2, "dial 200x160 needle/Threshold")
+local wr1 = build({ x = 0, y = 0, w = 400, h = 160 },
+  { Style = "Needle", ColorMode = "Threshold" })
+census(wr1, "dial 400x160 Phase 1/Threshold/endpoints")
+local wr2 = build({ x = 0, y = 0, w = 400, h = 160 },
+  { Style = "Needle", ColorMode = "Threshold",
+    ShowMinMax = "Markers + text" })
+census(wr2, "dial 400x160 Phase 1/endpoints/minmax")
 local w3 = build({ x = 0, y = 0, w = 300, h = 70 }, { Style = 4 })
 census(w3, "bar 300x70")
 local w4 = build({ x = 0, y = 0, w = 60, h = 60 }, {})

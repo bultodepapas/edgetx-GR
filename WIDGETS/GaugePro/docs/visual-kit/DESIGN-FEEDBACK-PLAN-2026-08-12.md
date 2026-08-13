@@ -1,7 +1,7 @@
 # Plan técnico — feedback visual de DialPro 400×160
 
 **Fecha:** 2026-08-12
-**Estado:** listo para implementación; este documento no modifica todavía el runtime
+**Estado:** fases 0–5 implementadas, verificadas y cerradas
 **Prioridad:** P1 visual, sin cambio del contrato de opciones
 **Referencia:** [captura 010](screenshots/010_color_color-threshold-ok.png) · [catálogo](CATALOG.md) · [auditoría vigente](AUDIT-2026-08-12.md)
 
@@ -106,19 +106,19 @@ En estilo Arc, `arcThickness` seguirá igual al track: adelgazarlo allí debilit
 
 ## 6. Plan de implementación por fases
 
-### Fase 0 — fijar baseline y escenas de decisión
+### Fase 0 — fijar baseline y escenas de decisión — **completada**
 
 **Archivos:** `dev/scenes.lua`, herramientas visuales existentes y documentación.
 
 1. Conservar `color-threshold-ok` con `-8..12`; sigue siendo una prueba contractual.
-2. Añadir una escena de producto `dial-wide-tx-voltage` en 400×160 con `6.0..8.4`, warning `7.2`, critical `6.8`, `7.9 V`, Needle, Threshold y una decimal.
+2. Añadir una escena de producto `dial-wide-tx-voltage` en 400×160 con el preset real de producción: `6.0..8.4`, warning `6.8`, critical `6.4`, `7.9 V`, Needle, Threshold y una decimal. La propuesta inicial `7.2/6.8` se descartó porque no coincide con `presets.lua`.
 3. Añadir variantes de esa escena para WARN, CRIT, NO DATA y `ShowMinMax=Markers + text`.
 4. Guardar before/after del recorte exacto de la zona 400×160. La pantalla 800×480 solo sirve para verificar integración con EdgeTX.
 5. Registrar baseline de cajas, objetos, instrucciones y B/frame antes de tocar layout.
 
 **Salida:** evidencia que separa prueba de contrato y referencia estética.
 
-### Fase 1 — recomponer el layout horizontal
+### Fase 1 — recomponer el layout horizontal — **completada**
 
 **Archivo principal:** `dial_layout.lua`.
 
@@ -133,7 +133,12 @@ En estilo Arc, `arcThickness` seguirá igual al track: adelgazarlo allí debilit
 
 **Criterio:** en 400×160 el nombre deja de estar bajo el hueco central y se percibe unido al valor; WARN/CRIT no produce salto vertical.
 
-### Fase 2 — jerarquía de valor y unidad sin romper BarPro
+### Fase 2 — jerarquía de valor y unidad sin romper BarPro — **completada**
+
+**Resultado:** política opcional aplicada solo al Dial horizontal normal/large,
+verificada en las tres escalas LCD y en cinco capturas nativas. BarPro conserva
+su geometría de referencia. Véase
+[PHASE-02-RESULTS-2026-08-12.md](PHASE-02-RESULTS-2026-08-12.md).
 
 **Archivos:** `layout_common.lua`, `ui_core.lua`, `dial_layout.lua`.
 
@@ -147,7 +152,13 @@ En estilo Arc, `arcThickness` seguirá igual al track: adelgazarlo allí debilit
 4. Conservar la caja reservada por la muestra más ancha y el reanclaje dinámico de la unidad. Cambiar `9.9` a `10.0` no debe mover el centro óptico del grupo.
 5. BarPro no pasa la política nueva y conserva su geometría y tipografía actuales.
 
-### Fase 3 — clarificar track, umbrales y aguja
+### Fase 3 — clarificar track, umbrales y aguja — **completada**
+
+**Resultado:** Needle usa un arco activo de 60–64% del track, Arc conserva el
+100%, los límites exactos cruzan todo el track con labio exterior y la aguja
+mantiene tres líneas retenidas con taper más gradual. Verificación nativa y
+métricas en
+[PHASE-03-RESULTS-2026-08-12.md](PHASE-03-RESULTS-2026-08-12.md).
 
 **Archivos:** `dial_layout.lua`, `dial_renderer.lua`, `theme.lua`.
 
@@ -159,7 +170,12 @@ En estilo Arc, `arcThickness` seguirá igual al track: adelgazarlo allí debilit
 6. Mantener tres `lvgl.line`, buffers persistentes, wrappers persistentes y `lvgl.set` directo. No usar triángulos ni pasar puntos móviles por `setProp`.
 7. Expresar cualquier nuevo ratio/opacity en tokens semánticos de `theme.lua`; no introducir RGB literales en el renderer.
 
-### Fase 4 — nombre de fuente presentable
+### Fase 4 — nombre de fuente presentable — **completada**
+
+**Resultado:** alias exacto y conservador compartido por DialPro/BarPro, sin
+modificar identidad de fuente y con `Label` como prioridad absoluta. Evidencia
+y contratos en
+[PHASE-04-05-RESULTS-2026-08-12.md](PHASE-04-05-RESULTS-2026-08-12.md).
 
 **Archivos:** `app.lua` y, si se extrae un helper puro, sus pruebas.
 
@@ -169,7 +185,12 @@ En estilo Arc, `arcThickness` seguirá igual al track: adelgazarlo allí debilit
 4. No convertir arbitrariamente a mayúsculas nombres personalizados o sensores de terceros.
 5. Aplicar la misma regla de presentación en DialPro y BarPro para que una misma fuente no tenga dos nombres visibles.
 
-### Fase 5 — pruebas y verificación visual
+### Fase 5 — pruebas y verificación visual — **completada**
+
+**Resultado:** gates Lua/recursos limpios y kit nativo con 277 capturas frescas,
+0 WARN, 0 FAIL, 0 PNG sin referencia y 0 duplicados inesperados. La inspección
+visual estratificada aprobó ambas familias, estados, layouts y temas. Véase
+[PHASE-04-05-RESULTS-2026-08-12.md](PHASE-04-05-RESULTS-2026-08-12.md).
 
 **Archivos:** `tests/run_tests.lua`, `tests/smoke_test.lua`, `dev/collide.lua`, `dev/census.lua`, `dev/instructions.lua`, `dev/measure_frames.lua`, `dev/scenes.lua`.
 

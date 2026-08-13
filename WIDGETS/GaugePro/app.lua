@@ -70,6 +70,23 @@ end
 local SCALE_AUTO = 1
 local BATTERY_OFF = 1
 
+-- Presentation aliases are deliberately exact and tiny. They must never feed
+-- back into telemetry lookup, preset matching or persistence: `source.name`
+-- remains the firmware identifier and only `nameText` consumes this mapping.
+-- Do not normalize arbitrary third-party names; their spelling belongs to the
+-- sensor author. Label overrides are resolved by configure() before this
+-- helper, so user-authored text always wins.
+local SOURCE_NAME_ALIASES = {
+  ["tx-voltage"] = "TX VOLTAGE",
+  ["TX_VOLTAGE"] = "TX VOLTAGE",
+}
+
+local function presentSourceName(name)
+  if type(name) ~= "string" then return "" end
+  return SOURCE_NAME_ALIASES[name] or name
+end
+M.presentSourceName = presentSourceName
+
 -- The module table is SHARED by every widget instance: the modules are pure
 -- (all per-widget state lives in the `widget` table), the setup() calls are
 -- idempotent, and theme's metric caches are exactly what should be shared
@@ -288,7 +305,7 @@ local function configure(widget, deferRebuild)
     widget.unitText = src.unitName or ""
   end
   widget.nameText = (cfg.label and cfg.label ~= "") and cfg.label
-                    or (src.name or "")
+                    or presentSourceName(src.name)
 
   widget.ranges = m.ranges.build(cfg.min, cfg.max, cfg.warn, cfg.crit,
                                  cfg.highGood)

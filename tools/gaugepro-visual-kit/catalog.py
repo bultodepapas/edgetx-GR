@@ -34,6 +34,12 @@ TELEMETRY_SENSORS = [
     {"id": 3072, "subId": 0, "instance": 0, "name": "RSSI", "unit": 17, "prec": 0},
     {"id": 3081, "subId": 0, "instance": 0, "name": "RxBt", "unit": 1, "prec": 2},
     {"id": 3078, "subId": 0, "instance": 0, "name": "T1",   "unit": 11, "prec": 0},
+    # Native reference for the built-in transmitter battery source. The real
+    # source is non-telemetry; injecting a scalar sensor with the same public
+    # semantic role lets the visual harness pose NORMAL/WARN/CRIT values. The
+    # authored scene owns the public TX VOLTAGE label and exact preset contract.
+    {"id": 3090, "subId": 0, "instance": 0, "name": "TxV",
+     "unit": 1, "prec": 1},
 ]
 TELEMETRY_BY_NAME = {sensor["name"]: sensor for sensor in TELEMETRY_SENSORS}
 
@@ -43,6 +49,8 @@ TELEMETRY_CASES = {
     "sc-preset", "sc-lowgood", "ba-rxbt", "pal-preset-auto",
     "br-lowgood", "br-gradient-lowgood", "f4-auto-rssi",
     "ne-damp0", "ne-damp9",
+    "dial-wide-tx-voltage", "dial-wide-tx-warn", "dial-wide-tx-crit",
+    "dial-wide-tx-nodata", "dial-wide-tx-history",
 }
 
 # Remaining cases that still need richer orchestration than a scalar value.
@@ -75,7 +83,16 @@ def telemetry_plan(case):
         return out
 
     values = [row(value) for value in (case.get("history") or [])]
-    values.append(row(case.get("value", 0)))
+    pose_value = case.get("value", 0)
+    # Widget thresholds are persisted as signed integers. The production
+    # tx-voltage preset carries a decimal critical limit (6.4 V), but the
+    # native injector must use a <=4-char telemetry label (TxV), so that preset
+    # cannot be selected by name. Pose the CRIT capture just below the portable
+    # integer surrogate used in track1_gauge_options; the declarative Lua scene
+    # still exercises the exact 6.2 V / 6.4 V production contract.
+    if case["name"] == "dial-wide-tx-crit":
+        pose_value = 5.8
+    values.append(row(pose_value))
     plan = {
         "values": values,
         "link": case["name"] not in {"st-nolink", "op-chip-on", "op-chip-off"},
@@ -85,6 +102,7 @@ def telemetry_plan(case):
         # branch.
         "feed": case["name"] not in {
             "st-nodata", "st-nolink", "op-chip-on", "op-chip-off",
+            "dial-wide-tx-nodata",
         },
         "rssi": 78,
     }
@@ -99,6 +117,16 @@ def telemetry_plan(case):
     elif case["name"] in {"ne-damp0", "ne-damp9"}:
         plan["post"] = {
             "values": [row(90)], "link": True, "feed": True, "rssi": 78,
+            "settle": 0.18,
+        }
+    elif case["name"] == "dial-wide-tx-history":
+        # Repeated rows for one sensor in the boot file collapse into a single
+        # refresh from GaugePro's point of view. Pose real time-separated steps
+        # so EdgeTX's native min/max siblings and the widget fallback both have
+        # an opportunity to observe every endpoint.
+        plan["values"] = [row(case.get("value", 0))]
+        plan["post"] = {
+            "steps": [[row(value)] for value in (6.5, 8.2, 7.9)],
             "settle": 0.18,
         }
     return plan
@@ -192,7 +220,16 @@ def track1_gauge_options(case, defs_by_family):
         # forced Manual scale; a native RSSI/T1/RxBt source does not.
         if "Scale" not in authored:
             overrides.pop("Scale", None)
-        overrides["Source"] = case.get("source") or "RSSI"
+        source_key = case.get("source") or "RSSI"
+        overrides["Source"] = TELEMETRY_BY_NAME[source_key]["name"]
+        if case["name"].startswith("dial-wide-tx-"):
+            # The built-in source's production scale is 6.0..8.4 with decimal
+            # thresholds. Native TeleInject has a four-character label limit,
+            # therefore its TxV surrogate uses the nearest integer window.
+            # This branch is only a state/layout pose; scenes.lua remains the
+            # authoritative exact-range contract.
+            overrides.update(Scale="Manual", Min=6, Max=9, Warn=7, Crit=6,
+                             HighGood=True)
         return family, overrides
     if case["name"] in LOCAL_SOURCE_CASES:
         # These cases test BarPreset's source classifier, not an authored

@@ -445,7 +445,10 @@ function M.anchorUnit(widget, str)
   else
     inkRight = L.valueBox.x + floor((L.valueBox.w + actualW) / 2)
   end
-  local x = inkRight + T.px(T.space.md)
+  -- placeValue resolves the gap once for the active family. Horizontal Dial
+  -- uses `sm`; BarPro and every legacy/default path store `md`. The fallback
+  -- keeps old serialized/test layouts safe if one reaches this renderer.
+  local x = inkRight + (L.unitGap or T.px(T.space.md))
   -- Never anchor the unit outside the zone. In a region too small for the
   -- value+unit group, pickValueFont's last-resort branch clamps the RESERVED
   -- value width below the ink's real width, so ink centred in that box
