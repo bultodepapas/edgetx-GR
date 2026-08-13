@@ -470,6 +470,25 @@ test("compact variants cap detail and report the downgrade", function()
   assertTrue(visual.compactDescription ~= "", "preset compact form documented")
 end)
 
+test("explicit responsive fallbacks expose a normalized LIMIT notice", function()
+  local visual = barStyle.resolve(visualWidget("RSSI", { w = 74, h = 30 }),
+    visualConfig{ segments = 7, surface = 3, motion = 5 })
+  assertTrue(#visual.notices >= 2, "all explicit refusals remain diagnosable")
+  assertEq(visual.notice.text, "LIMIT")
+  assertEq(visual.notice.explicit, true)
+  assertTrue(type(visual.notice.requested) == "string"
+      or type(visual.notice.requested) == "number")
+  assertTrue(visual.notice.effective ~= nil)
+end)
+
+test("automatic compact adaptation remains silent", function()
+  local visual = barStyle.resolve(visualWidget("RSSI", { w = 74, h = 30 }),
+    visualConfig{ barPreset = 6 })
+  assertTrue(#visual.downgrades > 0, "the diagnostic still records adaptation")
+  assertEq(#visual.notices, 0)
+  assertEq(visual.notice, nil)
+end)
+
 test("Phase 2 classifies all six responsive bar families", function()
   local cases = {
     { { w = 300, h = 40 }, "micro" },

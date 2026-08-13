@@ -287,6 +287,7 @@ local function stateText(widget)
   end
   if data.state == "warning" then return "WARN" end
   if data.state == "critical" then return "CRIT" end
+  if widget.limitNotice then return widget.limitNotice.text or "LIMIT" end
   return ""
 end
 M.stateText = stateText
@@ -324,7 +325,13 @@ function M.updateChip(widget, s, palette)
   -- anything to hide: stateText returns "" there.
   if show and widget.config.showChip == false then
     local k = stateKey(widget)
-    show = (k == "warning" or k == "critical")
+    -- LIMIT is the explicit-option refusal contract, not a routine status
+    -- decoration. Keep it observable even when quiet state chips are off;
+    -- otherwise the exact configuration that needs an explanation becomes
+    -- silent again. WARN/CRIT retain their existing safety priority.
+    local noticeText = widget.limitNotice
+      and (widget.limitNotice.text or "LIMIT")
+    show = (k == "warning" or k == "critical" or s == noticeText)
   end
   if show then
     -- the chip hugs its text: measured here because the state string changes
@@ -555,4 +562,3 @@ end
 
 
 return M
-

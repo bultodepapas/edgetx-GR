@@ -38,6 +38,7 @@ sequencing this module expects callers to follow.
 """
 
 import os
+import re
 import subprocess
 import time
 
@@ -63,6 +64,7 @@ class SimuDriver:
         self.height = height
         self.proc = None
         self._log_fh = None
+        self._telemetry_generation = 0
 
     # ------------------------------------------------------------- lifecycle --
 
@@ -164,6 +166,94 @@ class SimuDriver:
     def page_down(self):
         self._key_tap(KEY_PAGEDN, hold_s=0.2)
         time.sleep(0.3)
+
+    def enter(self, settle_s=0.35):
+        self._key_tap(KEY_ENTER, hold_s=0.2)
+        time.sleep(settle_s)
+
+    def long_enter(self, hold_s=1.25, settle_s=0.5):
+        self._key_tap(KEY_ENTER, hold_s=hold_s)
+        time.sleep(settle_s)
+
+    def swipe(self, x1, y1, x2, y2, steps=8, step_s=0.04,
+              settle_s=0.35):
+        """Drive a real touchscreen drag through the simulator pipe."""
+        if steps < 1:
+            raise ValueError("swipe steps must be >= 1")
+        for index in range(steps + 1):
+            t = index / float(steps)
+            x = round(x1 + (x2 - x1) * t)
+            y = round(y1 + (y2 - y1) * t)
+            self._send("touch %d %d" % (x, y))
+            time.sleep(step_s)
+        self._send("touchup")
+        time.sleep(settle_s)
+
+    def tap(self, x, y, hold_s=0.12, settle_s=0.35):
+        self._send("touch %d %d" % (x, y))
+        time.sleep(hold_s)
+        self._send("touchup")
+        time.sleep(settle_s)
+
+    def set_telemetry(self, sensors, link=True, feed=True, rssi=90):
+        """Atomically publish values consumed by the TeleInject topbar.
+
+        Sensor identity must also be declared in model YAML; this method owns
+        only changing values and transport/currentness. Removing the cached
+        bytecode is intentional: loadScript otherwise keeps executing a stale
+        generated data chunk after an in-process update.
+        """
+        self._telemetry_generation += 1
+        rows = []
+        for sensor in sensors:
+            name = str(sensor["name"])
+            if not re.match(r"^[A-Za-z0-9]{1,4}$", name):
+                raise ValueError("telemetry name must be 1..4 alphanumerics")
+            value = sensor["value"]
+            if not isinstance(value, int):
+                raise ValueError("setTelemetryValue probe requires integer values")
+            rows.append(
+                "{ id=%d, subId=%d, instance=%d, value=%d, unit=%d, "
+                "prec=%d, name=\"%s\" }" %
+                (int(sensor["id"]), int(sensor.get("subId", 0)),
+                 int(sensor.get("instance", 0)), value,
+                 int(sensor.get("unit", 0)), int(sensor.get("prec", 0)), name))
+        body = (
+            "return { generation=%d, link=%s, feed=%s, rssi=%d, sensors={%s} }\n"
+            % (self._telemetry_generation, "true" if link else "false",
+               "true" if feed else "false", max(0, min(99, int(rssi))),
+               ",".join(rows)))
+        path = os.path.join(self.storage_dir, "SCRIPTS", "gpvk_telemetry.lua")
+        bytecode = os.path.splitext(path)[0] + ".luac"
+        tmp = path + ".tmp"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.exists(bytecode):
+            os.remove(bytecode)
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            f.write(body)
+        os.replace(tmp, path)
+
+    def inject_telemetry(self, sensors):
+        """Apply live scalar steps without recreating the Lua widget.
+
+        The Widget Studio pipe command calls the same native
+        setTelemetryValue(PROTOCOL_TELEMETRY_LUA, ...) path as Lua's public
+        API. Identity must already be present in model telemetrySensors[].
+        """
+        for sensor in sensors:
+            value = sensor["value"]
+            if not isinstance(value, int):
+                raise ValueError("live telemetry injection requires integer values")
+            cmd = "telemetry %d %d %d %d %d %d" % (
+                int(sensor["id"]), int(sensor.get("subId", 0)),
+                int(sensor.get("instance", 0)), value,
+                int(sensor.get("unit", 0)), int(sensor.get("prec", 0)))
+            # A predeclared sensor updates on the first call. The duplicate is
+            # harmless and also preserves the public Lua helper's just-added
+            # fallback if a future probe deliberately allows auto-discovery.
+            self._send(cmd)
+            self._send(cmd)
+        time.sleep(0.05)
 
     def _current_log_size(self):
         try:

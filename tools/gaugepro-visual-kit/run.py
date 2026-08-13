@@ -9,6 +9,7 @@ invocation style):
 """
 
 import argparse
+import hashlib
 import itertools
 import json
 import os
@@ -20,7 +21,7 @@ import time
 
 from defs import Defs
 from catalog import (load_scenes, build_track1_screens, batch_by_section,
-                      build_track2_screens, SKIPPED_CASES)
+                      build_track2_screens, SKIPPED_CASES, TELEMETRY_SENSORS)
 from modelgen import Screen, render_model, write_model, MAX_CUSTOM_SCREENS
 from driver import SimuDriver, CaptureTimeout
 
@@ -34,7 +35,7 @@ SD_DIR = os.path.join(RUN_DIR, "sdcard")
 PIPE_PATH = os.path.join(RUN_DIR, "pipe.txt")
 LOG_PATH = os.path.join(RUN_DIR, "simu.log")
 RUNLOG_PATH = os.path.join(RUN_DIR, "run.log.jsonl")
-RUNLOG_SCHEMA = 2  # split frontends; schema 1 rows belong to GaugePro legacy
+RUNLOG_SCHEMA = 3  # schema 3 carries per-capture provenance
 
 DOCS_DIR = os.path.join(CORE_SOURCE_DIR, "docs", "visual-kit")
 SHOTS_DIR = os.path.join(DOCS_DIR, "screenshots")
@@ -55,6 +56,73 @@ CORE_FILES = [
     "dial_layout.lua", "dial_renderer.lua", "bar_layout.lua",
     "bar_style.lua", "bar_faces.lua", "bar.lua", "alerts.lua",
 ]
+
+
+def _sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _source_sha():
+    """Content identity of the exact Lua runtime/frontends copied to SD."""
+    h = hashlib.sha256()
+    paths = [os.path.join(CORE_SOURCE_DIR, name) for name in CORE_FILES]
+    paths += [os.path.join(DIAL_SOURCE_DIR, "main.lua"),
+              os.path.join(BAR_SOURCE_DIR, "main.lua")]
+    for path in sorted(paths):
+        h.update(os.path.relpath(path, REPO_ROOT).replace("\\", "/").encode("utf-8"))
+        with open(path, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
+
+
+def _harness_sha():
+    """Identity of the catalog/model/capture code that produced evidence."""
+    names = [
+        "run.py", "report.py", "verify_dupes.py", "catalog.py", "defs.py",
+        "layouts.py", "modelgen.py", "driver.py", "defs_dump.lua",
+        "scenes_dump.lua", "json_lite.lua", "telemetry_probe.py",
+        "telemetry_catalog_probe.py",
+        "settings_probe.py",
+    ]
+    paths = [os.path.join(TOOL_DIR, name) for name in names]
+    paths.append(os.path.join(CORE_SOURCE_DIR, "dev", "scenes.lua"))
+    paths.extend([
+        os.path.join(TOOL_DIR, "sd_extra", "WIDGETS", "TeleInject", "main.lua"),
+        os.path.join(TOOL_DIR, "sd_extra", "SCRIPTS", "gpvk_telemetry.lua"),
+    ])
+    h = hashlib.sha256()
+    for path in sorted(paths):
+        h.update(os.path.relpath(path, REPO_ROOT).replace("\\", "/").encode("utf-8"))
+        with open(path, "rb") as f:
+            h.update(f.read())
+    return h.hexdigest()
+
+
+def _git_sha():
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT,
+            text=True, stderr=subprocess.DEVNULL).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def build_run_context():
+    source_sha = _source_sha()
+    started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return {
+        "run_id": "%s-%s" % (started.replace(":", "").replace("-", ""),
+                                source_sha[:8]),
+        "git_sha": _git_sha(),
+        "source_sha": source_sha,
+        "harness_sha": _harness_sha(),
+        "simu_sha": _sha256_file(SIMU_EXE) if os.path.isfile(SIMU_EXE) else "missing",
+        "run_started_at": started,
+    }
 
 def _copy(src, dst):
     os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -191,8 +259,9 @@ def dump_defs_and_scenes(lua_exe="lua"):
 
 
 class RunLog:
-    def __init__(self, path):
+    def __init__(self, path, context):
         self.path = path
+        self.context = context
         os.makedirs(os.path.dirname(path), exist_ok=True)
         self.rows = []
         if os.path.exists(path):
@@ -202,7 +271,11 @@ class RunLog:
                     if line:
                         row = json.loads(line)
                         if row.get("schema") == RUNLOG_SCHEMA:
+                            row["fresh"] = False
                             self.rows.append(row)
+
+    def reset(self):
+        self.rows = []
 
     def drop_sections(self, sections):
         """Remove prior rows for `sections` before a re-run of just those
@@ -212,6 +285,12 @@ class RunLog:
 
     def add(self, **kw):
         kw.setdefault("schema", RUNLOG_SCHEMA)
+        for key, value in self.context.items():
+            kw.setdefault(key, value)
+        kw.setdefault("captured_at", time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                   time.gmtime()))
+        kw.setdefault("fresh", True)
+        kw.setdefault("theme", "stock")
         self.rows.append(kw)
 
     def flush(self):
@@ -271,7 +350,19 @@ def cmd_check(defs, batches, t2):
     if mixed_yaml.count("widgetName: DialPro") != 2 or \
             mixed_yaml.count("widgetName: BarPro") != 3:
         raise RuntimeError("mixed layout lost its 2-dial/3-bar contract")
-    print("Split check: %d DialPro + %d BarPro scenes; mixed YAML PASS"
+    docs_path = os.path.join(CORE_SOURCE_DIR, "DOCS.md")
+    with open(docs_path, "r", encoding="utf-8") as f:
+        docs = f.read()
+    for family in ("dial", "bar"):
+        missing = []
+        for slot, row in enumerate(defs[family].rows, 1):
+            marker = "| %d | `%s` |" % (slot, row["key"])
+            if marker not in docs:
+                missing.append("%d:%s" % (slot, row["key"]))
+        if missing:
+            raise RuntimeError("DOCS.md %s option contract drift: %s" %
+                               (family, ", ".join(missing)))
+    print("Split check: %d DialPro + %d BarPro scenes; mixed YAML and docs PASS"
           % (len(by_family["dial"]), len(by_family["bar"])))
     return 0
 
@@ -295,10 +386,24 @@ def _run_track1(driver, defs, batches, runlog, file_counter, seq_start=1):
         # driver.py's module docstring) -- there must be no running process
         # while this driver is the one touching MODELS/*.yml or radio.yml.
         driver.stop()
+        telem = batch[0].telemetry if len(batch) == 1 else None
+        if any(s.telemetry for s in batch) and not telem:
+            raise RuntimeError("telemetry-backed Track 1 screen was not isolated")
+        driver.set_telemetry(
+            telem["values"] if telem else [],
+            link=telem["link"] if telem else False,
+            feed=telem["feed"] if telem else False,
+            rssi=telem["rssi"] if telem else 0)
         write_model(defs, os.path.join(SD_DIR, "MODELS", model_file),
-                    model_name, model_screens)
+                    model_name, model_screens, sensors=TELEMETRY_SENSORS)
         set_current_model(model_file)
         driver.start(model_marker=model_name)
+        if telem and telem.get("post"):
+            post = telem["post"]
+            driver.set_telemetry(post["values"], link=post["link"],
+                                 feed=post["feed"], rssi=post["rssi"])
+            driver.inject_telemetry(post["values"])
+            time.sleep(post["settle"])
         for i, s in enumerate(batch):
             fname = "%03d_%s_%s.png" % (seq, s.section, s.name)
             out = os.path.join(SHOTS_DIR, fname)
@@ -321,6 +426,7 @@ def _run_track1(driver, defs, batches, runlog, file_counter, seq_start=1):
                        status=status, ms=int((time.time() - t0) * 1000),
                        family=s.family, widget=defs[s.family].widget_name,
                        overrides={k: v for k, v in s.overrides.items()},
+                       telemetry=s.telemetry,
                        layout=s.layout_id, zone_index=s.zone_index,
                        zone_rect=list(s.real_rect) if s.real_rect else None)
             print(("  [%s] %03d %-10s %s" % (status, seq, s.section, s.name)))
@@ -371,7 +477,7 @@ def build_theme_subset(batches, t2):
     t1_screens = []
     for batch in batches:
         for s in batch:
-            if s.section in THEME_SECTIONS:
+            if s.section in THEME_SECTIONS and not s.telemetry:
                 t1_screens.append(s)
     gallery = [s for s in t2 if s.key in ("L05_layout2p3_dial_vs_bar", "L01_fullscreen_bar")]
     return t1_screens, gallery
@@ -463,7 +569,12 @@ def cmd_capture(args, defs, batches, t2):
     # can never report errors from an older legacy run.
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     open(LOG_PATH, "wb").close()
-    runlog = RunLog(RUNLOG_PATH)
+    runlog = RunLog(RUNLOG_PATH, build_run_context())
+    if args.action == "all":
+        # `all` is the release-evidence path: every row and every referenced
+        # PNG must come from this exact source/simulator identity. Partial
+        # capture commands deliberately retain unrelated sections instead.
+        runlog.reset()
 
     # model<digits>.yml is a hard firmware requirement (ModelsList::loadYaml,
     # storage/modelslist.cpp) -- start past "model1.yml" (the bootstrap
@@ -507,7 +618,11 @@ def cmd_capture(args, defs, batches, t2):
         if not args.track2_only:
             seq = _run_track1(driver, defs, batches, runlog, file_counter, seq_start=1)
         if not args.track1_only:
-            _run_track2(driver, defs, t2, runlog, file_counter, seq_start=seq)
+            seq = _run_track2(driver, defs, t2, runlog, file_counter, seq_start=seq)
+        if args.action == "all":
+            t1_screens, gallery = build_theme_subset(batches, t2)
+            seq = _run_theme_subset(driver, defs, t1_screens, gallery, runlog,
+                                    file_counter, seq_start=seq)
     finally:
         driver.stop()
         runlog.flush()
@@ -518,10 +633,44 @@ def cmd_capture(args, defs, batches, t2):
     return 0 if s["fail"] == 0 else 1
 
 
-def cmd_report():
+def _prune_stale_screenshots(rows):
+    """Remove only tool-owned PNGs not referenced by this complete run.
+
+    Refuse to mutate anything unless the run is fresh, internally coherent,
+    complete on disk, and the target is the exact documented screenshots
+    directory. This makes cleanup safe even if constants are edited later.
+    """
+    expected_dir = os.path.abspath(os.path.join(
+        CORE_SOURCE_DIR, "docs", "visual-kit", "screenshots"))
+    actual_dir = os.path.abspath(SHOTS_DIR)
+    if os.path.normcase(actual_dir) != os.path.normcase(expected_dir):
+        raise RuntimeError("refusing screenshot cleanup outside %s" % expected_dir)
+
+    capture_rows = [r for r in rows if r.get("file")]
+    run_ids = {r.get("run_id") for r in capture_rows}
+    if len(run_ids) != 1 or None in run_ids:
+        raise RuntimeError("refusing cleanup: mixed or missing run_id provenance")
+    if any(not r.get("fresh") for r in capture_rows):
+        raise RuntimeError("refusing cleanup: report contains retained captures")
+
+    expected = {r["file"] for r in capture_rows}
+    missing = sorted(name for name in expected
+                     if not os.path.isfile(os.path.join(actual_dir, name)))
+    if missing:
+        raise RuntimeError("refusing cleanup: %d referenced PNG(s) missing" % len(missing))
+
+    stale = sorted(name for name in os.listdir(actual_dir)
+                   if name.lower().endswith(".png") and name not in expected)
+    for name in stale:
+        os.remove(os.path.join(actual_dir, name))
+    return stale
+
+
+def cmd_report(prune=False):
     from report import (load_runlog, write_catalog_md, write_index_md,
                          write_run_summary, flag_cross_case_duplicates)
     rows = load_runlog(RUNLOG_PATH)
+    stale = _prune_stale_screenshots(rows) if prune else []
     # H-01 remediation #3: downgrade PASS -> WARN in-memory, BEFORE any of
     # the three files below are written, so CATALOG.md's per-row status and
     # RUN_SUMMARY.md's counts both reflect it -- a duplicate group across
@@ -533,6 +682,8 @@ def cmd_report():
     write_index_md(os.path.join(DOCS_DIR, "INDEX.md"), rows)
     write_run_summary(os.path.join(DOCS_DIR, "RUN_SUMMARY.md"), rows)
     print("wrote CATALOG.md, INDEX.md, RUN_SUMMARY.md -> %s" % DOCS_DIR)
+    if stale:
+        print("removed %d stale tool-owned screenshot(s)" % len(stale))
     return 0
 
 
@@ -555,7 +706,7 @@ def main():
         return 0
     rc = cmd_capture(args, defs, batches, t2)
     if args.action == "all":
-        cmd_report()
+        cmd_report(prune=(rc == 0))
     return rc
 
 

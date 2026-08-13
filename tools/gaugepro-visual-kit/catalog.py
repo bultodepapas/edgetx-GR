@@ -1,31 +1,13 @@
 """Track 1 (single-widget, ported from dev/scenes.lua) and Track 2 (layout
 galleries) screen catalogs for Gauge Dial Pro and Gauge Bar Pro.
 
-TELEMETRY SCOPE NOTE (read before touching source handling below): dynamic
-sensor injection (setTelemetryValue) needs a matching `telemetrySensors[]`
-entry pre-declared in the model YAML for the Source option's name string to
-resolve at all (confirmed empirically: without one, the widget shows "NO
-SOURCE" even though the sensor gets registered correctly at runtime -- the
-Source option binds to a name at model-load time, before any Lua has run).
-A follow-up session attempted this: the struct_TelemetrySensor union
-encoding (radio/src/storage/yaml/yaml_datastructs_tx16smk3.cpp) was decoded
-(type=TYPE_CUSTOM selects id="<16-bit>" for the id1 union, instance=
-"<8-bit>" for id2, and custom={ratio,offset} for cfg when unit is below
-UNIT_FIRST_VIRTUAL; ratio=0 skips the linear transform in
-TelemetrySensor::getValue entirely -- telemetry_sensors.cpp:717-739) and a
-hand-written `telemetrySensors:` block DID load without a parse error
-(confirmed via the model-load marker), but the captured screen showed the
-radio's setup/decoration chrome instead of the Gauge Pro home view, with no
-error in simu's log to explain why. Root cause not found within a bounded
-follow-up effort -- still deferred. This pass uses the one proven,
-zero-setup real source -- TX_VOLTAGE, already confirmed live and stable --
-for every scalar case, via a linear remap (see voltage_window()) that
-preserves each case's *relative* value/threshold positions (so colour
-bands, markers and sweep angles are still exercised correctly) even though
-the literal displayed number is no longer the scene's original one.
-CELLS-aggregation cases (`bateria` section, 7 cases) genuinely need a real
-multi-instance sensor and are skipped, listed explicitly in SKIPPED_CASES
-with the reason.
+TELEMETRY SCOPE NOTE: model YAML stores widget telemetry sources as tele(N)
+slots, while sensor identities use the nested id1/id2/cfg union spelling.
+modelgen.py now emits both contracts and TeleInject feeds those predeclared
+sensors through the public setTelemetryValue() API. Scalar source-specific
+scenes use that path. Most generic value-position scenes intentionally keep
+the cheaper, stable TX_VOLTAGE remap; CELLS aggregation remains skipped until
+the harness can inject the real multi-cell value structure.
 """
 
 import json
@@ -46,10 +28,24 @@ MAX_CUSTOM_SCREENS = 10
 V0 = 7.9
 WINDOW = 20.0
 
-# Cases skipped in this pass because they need a controllable/injectable
-# source (real telemetry sensor registration, deferred per the module
-# docstring) and can't be honestly reproduced with the fixed, always-live
-# TX_VOLTAGE substitution:
+# Model declarations shared by telemetry-backed Track 1 batches. IDs, units
+# and precisions mirror dev/scenes.lua's source contract.
+TELEMETRY_SENSORS = [
+    {"id": 3072, "subId": 0, "instance": 0, "name": "RSSI", "unit": 17, "prec": 0},
+    {"id": 3081, "subId": 0, "instance": 0, "name": "RxBt", "unit": 1, "prec": 2},
+    {"id": 3078, "subId": 0, "instance": 0, "name": "T1",   "unit": 11, "prec": 0},
+]
+TELEMETRY_BY_NAME = {sensor["name"]: sensor for sensor in TELEMETRY_SENSORS}
+
+# Cases whose exact source semantics are now driven by native telemetry.
+TELEMETRY_CASES = {
+    "st-stale", "st-nolink", "st-nodata", "op-chip-on", "op-chip-off",
+    "sc-preset", "sc-lowgood", "ba-rxbt", "pal-preset-auto",
+    "br-lowgood", "br-gradient-lowgood", "f4-auto-rssi",
+    "ne-damp0", "ne-damp9",
+}
+
+# Remaining cases that still need richer orchestration than a scalar value.
 SKIPPED_CASES = {
     "ba-cels-low": "CELLS aggregation needs a real multi-instance telemetry sensor",
     "ba-cels-tot": "same as ba-cels-low",
@@ -57,17 +53,55 @@ SKIPPED_CASES = {
     "ba-pct-low": "same as ba-cels-low",
     "ba-pct-tot": "same as ba-cels-low",
     "ba-liion": "same as ba-cels-low",
-    "ba-rxbt": "needs a registered RxBt sensor with min/max history siblings",
     "tx-timer": "timer-typed source display is a distinct code path, not exercised by TX_VOLTAGE",
-    "st-stale": "needs a source that can stop updating on command; TX_VOLTAGE is always live",
-    "st-nolink": "same as st-stale",
-    "st-nodata": "same as st-stale",
-    "op-chip-on": "same as st-stale (chip-on scene specifically needs a no-link state)",
-    "op-chip-off": "same as st-stale",
-    "ne-damp0": "needs a source whose value can step on command; TX_VOLTAGE is fixed",
-    "ne-damp9": "same as ne-damp0",
     "br-desc-history": "same as ne-damp0",
 }
+
+LOCAL_SOURCE_CASES = {
+    "f5-auto-ail", "f5-auto-thr", "f5-auto-ail-one", "f5-auto-ch1",
+}
+
+
+def telemetry_plan(case):
+    """Return an isolated, boot-time scalar telemetry pose for a scene."""
+    if case["name"] not in TELEMETRY_CASES:
+        return None
+    source_name = case.get("source") or "RSSI"
+    sensor = TELEMETRY_BY_NAME[source_name]
+
+    def row(value):
+        out = dict(sensor)
+        out["value"] = int(round(float(value) * (10 ** sensor["prec"])))
+        return out
+
+    values = [row(value) for value in (case.get("history") or [])]
+    values.append(row(case.get("value", 0)))
+    plan = {
+        "values": values,
+        "link": case["name"] not in {"st-nolink", "op-chip-on", "op-chip-off"},
+        # NO LINK scenes must have nil value as well as RSSI=0. If a previous
+        # numeric value is fed, Gauge Pro truthfully classifies the now-old
+        # TelemetryItem as STALE before it ever reaches the nil/disconnected
+        # branch.
+        "feed": case["name"] not in {
+            "st-nodata", "st-nolink", "op-chip-on", "op-chip-off",
+        },
+        "rssi": 78,
+    }
+    if case["name"] == "st-stale":
+        plan["post"] = {
+            "values": [], "link": True, "feed": False, "rssi": 78,
+            # TelemetryItem timeout is 20 s at the firmware's nominal 160 ms
+            # aging cadence. The Widget Studio transport poses 10 Hz packets,
+            # which deterministically reaches OLD in about 12.5 s.
+            "settle": 13.5,
+        }
+    elif case["name"] in {"ne-damp0", "ne-damp9"}:
+        plan["post"] = {
+            "values": [row(90)], "link": True, "feed": True, "rssi": 78,
+            "settle": 0.18,
+        }
+    return plan
 
 
 def voltage_window(min_, max_, warn, crit, value, v0=V0, window=WINDOW):
@@ -137,8 +171,8 @@ def _family_and_options(case, defs_by_family):
 
 def track1_gauge_options(case, defs_by_family):
     """Readable option-override dict for one scenes.json case, ready for
-    Defs.build_options(). Always sets Source=TX_VOLTAGE (see module
-    docstring) and folds the case's value/thresholds through voltage_window
+    Defs.build_options(). Uses TX_VOLTAGE for value-driven cases and folds
+    the case's value/thresholds through voltage_window
     so the rendered state (band/markers/sweep) matches the original intent.
 
     Scale defaults to "Manual" (DEFS' own default is "Auto", which makes the
@@ -152,6 +186,25 @@ def track1_gauge_options(case, defs_by_family):
     defs = defs_by_family[family]
     overrides = {"Scale": "Manual"}
     overrides.update(authored)
+    if case["name"] in TELEMETRY_CASES:
+        # Preserve the widget's real default (Auto) unless the authored scene
+        # explicitly chose a scale. The TX_VOLTAGE substitution below needs a
+        # forced Manual scale; a native RSSI/T1/RxBt source does not.
+        if "Scale" not in authored:
+            overrides.pop("Scale", None)
+        overrides["Source"] = case.get("source") or "RSSI"
+        return family, overrides
+    if case["name"] in LOCAL_SOURCE_CASES:
+        # These cases test BarPreset's source classifier, not an authored
+        # reading. Built-in model sources resolve at load time without the
+        # telemetrySensors[] registration external sensors require.
+        overrides["Source"] = case["source"]
+        if case["name"] == "f5-auto-thr":
+            # The simulator exposes raw stick units for Thr (-1024..1024),
+            # unlike the injected -100..100 scene value. Match that real
+            # source so the typography test is not polluted by overflow.
+            overrides.update(Min=-1024, Max=1024, Warn=-512, Crit=-768)
+        return family, overrides
     overrides["Source"] = "TX_VOLTAGE"
 
     if case.get("noSource"):
@@ -178,13 +231,14 @@ def load_scenes(path="scenes.json"):
 
 class Track1Screen:
     def __init__(self, case, family, overrides, layout_id="Layout1x1", zone_index=0,
-                 model_note="", real_rect=None):
+                 model_note="", real_rect=None, telemetry=None):
         self.case = case
         self.family = family
         self.overrides = overrides
         self.layout_id = layout_id
         self.zone_index = zone_index
         self.model_note = model_note
+        self.telemetry = telemetry
         # (x, y, w, h) pixels of the REAL zone this screen renders into, when
         # known (layouts.nearest_zone's own return value -- see
         # build_track1_screens). None for a plain fullscreen Layout1x1 case
@@ -222,15 +276,17 @@ def build_track1_screens(scenes_data, defs_by_family):
         if name in SKIPPED_CASES:
             continue
         family, overrides = track1_gauge_options(case, defs_by_family)
+        telem = telemetry_plan(case)
         zone = case.get("zone")
         if zone:
             target_w, target_h = zone
             layout_id, zone_index, rect = layouts.nearest_zone(
                 target_w, target_h, SCREEN_W, SCREEN_H)
             out.append(Track1Screen(case, family, overrides, layout_id=layout_id,
-                                     zone_index=zone_index, real_rect=rect))
+                                     zone_index=zone_index, real_rect=rect,
+                                     telemetry=telem))
         else:
-            out.append(Track1Screen(case, family, overrides))
+            out.append(Track1Screen(case, family, overrides, telemetry=telem))
     return out
 
 
@@ -243,6 +299,16 @@ def batch_by_section(screens, max_per_model=MAX_CUSTOM_SCREENS):
     current = []
     current_section = None
     for s in screens:
+        # Boot-time injection is deterministic and also guarantees that a
+        # no-data case starts with a genuinely empty TelemetryItem. Keep each
+        # such pose in its own process/model batch.
+        if s.telemetry:
+            if current:
+                batches.append(current)
+                current = []
+                current_section = None
+            batches.append([s])
+            continue
         if s.section != current_section and current and len(current) < max_per_model:
             # section boundary with room left in the current batch: still
             # start a fresh batch anyway, so a model file's name always maps

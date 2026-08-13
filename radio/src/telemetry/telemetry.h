@@ -31,6 +31,13 @@
 
 extern uint8_t telemetryStreaming; // >0 (true) == data is streaming in. 0 = no data detected for some time
 
+#if defined(SIMU) && defined(WIDGET_STUDIO)
+// Widget Studio can hold a synthetic receiver link open while values continue
+// to enter through the public setTelemetryValue() API. Radio builds never see
+// this state.
+extern uint8_t simuTelemetryLinkRssi;
+#endif
+
 inline bool TELEMETRY_STREAMING()
 {
   return telemetryStreaming > 0;

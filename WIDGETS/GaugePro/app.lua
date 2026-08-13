@@ -147,7 +147,7 @@ local function loadModules(path)
   end
   if mods.bar then
     mods.bar.setup(mods.theme, mods.geometry, mods.format, mods.renderer,
-                   mods.bar_faces, mods.motion)
+                   mods.bar_faces, mods.motion, mods.bar_style)
   end
   return mods
 end
@@ -316,9 +316,11 @@ local function configure(widget, deferRebuild)
   -- not pay RGB analysis/cache-signature cost during configure either.
   if L.style == "bar" then
     widget.barVisual, widget.barPalette = m.bar_style.resolve(widget, cfg)
+    widget.limitNotice = widget.barVisual.notice
     m.layout.applyBarVisual(L, widget.barVisual, cfg)
   else
     widget.barVisual, widget.barPalette = nil, nil
+    widget.limitNotice = nil
   end
   widget.layout = L
   -- rangeSig is included so a range edit (min/max/warn/crit/precision, or the

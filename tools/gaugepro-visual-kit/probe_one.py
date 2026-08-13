@@ -29,7 +29,7 @@ def main(names):
     os.makedirs(OUT_DIR, exist_ok=True)
 
     class A:
-        lua = "lua"
+        lua = os.environ.get("GAUGEPRO_LUA", "lua")
     defs, batches, _t2 = R.cmd_generate(A())
 
     wanted = []

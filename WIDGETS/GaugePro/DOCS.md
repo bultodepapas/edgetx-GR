@@ -64,79 +64,88 @@ slots does:
 | 2.11.x (radio **and** Companion) | 10 | `widgets_container.h` `MAX_WIDGET_OPTIONS 10` |
 | 2.12+ / 3.0 | 50 | `datastructs_screen.h`; dynamic allocation since commit `5c96b1e15` |
 
-For the split widgets, slots 1–9 are identical. Slot 10 is `DialStyle` for
-GaugeDialPro and `BarPreset` for GaugeBarPro. GaugeDialPro has 24 declared options on
-2.12+; GaugeBarPro has 42. The detailed 44-slot tables below describe GaugePro
-legacy, retained only for migration.
+The split widgets share slots 1–9. Slot 10 is deliberately family-specific:
+`DialStyle` for Gauge Dial Pro and `BarPreset` for Gauge Bar Pro. The tables
+below are the authoritative positional contracts. Options are append-only;
+inserting or reordering a row would reinterpret stored model data.
 
-The widget declares its **core ten** on every firmware, in fixed positions,
-and appends the rest only when the firmware can store them. Options are never
-inserted or reordered: widget option data is positional and typed, and a model
-that travels between versions or through an older Companion must not have its
-settings shifted.
+**Shared slots 1–9 (all supported firmware):**
 
-**Core ten (all firmware):**
+| Slot | Stored key | Radio label | Type | Default |
+|---:|---|---|---|---|
+| 1 | `Source` | Source | Source | automatic candidate list |
+| 2 | `Min` | Scale low | Integer | 0 |
+| 3 | `Max` | Scale high | Integer | 100 |
+| 4 | `Warn` | Warn level | Integer | 55 |
+| 5 | `Crit` | Critical level | Integer | 35 |
+| 6 | `HighGood` | High = good | Bool | On |
+| 7 | `ColorMode` | Colour mode | Choice | Rail |
+| 8 | `Precision` | Decimals | Choice | Auto |
+| 9 | `ShowMinMax` | Min/max marks | Choice | Markers |
 
-| Option | Type | Default | Meaning |
-|---|---|---|---|
-| **Source** | Source | *auto* | Telemetry sensor, timer, or local source. Defaults to the first available of RSSI, RQly, RxBt, Cels, TxBt (resolved by the firmware). |
-| **Scale low** | Integer | 0 | The low end of the dial. Not a threshold — see **Warn level** below. |
-| **Scale high** | Integer | 100 | The high end of the dial. |
-| **Warn level** | Integer | 55 | Where the gauge turns amber. |
-| **Critical level** | Integer | 35 | Where it turns red and starts pulsing. |
-| **High = good** | Bool | On | Direction: higher is better (Off inverts the bands). |
-| **Style** | Choice | Auto | Auto / Needle / Arc / Bar (see 4.4). |
-| **Colour mode** | Choice | Rail | Static / Threshold / Rail / Gradient / Sections (see 4.5). |
-| **Decimals** | Choice | Auto | Auto follows the sensor precision, or 0 / 1 / 2. |
-| **Min/max marks** | Choice | Markers | The **recorded** peaks, marked on the scale: Off / Markers / Markers + text. Nothing to do with **Scale low/high**. |
+**Gauge Dial Pro — complete 24-slot contract:**
 
-**Appended on 2.12+:**
+| Slot | Stored key | Radio label | Type | Default |
+|---:|---|---|---|---|
+| 10 | `DialStyle` | Dial style | Choice | Auto |
+| 11 | `Sweep` | Dial sweep | Choice | 270° |
+| 12 | `Accent` | Normal colour | Color | `#209058` |
+| 13 | `Label` | Name override | String | empty |
+| 14 | `Suffix` | Unit override | String | empty |
+| 15 | `Scale` | Scale ends | Choice | Auto |
+| 16 | `Damping` | Gauge damping | Slider | 4 |
+| 17 | `Cells` | Cell reading | Choice | Lowest |
+| 18 | `Battery` | Volts as % | Choice | Off |
+| 19 | `Alerts` | Alerts | Choice | Off |
+| 20 | `AlertSw` | Alert switch | Switch | none |
+| 21 | `Delay` | Startup delay (s) | Integer | 4 |
+| 22 | `Vibrate` | Vibrate | Bool | Off |
+| 23 | `ResetSw` | Reset min/max | Switch | none |
+| 24 | `ShowChip` | Info badges | Bool | On |
 
-| Option | Type | Default | Meaning |
-|---|---|---|---|
-| **Normal colour** | Color | `#209058` | Native colour picker; overrides the normal-state colour (default green, the "all clear" colour — 4.3 explains why it is a fixed colour and not a theme role). Lets four gauges on one screen be colour-coded. A custom accent is used as given: the contrast guarantee in 4.3 covers the default, not your choice. |
-| **Name override** | String | "" | Custom label ("PACK", "MOTOR"); empty uses the sensor name. |
-| **Unit override** | String | "" | Custom unit; empty uses the sensor unit. |
-| **Scale ends** | Choice | Auto | Where **Scale low/high** (and the two levels) come from: Auto takes a known-sensor preset, Manual always uses your values. |
-| **Dial sweep** | Choice | 270° | 270° / 180° / 360°. |
-| **Gauge damping** | Slider | 4 | 0 = raw, 9 = heavy; controls dial needle and bar value geometry without changing the saved slot/type/range (see 6.6). |
-| **Cell reading** | Choice | Lowest | How a `CELLS` table is reduced: Lowest / Total / Average. |
-| **Volts as %** | Choice | Off | Off / Li-Po / Li-Ion — show state of charge instead of volts (see 4.8). |
-| **Alerts** | Choice | Off | Off / Critical / Warning + critical (see 4.9). |
-| **Alert switch** | Switch | none | Alerts only fire while this switch is on (e.g. armed). |
-| **Startup delay (s)** | Integer | 4 | No alerts until the model has settled. The unit is in the label because a Lua widget cannot give a NumberEdit a suffix. |
-| **Vibrate** | Bool | Off | Haptic pulse on critical. |
-| **Reset min/max** | Switch | none | Clears the tracked history in flight. |
-| **Info badges** | Bool | On | Hides the *informational* pills (`NO LINK`, `STALE`, `NO DATA`, `NO SOURCE`). **WARN and CRIT always show**, whatever this is set to — they are a safety signal, and colour alone does not reach every pilot (4.3). The row is reserved either way, so turning it off does not buy the value more space. |
-| **Bar preset** | Choice | Classic | Auto Source / Classic / Theme / Hex / Blocks / Ticks / RC Center / Minimal / Bold Data. A coherent starting point; explicit overrides below win. |
-| **Bar face** | Choice | Auto | Continuous / Blocks / Hex / Ticks / Steps / Dual Rail. All six are production retained renderers. Dual Rail requires a scale that strictly crosses numeric zero; a one-sided request reports and draws an honest Continuous fallback. |
-| **Bar direction** | Choice | Auto | Horizontal / Vertical. Auto resolves tall zones vertically. Every face, gradient slice, threshold, head and history mark uses the same axis. A descending authored scale reverses the value direction truthfully. |
-| **Bar origin** | Choice | Auto | Scale low / Zero. Zero fills between numeric zero and the value, retains a permanent notch, supports asymmetric ranges, and reports when zero had to clamp outside a one-sided scale. |
-| **Bar thickness** | Choice | Auto | Thin / Medium / Thick / Maximum; inherits from the preset and is live on the Continuous Precision Rail. Large zones scale the physical rail up while short zones remain inside the proven degradation slot. |
-| **Bar ends** | Choice | Auto | Round / Square / Chamfer; inherits from the preset. Chamfer uses real retained triangle tips, not a rounded approximation. |
-| **Bar segments** | Choice | Auto | 6 / 8 / 10 / 12 / 16 / 24. Responsive and object ceilings may lower it; Hex is already capped at 10 by its 40-object budget. |
-| **Segment gap** | Choice | Auto | Tight / Normal / Wide. Used by segmented faces. |
-| **Palette** | Choice | Auto | Classic / Theme adaptive / Custom 3 / Custom 2. Live on every production bar face. |
-| **Warning colour** | Color | `#c86000` | Exact Custom Three warning anchor. |
-| **Critical colour** | Color | `#ff0000` | Exact Custom Three critical anchor and Custom Two endpoint. |
-| **Track colour** | Color | theme `SECONDARY1` | Used when Surface = Custom colors; updates retained objects without rebuilding. |
-| **Surface** | Choice | Auto | Transparent / Theme panel / Custom colors. Panels ground the complete instrument behind rail and text; micro zones downgrade to transparent. |
-| **Panel colour** | Color | theme `SECONDARY3` | Exact custom panel color. Gauge Pro preserves it and chooses the better existing theme ink on top instead of recoloring it. |
-| **Contrast assist** | Choice | Auto | Off / Strong. Auto measures contrast, ordinary color distance and simulated color-vision separation, then strengthens casing/head structure only when needed. Strong keeps the strongest local ground and marks. Neither mode replaces authored colors. |
-| **Motion** | Choice | Auto | Off / Essential / Refined / Expressive. Refined is the normal default. Motion chooses bounded visual feedback; Gauge damping remains the single position-speed control. See 4.11. |
-| **Position head** | Choice | Auto | None / Cap / Dot / Line / Needle. Every choice has materially different retained geometry and moves on the exact shared data axis. |
-| **Scale marks** | Choice | Auto | Off / Thresholds / Ends / Full. Marks are a shared overlay, independent of the selected face. |
-| **Value position** | Choice | Auto | Above / Inside / End / Off. Vertical Inside/End use a side information lane rather than printing through ticks or the rail. |
-| **Name position** | Choice | Auto | Above / Below / Inside / Off. Tall Below layouts stack the name and safety badge as separate rows; long overrides remain single-line in the audited zone matrix. |
+**Gauge Bar Pro — complete 42-slot contract:**
 
-Phase 1 froze slots 25–39 before every face was drawn. Phases 2–6 now ship the
-Continuous Precision Rail, thickness/end geometry, panel surfaces, complete
-bar history, live HTX theme re-resolution, structural contrast assistance and
-the retained spatial Gradient plus Blocks, true Hex, Fine Ticks and Signal
-Steps, orientation-neutral horizontal/vertical axes, signed zero origin,
-asymmetric Dual Rail, presentation controls in slots 40–44, and retained
-motion profiles. No resolver
-mutates the stored option table; slots 45–50 remain reserved.
+| Slot | Stored key | Radio label | Type | Default / applicability |
+|---:|---|---|---|---|
+| 10 | `BarPreset` | Bar preset | Choice | Classic |
+| 11 | `Accent` | Normal colour | Color | `#209058` |
+| 12 | `Label` | Name override | String | empty |
+| 13 | `Suffix` | Unit override | String | empty |
+| 14 | `Scale` | Scale ends | Choice | Auto |
+| 15 | `Damping` | Gauge damping | Slider | 4 |
+| 16 | `Cells` | Cell reading | Choice | Lowest |
+| 17 | `Battery` | Volts as % | Choice | Off |
+| 18 | `Alerts` | Alerts | Choice | Off |
+| 19 | `AlertSw` | Alert switch | Switch | none; used when Alerts ≠ Off |
+| 20 | `Delay` | Startup delay (s) | Integer | 4; used when Alerts ≠ Off |
+| 21 | `Vibrate` | Vibrate | Bool | Off; used when Alerts ≠ Off |
+| 22 | `ResetSw` | Reset min/max | Switch | none |
+| 23 | `ShowChip` | Info badges | Bool | On |
+| 24 | `BarFace` | Bar face | Choice | Auto |
+| 25 | `BarDir` | Bar direction | Choice | Auto |
+| 26 | `BarOrigin` | Bar origin | Choice | Auto; Zero needs a scale containing zero |
+| 27 | `BarSize` | Bar thickness | Choice | Auto |
+| 28 | `BarEnds` | Bar ends | Choice | Auto |
+| 29 | `Segments` | Bar segments | Choice | Auto; segmented faces |
+| 30 | `SegGap` | Segment gap | Choice | Auto; segmented faces |
+| 31 | `Palette` | Palette | Choice | Auto |
+| 32 | `WarnClr` | Warning colour | Color | Custom 3 |
+| 33 | `CritClr` | Critical colour | Color | Custom 2/3 |
+| 34 | `TrackClr` | Track colour | Color | Custom-colors surface |
+| 35 | `Surface` | Surface | Choice | Auto |
+| 36 | `PanelClr` | Panel colour | Color | Custom-colors surface |
+| 37 | `Contrast` | Contrast assist | Choice | Auto |
+| 38 | `Motion` | Motion | Choice | Auto |
+| 39 | `BarHead` | Position head | Choice | Auto |
+| 40 | `ScaleMarks` | Scale marks | Choice | Auto |
+| 41 | `ValuePos` | Value position | Choice | Auto |
+| 42 | `LabelPos` | Name position | Choice | Auto |
+
+When an explicit Bar choice cannot fit the zone or object ceiling, the widget
+keeps the effective safe rendering and shows an informational **LIMIT** badge.
+WARN/CRIT and availability states take priority. Auto/preset adaptation stays
+silent because responsiveness is the purpose of Auto. The exact requested,
+effective, and reason values remain in `barVisual.notices` for diagnostics.
 
 Notes:
 
@@ -773,8 +782,8 @@ current sensor. Motion profiles never add a second speed slider.
 Headless suites run with stock Lua 5.3 (the version EdgeTX embeds):
 
 ```sh
-lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (70 tests)
-lua5.3 tests/smoke_test.lua <widget-dir>/   # legacy lifecycle   (201 tests)
+lua5.3 tests/run_tests.lua  <widget-dir>/   # pure modules        (72 tests)
+lua5.3 tests/smoke_test.lua <widget-dir>/   # legacy lifecycle   (210 tests)
 lua5.3 tests/widgets_test.lua <widget-dir>/ # split contracts    (17 tests)
 lua5.3 dev/split_resources.lua <widget-dir>/ # split resource gates
 lua5.3 dev/collide.lua      <widget-dir>/   # geometric collision audit

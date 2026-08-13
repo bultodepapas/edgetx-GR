@@ -38,6 +38,7 @@
 #include "hal/adc_driver.h"
 #include "hal/rotary_encoder.h"
 #include "hal/switch_driver.h"
+#include "telemetry/telemetry.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -702,6 +703,17 @@ static void dispatchPipeCommand(const std::string& line)
     if (x >= 0 && y >= 0) simuTouchDown((int16_t)x, (int16_t)y);
   } else if (cmd == "touchup") {
     simuTouchUp();
+#if defined(WIDGET_STUDIO)
+  } else if (cmd == "telemetry") {
+    int id = 0, subId = 0, instance = 0, value = 0, unit = 0, prec = 0;
+    iss >> id >> subId >> instance >> value >> unit >> prec;
+    if (id >= 0 && id <= 0xFFFF && subId >= 0 && subId <= 7 &&
+        instance >= 0 && instance <= 0xFF) {
+      setTelemetryValue(PROTOCOL_TELEMETRY_LUA, (uint16_t)id,
+                        (uint8_t)subId, (uint8_t)instance, value,
+                        (uint32_t)unit, (uint32_t)prec);
+    }
+#endif
   } else if (cmd == "reset") {
     simuStop();
     simuStart();

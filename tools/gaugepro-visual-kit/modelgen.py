@@ -14,6 +14,7 @@ LayoutId / zone-count table: see myplans/gaugepro-visual-kit-plan.md Sec 2
 (verified against radio/src/gui/colorlcd/layouts/*.cpp).
 """
 
+import re
 import zlib
 
 MAX_CUSTOM_SCREENS = 10
@@ -221,6 +222,7 @@ inputNames:
    3:
       val: "Ail"
 potsWarnEnabled: 0
+%(telemetry_sensors)s
 screenData:
 """
 
@@ -383,10 +385,19 @@ def _yaml_scalar(value):
     raise TypeError("modelgen: cannot emit YAML scalar for %r" % (value,))
 
 
-def _render_options_block(defs, overrides, indent):
+def _render_options_block(defs, overrides, indent, source_aliases=None):
     pad = " " * indent
     lines = []
     for index, yaml_type, field, value in defs.build_options(overrides):
+        # Telemetry SOURCE values are persisted by slot, not by their display
+        # labels. Convert catalog-friendly names to the canonical spelling
+        # consumed by r_mixSrcRaw() while this model is being decoded.
+        if field == "source" and source_aliases and value in source_aliases:
+            value = source_aliases[value]
+        elif field == "source" and isinstance(value, str):
+            channel = re.match(r"^CH([1-9][0-9]*)$", value, re.IGNORECASE)
+            if channel:
+                value = "ch(%d)" % (int(channel.group(1)) - 1)
         lines.append("%s%d:" % (pad, index))
         lines.append("%s   type: %s" % (pad, yaml_type))
         lines.append("%s   value: " % pad)
@@ -394,7 +405,56 @@ def _render_options_block(defs, overrides, indent):
     return "\n".join(lines) + "\n"
 
 
-def render_screen_data(defs_by_family, screens):
+def render_telemetry_sensors(sensors):
+    """Render model-load declarations for sensors later fed by TeleInject.
+
+    Widget SOURCE values are decoded while model YAML is loading, before any
+    Lua widget can run. Declaring identity here is therefore mandatory; the
+    companion widget owns only live values/currentness. Field order mirrors
+    struct_TelemetrySensor in the generated firmware YAML schema.
+    """
+    if not sensors:
+        return ""
+    if len(sensors) > 99:
+        raise ValueError("modelgen: telemetry sensor capacity exceeded")
+    seen = set()
+    lines = ["telemetrySensors:"]
+    for index, sensor in enumerate(sensors):
+        label = str(sensor["name"])
+        if not label or len(label) > 4:
+            raise ValueError("modelgen: telemetry label must be 1..4 chars: %r"
+                             % label)
+        identity = (int(sensor["id"]), int(sensor.get("subId", 0)),
+                    int(sensor.get("instance", 0)))
+        if identity in seen:
+            raise ValueError("modelgen: duplicate telemetry identity %r" %
+                             (identity,))
+        seen.add(identity)
+        lines.extend([
+            "   %d:" % index,
+            "      id1:",
+            "         id: %d" % identity[0],
+            "      id2:",
+            "         instance: %d" % identity[2],
+            '      label: "%s"' % label.replace('"', ''),
+            "      subId: %d" % identity[1],
+            "      type: TYPE_CUSTOM",
+            "      unit: %d" % int(sensor.get("unit", 0)),
+            "      prec: %d" % int(sensor.get("prec", 0)),
+            "      autoOffset: 0",
+            "      filter: 0",
+            "      logs: 0",
+            "      persistent: 0",
+            "      onlyPositive: 0",
+            "      cfg:",
+            "         custom:",
+            "            ratio: 0",
+            "            offset: 0",
+        ])
+    return "\n".join(lines)
+
+
+def render_screen_data(defs_by_family, screens, source_aliases=None):
     if len(screens) > MAX_CUSTOM_SCREENS:
         raise ValueError(
             "modelgen: %d screens exceeds MAX_CUSTOM_SCREENS=%d"
@@ -414,11 +474,12 @@ def render_screen_data(defs_by_family, screens):
                 out.append("               widgetName: %s" % defs.widget_name)
                 out.append("               widgetData: ")
                 out.append("                  options: ")
-                out.append(_render_options_block(defs, overrides, 21).rstrip("\n"))
+                out.append(_render_options_block(
+                    defs, overrides, 21, source_aliases).rstrip("\n"))
     return "\n".join(out) + "\n"
 
 
-def render_model(defs_by_family, name, screens, regid=None):
+def render_model(defs_by_family, name, screens, regid=None, sensors=None):
     """Full model YAML text for one MODELS/*.yml file (<=10 screens)."""
     if regid is None:
         # zlib.crc32, not the builtin hash(): str hashing is salted per
@@ -427,14 +488,22 @@ def render_model(defs_by_family, name, screens, regid=None):
         # between two otherwise-identical runs (plan Sec 15's
         # reproducibility gate: two consecutive runs must be byte-identical).
         regid = ("GPVK%03d" % (zlib.crc32(name.encode("utf-8")) % 1000)).ljust(8, "0")[:8]
-    header = _HEADER % {"name": name}
-    body = render_screen_data(defs_by_family, screens)
+    header = _HEADER % {
+        "name": name,
+        "telemetry_sensors": render_telemetry_sensors(sensors),
+    }
+    source_aliases = {
+        str(sensor["name"]): "tele(%d)" % index
+        for index, sensor in enumerate(sensors or [])
+    }
+    body = render_screen_data(defs_by_family, screens, source_aliases)
     footer = _FOOTER % {"regid": regid}
     return header + body + footer
 
 
-def write_model(defs_by_family, path, name, screens, regid=None):
-    text = render_model(defs_by_family, name, screens, regid=regid)
+def write_model(defs_by_family, path, name, screens, regid=None, sensors=None):
+    text = render_model(defs_by_family, name, screens, regid=regid,
+                        sensors=sensors)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     return path
