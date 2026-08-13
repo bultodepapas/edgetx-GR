@@ -7,6 +7,7 @@
 > **Dial/Bar migration: [`MIGRATION.md`](MIGRATION.md)**
 > **Development guardrails: [`DEVELOPMENT_GUIDE.md`](DEVELOPMENT_GUIDE.md)**
 > **Current vs historical docs: [`DOCUMENTATION.md`](DOCUMENTATION.md)**
+> **2026-08-13 beta/pre-PR review: [`docs/PRE-PR-BETA-REVIEW-2026-08-13.md`](docs/PRE-PR-BETA-REVIEW-2026-08-13.md)**
 
 A modern successor to the community `GaugeRotary`: a responsive
 analog-digital instrument for EdgeTX color radios (LVGL, EdgeTX 2.11+,
@@ -15,6 +16,28 @@ developed against EdgeTX 3.0).
 *(Developed under the name `GaugeV2`; the folder, the widget name and the
 option defaults all moved to `GaugePro` before release, so no model config
 carries the old name.)*
+
+## Public beta status
+
+Gauge Dial Pro and Gauge Bar Pro are proposed as an explicit first public beta
+in [EdgeTX/edgetx-sdcard PR #289](https://github.com/EdgeTX/edgetx-sdcard/pull/289).
+They are not a final release. Back up the radio SD card and model configuration
+before installing them, and do not use a widget as the only warning for a
+flight-critical condition. Keep the radio's normal alarms and telemetry
+failsafes enabled.
+
+Beta testing is welcome on different color radios, EdgeTX versions, layouts,
+themes and telemetry sources. Bug reports and requests for new features,
+options or visual improvements should include:
+
+- radio model and exact EdgeTX version;
+- widget family (`DialPro` or `BarPro`), source and layout/zone;
+- theme and non-default widget options;
+- expected and actual behavior; and
+- a screenshot or simulator log when available.
+
+The current readiness verdict and remaining beta gates are recorded in the
+[`2026-08-13 review`](docs/PRE-PR-BETA-REVIEW-2026-08-13.md).
 
 The product now appears as two widgets: **Gauge Dial Pro** and **Gauge Bar Pro**.
 Their EdgeTX registration IDs are `DialPro` and `BarPro` (the firmware limit is
@@ -29,16 +52,15 @@ pwsh dev/sync-sd.ps1 -Destination E:\ -IncludeLegacy  # + GaugePro transition
 
 See [`MIGRATION.md`](MIGRATION.md) before removing a legacy GaugePro folder.
 
-It is the only EdgeTX widget that draws with the **LVGL retained-object API**
-(`lvgl.arc`, `lvgl.triangle`, `lvgl.line`) rather than the legacy `lcd`
-renderer, so one folder serves every screen size with no per-resolution
-assets.
+The renderer uses EdgeTX's **LVGL retained-object API** (`lvgl.arc`,
+`lvgl.triangle`, `lvgl.line`) rather than the legacy `lcd` renderer, so one
+shared core serves every screen size with no per-resolution assets.
 
 ## Every option, in one image
 
 [![Gauge Pro — every option and every state](docs/gauge-pro-options.png)](docs/gauge-pro-options.png)
 
-**[`docs/gauge-pro-options.png`](docs/gauge-pro-options.png)** — 222 scenes
+**[`docs/gauge-pro-options.png`](docs/gauge-pro-options.png)** — 229 scenes
 covering every option, every state, every colour mode and every zone size an
 EdgeTX layout can hand out, on EdgeTX's **stock theme**.
 [`docs/gauge-pro-options-dark.png`](docs/gauge-pro-options-dark.png) is the same
@@ -183,7 +205,7 @@ Stock Lua 5.3, no radio needed:
 
 ```sh
 lua5.3 tests/run_tests.lua  ./          # pure modules         (72 tests)
-lua5.3 tests/smoke_test.lua ./          # legacy lifecycle    (210 tests)
+lua5.3 tests/smoke_test.lua ./          # legacy lifecycle    (220 tests)
 lua5.3 tests/widgets_test.lua ./        # split contracts      (17 tests)
 lua5.3 dev/split_resources.lua ./       # chunks/RAM/callback gates
 lua5.3 dev/collide.lua      ./          # geometric collision audit
@@ -200,18 +222,33 @@ Real-firmware visual validation (from `tools/gaugepro-visual-kit/`):
 ```sh
 python run.py check                   # contracts + split model YAML, no simu
 python run.py capture --track2-only   # 8 real-firmware Dial/Bar layouts
-python run.py all                     # 272 fresh captures + generated report
+python run.py all                     # 277 fresh captures + generated report
+python verify_dupes.py                # expected/identical-frame audit
 python settings_probe.py              # open/scroll the real Bar settings form
 ```
+
+The 2026-08-13 review passed all **309 Lua tests**, static analysis, resource
+budgets, collision checks, motion checks, package installation and the C++
+simulator build. A later 277-screen simulator rerun ended with no runtime
+failures, but its duplicate-frame audit found two unexpected groups caused by
+dropped gallery navigation events. Those stale frames were not promoted over
+the last clean committed visual-kit evidence. The runtime is a beta candidate;
+the evidence rerun and a physical-radio smoke test remain open. See the
+[`pre-PR review`](docs/PRE-PR-BETA-REVIEW-2026-08-13.md) for exact evidence.
+
+The independent, opt-in Widget Studio automation hooks used during development
+are proposed separately in
+[EdgeTX/edgetx PR #7646](https://github.com/EdgeTX/edgetx/pull/7646). The widgets
+do not depend on those hooks at runtime.
 
 The native visual track declares real model telemetry sensors and feeds scalar
 RSSI, RxBt, and T1 samples through the simulator's firmware telemetry path. It
 also controls link state and post-boot value transitions, so Auto source
 selection, NO LINK/NO DATA/STALE, history, low-is-good behavior, and Damping
 0/9 are screenshots of runtime behavior rather than painted fixtures. The
-current catalog has 216 option scenes, eight layout galleries, 48 theme
-captures, and eight explicit rich-source skips (CELLS tables, timer, and one
-descending-history sequence). See
+current catalog declares 229 option cases: 221 native captures and eight
+explicit rich-source skips (CELLS tables, timer, and one descending-history
+sequence). It also includes eight layout galleries and 48 theme captures. See
 [`docs/visual-kit/RUN_SUMMARY.md`](docs/visual-kit/RUN_SUMMARY.md) and the
 [real settings evidence](docs/visual-kit/settings/S02-settings-top.png).
 

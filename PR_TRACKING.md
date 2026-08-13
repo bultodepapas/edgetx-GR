@@ -1,7 +1,43 @@
 # EdgeTX Pull Request Tracking
 
-Tracking document for all pull requests authored by **bultodepapas** on `EdgeTX/edgetx`.
-Generated: 2026-08-06.
+Tracking document for pull requests authored by **bultodepapas** in the
+official EdgeTX organization repositories.
+
+Last updated: **2026-08-13** for the Gauge Pro and Widget Studio submissions.
+Older entries below retain their 2026-08-06 review snapshot unless explicitly
+updated.
+
+## Current beta submissions
+
+| Repository | PR | State | CI | Next action |
+|---|---:|---|---|---|
+| `EdgeTX/edgetx-sdcard` | [#289 — Gauge Dial Pro and Gauge Bar Pro beta](https://github.com/EdgeTX/edgetx-sdcard/pull/289) | OPEN · DRAFT | CodeRabbit success | Keep draft pending physical-radio testing, deterministic visual-evidence rerun and maintainer feedback |
+| `EdgeTX/edgetx` | [#7646 — Widget Studio simulator hooks](https://github.com/EdgeTX/edgetx/pull/7646) | OPEN · DRAFT | All compile/test jobs passed; final packaging cleanup failed | Rerun the packaging job or obtain maintainer confirmation that its post-upload artifact-deletion 404 is infrastructure-only |
+
+### [EdgeTX/edgetx-sdcard #289](https://github.com/EdgeTX/edgetx-sdcard/pull/289) — Gauge Pro beta
+
+- **Base / head:** `master` ← `feat/gauge-pro-beta`
+- **Scope:** one commit, 23 files; `GaugeDialPro`, `GaugeBarPro` and shared
+  `GaugeCore` canonical SD payload only.
+- **Excluded deliberately:** legacy combined widget, simulator changes,
+  generated visual tooling/evidence, `imgui.ini` and formatter noise.
+- **Validation:** 309 Lua tests, static analysis and resource/geometry/motion
+  gates passed before packaging; all five color overlays inherit the payload.
+- **Status / next step:** Appropriate as a first-public-beta draft. Complete a
+  physical color-radio smoke test and repair/rerun deterministic visual
+  navigation before marking it ready for final review.
+
+### [EdgeTX/edgetx #7646](https://github.com/EdgeTX/edgetx/pull/7646) — Widget Studio simulator hooks
+
+- **Base / head:** `main` ← `feat/widget-studio-simulator`
+- **Scope:** one commit, 13 files; opt-in `WIDGET_STUDIO` simulator automation
+  and documentation, independent of the Gauge Pro SD-card contribution.
+- **CI:** Documentation, all test matrices and all firmware build matrices
+  passed. `Package firmwares` successfully merged and uploaded 19 artifacts,
+  then failed while deleting an already-missing source artifact (`404 Not
+  Found`).
+- **Status / next step:** Keep draft for API/naming feedback. Rerun the failed
+  packaging job and confirm it completes cleanly.
 
 ## Summary Table
 
