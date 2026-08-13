@@ -55,14 +55,32 @@ def main(names):
         for screen in wanted:
             model_file = "model%d.yml" % next(counter)
             driver.stop()
+            telem = screen.telemetry
+            driver.set_telemetry(
+                telem["values"] if telem else [],
+                link=telem["link"] if telem else False,
+                feed=telem["feed"] if telem else False,
+                rssi=telem["rssi"] if telem else 0)
             write_model(defs,
                         os.path.join(R.SD_DIR, "MODELS", model_file),
                         "GPVK PROBE",
                         [Screen(screen.layout_id,
                                 [(screen.zone_index, screen.family,
-                                  screen.overrides)])])
+                                  screen.overrides)])],
+                        sensors=R.TELEMETRY_SENSORS)
             R.set_current_model(model_file)
             driver.start(model_marker="GPVK PROBE")
+            if telem and telem.get("post"):
+                post = telem["post"]
+                if post.get("steps"):
+                    for step in post["steps"]:
+                        driver.inject_telemetry(step)
+                        time.sleep(post["settle"])
+                else:
+                    driver.set_telemetry(post["values"], link=post["link"],
+                                         feed=post["feed"], rssi=post["rssi"])
+                    driver.inject_telemetry(post["values"])
+                    time.sleep(post["settle"])
             out = os.path.join(OUT_DIR, "%s.png" % screen.name)
             t0 = time.time()
             ok = driver.capture(out, settle_s=1.5)

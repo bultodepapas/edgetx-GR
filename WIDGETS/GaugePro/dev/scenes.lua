@@ -92,6 +92,12 @@ M.SOURCES = {
   Thr   = { id = 100 },
   Ail   = { id = 101 },
   CH1   = { id = 102, name = "CH1" },
+  -- EdgeTX's transmitter battery source is intentionally non-telemetry.
+  -- telemetry.resolveSource() gives this exact source the official "V" suffix
+  -- and presets.lua supplies the production 6.0..8.4 V range.  Keeping it as
+  -- a real source here makes the visual reference exercise those contracts,
+  -- instead of imitating them with a hand-authored generic voltage sensor.
+  TxV   = { id = 103, name = "tx-voltage" },
 }
 
 -- Options that cannot be shown in a still frame. Listed explicitly so the
@@ -1065,6 +1071,55 @@ M.sections = {
     note = "La misma configuracion en cada tamano de hueco que un layout de"
       .. " EdgeTX puede dar. Ningun texto puede desbordar ni cruzar el aro.",
     cases = zoneMatrix(),
+  },
+  {
+    key = "referencia_tx",
+    title = "14 - Referencia de producto / Dial TX horizontal",
+    note = "Escena de decision 400x160 sobre el preset real de tx-voltage:"
+      .. " 6.0..8.4 V, WARN 6.8 y CRIT 6.4. Se conserva separada de la"
+      .. " escena sintetica color-threshold-ok (-8..12).",
+    cases = {
+      { name = "dial-wide-tx-voltage", title = "TX voltage / normal",
+        zone = { 400, 160 }, source = "TxV", opts = {
+          Style = "Needle", ColorMode = "Threshold", Scale = "Auto",
+          Precision = "1", Label = "TX VOLTAGE", Damping = 0,
+        }, value = 7.9 },
+      { name = "dial-wide-tx-warn", title = "TX voltage / WARN",
+        zone = { 400, 160 }, source = "TxV", opts = {
+          Style = "Needle", ColorMode = "Threshold", Scale = "Auto",
+          Precision = "1", Label = "TX VOLTAGE", Damping = 0,
+        }, value = 6.6 },
+      { name = "dial-wide-tx-crit", title = "TX voltage / CRIT",
+        zone = { 400, 160 }, source = "TxV", opts = {
+          Style = "Needle", ColorMode = "Threshold", Scale = "Auto",
+          Precision = "1", Label = "TX VOLTAGE", Damping = 0,
+        }, value = 6.2 },
+      { name = "dial-wide-tx-nodata", title = "TX voltage / NO DATA",
+        zone = { 400, 160 }, source = "TxV", opts = {
+          Style = "Needle", ColorMode = "Threshold", Scale = "Auto",
+          Precision = "1", Label = "TX VOLTAGE", Damping = 0,
+        }, value = 7.9, post = function(ctx)
+          ctx.mock.setValue(ctx.srcId, nil)
+          for _ = 1, 3 do
+            ctx.mock.advance(50)
+            ctx.mod.refresh(ctx.widget)
+          end
+        end },
+      { name = "dial-wide-tx-history", title = "TX voltage / min max",
+        zone = { 400, 160 }, source = "TxV", opts = {
+          Style = "Needle", ColorMode = "Threshold", Scale = "Auto",
+          Precision = "1", Label = "TX VOLTAGE",
+          ShowMinMax = "Markers + text", Damping = 0,
+        }, value = 7.9, history = { 6.5, 8.2 }, post = function(ctx)
+          -- tx-voltage has no EdgeTX min/max siblings; exercise the widget's
+          -- own bounded fallback history, then return to the reference value.
+          for _, v in ipairs({ 6.5, 8.2, 7.9 }) do
+            ctx.mock.setValue(ctx.srcId, v)
+            ctx.mock.advance(50)
+            ctx.mod.refresh(ctx.widget)
+          end
+        end },
+    },
   },
 }
 

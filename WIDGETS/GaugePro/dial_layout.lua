@@ -17,6 +17,13 @@ end
 
 local function dialLayout(widget, cfg, L, w, h)
   local mode, orientation = L.mode, L.orientation
+  -- Phase 1's instrument composition is deliberately narrow in scope. The
+  -- compact horizontal family and every balanced/vertical family retain their
+  -- established geometry; only a horizontal face with room for both title
+  -- and value gets the explicit header/main/footer structure.
+  local horizontalInstrument = orientation == "horizontal"
+    and (mode == "normal" or mode == "large")
+  L.horizontalInstrument = horizontalInstrument
   -- A 60x60 micro dial has no name, unit, state chip, history, or needle.
   -- Keeping the normal six-pixel frame around that already-minimal face made
   -- its safe inner chord narrower than "16.62" at the smallest EdgeTX font.
@@ -47,7 +54,11 @@ local function dialLayout(widget, cfg, L, w, h)
   L.showMinMaxText = (cfg.showMinMax or 1) > 2 and mode ~= "micro"
   -- a full ring starts and ends at the same point: two scale labels would sit
   -- on top of each other
-  L.showScale = (mode == "large") and (L.sweep < 360)
+  -- A 400x160 face classifies as normal, although its dedicated dial half has
+  -- enough room for both endpoint labels. Treat large as an unconditional
+  -- candidate and the new horizontal instrument as a fit-tested candidate;
+  -- the final geometry below can still reject both labels as one unit.
+  L.showScale = (mode == "large" or horizontalInstrument) and (L.sweep < 360)
   L.showGhost = (mode ~= "micro")
 
   -- The name is the least important text on the dial: the smallest font keeps
@@ -60,6 +71,25 @@ local function dialLayout(widget, cfg, L, w, h)
   local nameH = T.fontHeight(L.nameFont)
   local stateH = T.fontHeight(L.stateFont)
   local minMaxH = T.fontHeight(L.minMaxFont)
+
+  -- The badge's complete footprint belongs to layout, including its outline.
+  -- Computing it before the horizontal bands means the header reserves the
+  -- exact same geometry that dial_renderer and ui_core later paint.
+  L.chipPad = T.px(7)
+  L.chipHeight = stateH + T.px(6)
+  L.chipOff = floor((L.chipHeight - stateH) / 2)
+  L.chipOutline = T.px(1)
+
+  -- "Markers + text" is a preference, not permission to wrap telemetry
+  -- captions. Evaluate it before carving a footer so a failed fit gives every
+  -- pixel back to the value instead of leaving a blank reserved band.
+  local minCaption = "min " .. F.display(widget, cfg.min)
+  local maxCaption = "max " .. F.display(widget, cfg.max)
+  local minMaxCellNeed = max(T.textWidth(minCaption, L.minMaxFont),
+                             T.textWidth(maxCaption, L.minMaxFont))
+  local function minMaxTextFits(b)
+    return floor(b.w / 2) >= minMaxCellNeed
+  end
 
   -- dial box and text region per orientation
   local dial, textRegion, valueRegion
@@ -76,10 +106,31 @@ local function dialLayout(widget, cfg, L, w, h)
     dial = box(pad, pad, dialSide - pad * 2, h - pad * 2)
     local tx = dial.x + dial.w + T.px(T.space.md)
     textRegion = box(tx, pad, w - tx - pad, h - pad * 2)
-    local rows = (L.showName and nameH or 0) + (L.showState and stateH or 0)
-      + (L.showMinMaxText and minMaxH or 0)
-    valueRegion = box(textRegion.x, textRegion.y,
-                      textRegion.w, max(textRegion.h - rows, T.px(12)))
+    if horizontalInstrument then
+      if L.showMinMaxText and not minMaxTextFits(textRegion) then
+        L.showMinMaxText = false
+      end
+      local headerH = max(L.showName and nameH or 0,
+                          L.showState
+                            and (L.chipHeight + L.chipOutline * 2) or 0)
+      local footerH = L.showMinMaxText and minMaxH or 0
+      local gap = T.px(T.space.sm)
+      L.headerBox = box(textRegion.x, textRegion.y, textRegion.w, headerH)
+      L.footerBox = box(textRegion.x,
+        textRegion.y + textRegion.h - footerH, textRegion.w, footerH)
+      local mainY = textRegion.y + headerH
+        + ((headerH > 0) and gap or 0)
+      local mainBottom = L.footerBox.y
+        - ((footerH > 0) and gap or 0)
+      L.mainBox = box(textRegion.x, mainY, textRegion.w,
+                      max(mainBottom - mainY, T.px(12)))
+      valueRegion = L.mainBox
+    else
+      local rows = (L.showName and nameH or 0) + (L.showState and stateH or 0)
+        + (L.showMinMaxText and minMaxH or 0)
+      valueRegion = box(textRegion.x, textRegion.y,
+                        textRegion.w, max(textRegion.h - rows, T.px(12)))
+    end
   elseif orientation == "vertical" then
     local dialSide = min(w, h * 0.62)
     dial = box(floor((w - dialSide) / 2) + pad, pad,
@@ -143,8 +194,18 @@ local function dialLayout(widget, cfg, L, w, h)
     end
   end
 
+  -- Exposed structural boxes are inexpensive layout data and make the visual
+  -- contract directly testable without inferring it from retained objects.
+  L.dialBox, L.textRegion = dial, textRegion
+
   L.cx = dial.x + floor(dial.w / 2)
   L.cy = dial.y + floor(dial.h / 2)
+
+  -- Resolve the presentation before the radial metrics: Needle uses a thin
+  -- active arc as a secondary position cue, while Arc keeps the full track
+  -- weight because it has no blade. Auto is Needle outside the micro family.
+  L.showNeedle = (cfg.style == C.STYLE_NEEDLE)
+    or (cfg.style == C.STYLE_AUTO and mode ~= "micro")
 
   -- Ring metrics depend on the zone, not on the radius, so they are computed
   -- first; the radius is then whatever is left after reserving room for
@@ -152,7 +213,10 @@ local function dialLayout(widget, cfg, L, w, h)
   -- radius from the box alone pushes the ticks past the zone edge.
   L.trackThickness = clamp(floor(side * T.ratio.trackToRadius / 2),
                            T.px(3), T.px(12))
-  L.arcThickness = L.trackThickness
+  L.arcThickness = L.showNeedle
+    and clamp(floor(L.trackThickness * T.ratio.needleArcToTrack + 0.5),
+              T.px(2), L.trackThickness)
+    or L.trackThickness
   L.railThickness = max(T.px(2), floor(L.trackThickness * T.ratio.railToTrack))
   L.ghostThickness = max(T.px(2), floor(L.trackThickness * 0.45))
   L.tickCount = (mode == "micro") and 3 or ((mode == "large") and 7 or 5)
@@ -221,6 +285,20 @@ local function dialLayout(widget, cfg, L, w, h)
     + referenceBandReserve
   L.tickInner = L.railRadius + tickGap
   L.tickOuter = L.tickInner + tickLength
+  -- Threshold is an exact boundary, not another scale tick. Its radial line
+  -- spans the complete neutral track, then adds a bounded 1..2 px lip towards
+  -- the ticks. Thickness is always at least one physical step above a normal
+  -- tick and remains capped by the LCD-scaled stroke budget.
+  L.thresholdLip = clamp(
+    floor(L.trackThickness * T.ratio.thresholdLipToTrack + 0.5),
+    T.px(1), T.px(2))
+  L.thresholdInner = max(L.radius - floor(L.trackThickness / 2), 0)
+  L.thresholdOuter = min(
+    L.radius + floor((L.trackThickness + 1) / 2) + L.thresholdLip,
+    L.tickInner, max(edgeReach, 0))
+  L.thresholdOuter = max(L.thresholdOuter, L.thresholdInner)
+  L.thresholdThickness = clamp(L.tickThickness + T.px(1),
+                               T.px(2), T.px(4))
   -- Radial span of the min/max history marks. LAYOUT data, like the bar's
   -- markOverhang: renderer.build and renderer.updateHistory both need it and
   -- used to compute the same two expressions independently - the exact shape
@@ -247,8 +325,6 @@ local function dialLayout(widget, cfg, L, w, h)
     and { L = L, region = valueRegion } or nil
 
   -- needle
-  L.showNeedle = (cfg.style == C.STYLE_NEEDLE)
-    or (cfg.style == C.STYLE_AUTO and mode ~= "micro")
   if L.showNeedle then
     L.pivotRadius = clamp(floor(L.radius * T.ratio.pivotRadius),
                           T.px(3), T.px(9))
@@ -323,45 +399,69 @@ local function dialLayout(widget, cfg, L, w, h)
     chordCtx.topAlign = true
   end
 
+  local valuePolicy
+  if horizontalInstrument then
+    -- Phase 2 hierarchy for the explicit information column. The value stays
+    -- within the 35..45% reference band whenever the discrete EdgeTX ramp can
+    -- provide it; the unit then chooses the legible font closest to 40%, never
+    -- above 50%, and uses the tighter `sm` relationship. No other family
+    -- receives this table, so placeValue's established defaults remain exact.
+    valuePolicy = {
+      valueMaxHeight = floor(h * 0.45),
+      unitTargetRatio = 0.40,
+      unitMaxRatio = 0.50,
+      unitMinFont = T.FONTS.XS,
+      unitGap = T.px(T.space.sm),
+    }
+  end
   placeValue(L, valueRegion, F.widestSample(widget),
-             L.showUnit and widget.unitText or "", cap, chordCtx)
+             L.showUnit and widget.unitText or "", cap, chordCtx, valuePolicy)
 
   -- Rows BELOW the value, in paint order top to bottom. They are placed with
   -- provisional geometry here and then stacked by stackTextRows, which owns
   -- the vertical rhythm (Tanda 7 B); only the x/w/h of each box matter above.
   local align = (orientation == "horizontal") and LEFT or CENTER
   local stackTop, stackBottom, stackRows
-  -- "Markers + text" is a preference, not permission to wrap a telemetry
-  -- caption into unreadable fragments.  Reserve against the configured range
-  -- endpoints (the longest legitimate history captions for this scale) and
-  -- degrade to the still-visible min/max marks when a responsive family does
-  -- not have two cells wide enough for them.
-  local minCaption = "min " .. F.display(widget, cfg.min)
-  local maxCaption = "max " .. F.display(widget, cfg.max)
-  local minMaxCellNeed = max(T.textWidth(minCaption, L.minMaxFont),
-                             T.textWidth(maxCaption, L.minMaxFont))
-  local function minMaxTextFits(b)
-    return floor(b.w / 2) >= minMaxCellNeed
-  end
   if orientation == "horizontal" then
-    L.stateBox = box(textRegion.x, 0, textRegion.w, stateH)
-    L.minMaxBox = box(textRegion.x, 0, textRegion.w, minMaxH)
-    L.nameBox = box(textRegion.x, 0, textRegion.w, nameH)
-    if L.showMinMaxText and not minMaxTextFits(L.minMaxBox) then
-      L.showMinMaxText = false
+    if horizontalInstrument then
+      -- One header, two owners. Reserve the longest informational badge rather
+      -- than today's state, so NORMAL -> WARN/CRIT/NO SOURCE never changes the
+      -- layout or walks the value vertically. The outline is kept inside the
+      -- header's right edge and the title receives the remaining width.
+      local stateReserve = min(textRegion.w,
+        T.textWidth("NO SOURCE", L.stateFont) + L.chipPad * 2)
+      local headerGap = T.px(T.space.sm)
+      local stateRight = L.headerBox.x + L.headerBox.w - L.chipOutline
+      local stateX = stateRight - stateReserve
+      local nameW = max(stateX - headerGap - L.headerBox.x, 1)
+      local nameY = L.headerBox.y
+        + floor((L.headerBox.h - nameH) / 2)
+      local stateY = L.headerBox.y
+        + floor((L.headerBox.h - stateH) / 2)
+      L.nameBox = box(L.headerBox.x, nameY, nameW, nameH)
+      L.stateBox = box(stateX, stateY, stateReserve, stateH)
+      L.minMaxBox = box(L.footerBox.x, L.footerBox.y,
+                        L.footerBox.w, minMaxH)
+      -- placeValue already centred the stable value+unit group in mainBox.
+      -- There is nothing left to distribute: title/state and history have
+      -- explicit bands and NORMAL simply hides its retained badge objects.
+      stackRows = {}
+      stackTop, stackBottom = 0, 0
+    else
+      L.stateBox = box(textRegion.x, 0, textRegion.w, stateH)
+      L.minMaxBox = box(textRegion.x, 0, textRegion.w, minMaxH)
+      L.nameBox = box(textRegion.x, 0, textRegion.w, nameH)
+      if L.showMinMaxText and not minMaxTextFits(L.minMaxBox) then
+        L.showMinMaxText = false
+      end
+      -- Compact horizontal faces retain the established distributed stack.
+      stackRows = { L.valueBox }
+      if L.showState then stackRows[#stackRows + 1] = L.stateBox end
+      if L.showMinMaxText then stackRows[#stackRows + 1] = L.minMaxBox end
+      if L.showName then stackRows[#stackRows + 1] = L.nameBox end
+      stackTop = textRegion.y
+      stackBottom = textRegion.y + textRegion.h
     end
-    -- The value joins the stack here, unlike the dial-centred orientations:
-    -- in a horizontal zone the text column is the whole right-hand side, and
-    -- the value is simply its first row. Distributing all four rows over the
-    -- column centres the group as one block - the alternative, anchoring the
-    -- name to the column's bottom edge, is what left 85 px of nothing between
-    -- the min/max row and the name at 480x272.
-    stackRows = { L.valueBox }
-    if L.showState then stackRows[#stackRows + 1] = L.stateBox end
-    if L.showMinMaxText then stackRows[#stackRows + 1] = L.minMaxBox end
-    if L.showName then stackRows[#stackRows + 1] = L.nameBox end
-    stackTop = textRegion.y
-    stackBottom = textRegion.y + textRegion.h
   elseif orientation == "vertical" then
     L.minMaxBox = box(textRegion.x, 0, textRegion.w, minMaxH)
     L.nameBox = box(textRegion.x, 0, textRegion.w, nameH)
@@ -446,8 +546,8 @@ local function dialLayout(widget, cfg, L, w, h)
     L.minMaxBox.y = L.valueBox.y + L.valueBox.h
   end
   L.textAlign = align
-  L.nameAlign = align
-  L.stateAlign = align
+  L.nameAlign = horizontalInstrument and LEFT or align
+  L.stateAlign = horizontalInstrument and RIGHT or align
 
   -- the min/max row hangs below the value INSIDE the dial circle: constrain
   -- it to the chord at its depth so it neither crosses the ring nor the
@@ -473,8 +573,9 @@ local function dialLayout(widget, cfg, L, w, h)
   local mmNeed = T.textWidth("min " .. F.widestSample(widget), L.minMaxFont) * 2
     + T.px(T.space.lg)
   local mmW = min(L.minMaxBox.w, max(mmNeed, T.px(24)))
+  local mmAlign = horizontalInstrument and CENTER or align
   if mmW < L.minMaxBox.w then
-    if align == CENTER then
+    if mmAlign == CENTER then
       L.minMaxBox.x = L.minMaxBox.x + floor((L.minMaxBox.w - mmW) / 2)
     end
     L.minMaxBox.w = mmW
@@ -557,22 +658,25 @@ local function dialLayout(widget, cfg, L, w, h)
     end
     L.scaleMinBox = clearEndTick(L.startAngle, L.scaleMinBox)
     L.scaleMaxBox = clearEndTick(L.startAngle + L.sweep, L.scaleMaxBox)
-    if L.scaleMinBox.y + sh > h then L.showScale = false end
+    -- Endpoint labels are atomic: showing only one implies a false range. A
+    -- normal horizontal face may use them only when both boxes remain inside
+    -- the zone, remain distinct, and stay out of the information column.
+    local function inside(bb)
+      return bb.x >= 0 and bb.y >= 0
+        and bb.x + bb.w <= w and bb.y + bb.h <= h
+    end
+    local function intersects(a, b)
+      return a.x < b.x + b.w and a.x + a.w > b.x
+        and a.y < b.y + b.h and a.y + a.h > b.y
+    end
+    if not inside(L.scaleMinBox) or not inside(L.scaleMaxBox)
+      or intersects(L.scaleMinBox, L.scaleMaxBox)
+      or (horizontalInstrument
+          and (intersects(L.scaleMinBox, textRegion)
+               or intersects(L.scaleMaxBox, textRegion))) then
+      L.showScale = false
+    end
   end
-
-  -- chip behind the state text. 7 px side padding and stateH + 6 height give
-  -- the C/T letters breathing room, and the text is centred in the pill by
-  -- (chipHeight - stateH) / 2 (review P-B). chipOff lives in LAYOUT, not in
-  -- the renderer: configure() replaces widget.layout on every update() but
-  -- only rebuilds on a signature change, so a field the renderer wrote at
-  -- build time was lost by the next no-op update() and the chip render
-  -- crashed on nil - the widget disabled itself (Tanda 6 F-1).
-  L.chipPad = T.px(7)
-  L.chipHeight = stateH + T.px(6)
-  L.chipOff = floor((L.chipHeight - stateH) / 2)
-  -- see barLayout: the outline is ONE value both renderers inset by and grow
-  -- by twice, because T.px(2) is not 2 * T.px(1) at every LCD_SCALE
-  L.chipOutline = T.px(1)
 
   -- C1 (Tanda 7): centre the whole composition in a VERTICAL zone.
   --

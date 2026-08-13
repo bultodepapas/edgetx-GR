@@ -367,10 +367,68 @@ def cmd_check(defs, batches, t2):
     return 0
 
 
+MODEL_NAME_MAX = 15  # EdgeTX colorlcd: LEN_MODEL_NAME (dataconstants.h)
+
+
+def _firmware_model_name(name):
+    """Return the exact model name that EdgeTX will publish in its marker.
+
+    Model YAML accepts a longer string, but colorlcd firmware stores and logs
+    only LEN_MODEL_NAME characters.  The writer and marker waiter must share
+    the same bounded value or a valid model looks like a boot timeout.
+    """
+    return name[:MODEL_NAME_MAX]
+
+
+def _start_model(driver, marker, attempts=2):
+    """Start one generated model, retrying a transient boot-marker timeout.
+
+    The simulator occasionally reaches process start but never publishes the
+    selected model marker. That is not a screenshot failure and rerunning the
+    same immutable model after a clean stop is safe. Keep the retry bounded so
+    a genuinely invalid model still fails loudly with the original evidence.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            driver.start(model_marker=marker)
+            return
+        except CaptureTimeout:
+            driver.stop()
+            if attempt == attempts:
+                raise
+            print("  [RETRY] model marker timeout: %s (%d/%d)"
+                  % (marker, attempt, attempts))
+
+
+def _capture_distinct_page(driver, out_path, settle_s, previous_sha=None,
+                           navigation_retries=2):
+    """Capture a page and fail if PageDown silently left the old page active.
+
+    The simulator input pipe can occasionally drop a key event. Layout pages
+    are intentionally visually distinct, so a byte-identical successor is a
+    reliable signal that navigation did not happen. Retry the missing PageDown
+    in that case and make a persistent duplicate a real capture failure rather
+    than publishing plausible but incorrect evidence.
+    """
+    ok = driver.capture(out_path, settle_s=settle_s)
+    digest = _sha256_file(out_path) if ok else None
+    for attempt in range(1, navigation_retries + 1):
+        if not ok or previous_sha is None or digest != previous_sha:
+            break
+        print("  [RETRY] unchanged page after PageDown (%d/%d)"
+              % (attempt, navigation_retries))
+        driver.page_down()
+        ok = driver.capture(out_path, settle_s=0.8)
+        digest = _sha256_file(out_path) if ok else None
+    if ok and previous_sha is not None and digest == previous_sha:
+        return False, digest
+    return ok, digest
+
+
 def _run_track1(driver, defs, batches, runlog, file_counter, seq_start=1):
     seq = seq_start
     for batch in batches:
-        model_name = "GPVK T1 %s" % batch[0].section
+        model_name = _firmware_model_name("GPVK T1 %s" % batch[0].section)
         # Unique, never-reused filename per batch -- see driver.py's module
         # docstring for why in-place overwrite of one model1.yml raced the
         # firmware's own periodic autosave. MUST match model<digits>.yml
@@ -397,13 +455,18 @@ def _run_track1(driver, defs, batches, runlog, file_counter, seq_start=1):
         write_model(defs, os.path.join(SD_DIR, "MODELS", model_file),
                     model_name, model_screens, sensors=TELEMETRY_SENSORS)
         set_current_model(model_file)
-        driver.start(model_marker=model_name)
+        _start_model(driver, model_name)
         if telem and telem.get("post"):
             post = telem["post"]
-            driver.set_telemetry(post["values"], link=post["link"],
-                                 feed=post["feed"], rssi=post["rssi"])
-            driver.inject_telemetry(post["values"])
-            time.sleep(post["settle"])
+            if post.get("steps"):
+                for step in post["steps"]:
+                    driver.inject_telemetry(step)
+                    time.sleep(post["settle"])
+            else:
+                driver.set_telemetry(post["values"], link=post["link"],
+                                     feed=post["feed"], rssi=post["rssi"])
+                driver.inject_telemetry(post["values"])
+                time.sleep(post["settle"])
         for i, s in enumerate(batch):
             fname = "%03d_%s_%s.png" % (seq, s.section, s.name)
             out = os.path.join(SHOTS_DIR, fname)
@@ -441,19 +504,22 @@ def _run_track1(driver, defs, batches, runlog, file_counter, seq_start=1):
 
 def _run_track2(driver, defs, screens, runlog, file_counter, seq_start):
     seq = seq_start
+    previous_sha = None
+    model_name = _firmware_model_name("GPVK Layouts")
     model_screens = [Screen(s.layout_id, s.zones, comment=s.title) for s in screens]
     model_file = "model%d.yml" % next(file_counter)
     driver.stop()
     write_model(defs, os.path.join(SD_DIR, "MODELS", model_file),
-                "GPVK Layouts", model_screens)
+                model_name, model_screens)
     set_current_model(model_file)
-    driver.start(model_marker="GPVK Layouts")
+    _start_model(driver, model_name)
     for i, s in enumerate(screens):
         fname = "%s.png" % s.key
         out = os.path.join(SHOTS_DIR, fname)
         t0 = time.time()
         settle = 1.5 if i == 0 else 0.5
-        ok = driver.capture(out, settle_s=settle)
+        ok, digest = _capture_distinct_page(
+            driver, out, settle_s=settle, previous_sha=previous_sha)
         status = "PASS" if ok else "FAIL"
         present = {family for _zi, family, _opts in s.zones}
         families = [family for family in ("dial", "bar") if family in present]
@@ -464,6 +530,7 @@ def _run_track2(driver, defs, screens, runlog, file_counter, seq_start):
                    layout=s.layout_id, title=s.title, family=family_label,
                    widget=widget_label)
         print(("  [%s] %s %s (%s)" % (status, s.key, s.title, s.layout_id)))
+        previous_sha = digest
         seq += 1
         if i < len(screens) - 1:
             driver.page_down()
@@ -509,14 +576,15 @@ def _run_theme_subset(driver, defs, t1_screens, gallery, runlog, file_counter, s
             # the one place that still ignores it.
             model_screens = [Screen(s.layout_id, [(s.zone_index, s.family, s.overrides)])
                               for s in chunk]
-            m1_name = "GPVKTh%s1%d" % (code, chunk_start // MAX_CUSTOM_SCREENS)
+            m1_name = _firmware_model_name(
+                "GPVKTh%s1%d" % (code, chunk_start // MAX_CUSTOM_SCREENS))
             m1_file = "model%d.yml" % next(file_counter)
             driver.stop()
             set_selected_theme(theme_name)
             write_model(defs, os.path.join(SD_DIR, "MODELS", m1_file),
                         m1_name, model_screens)
             set_current_model(m1_file)
-            driver.start(model_marker=m1_name)
+            _start_model(driver, m1_name)
             for i, s in enumerate(chunk):
                 fname = "%03d_%s_%s__%s.png" % (seq, s.section, s.name, slug)
                 out = os.path.join(SHOTS_DIR, fname)
@@ -533,17 +601,20 @@ def _run_theme_subset(driver, defs, t1_screens, gallery, runlog, file_counter, s
                     driver.page_down()
 
         model_screens2 = [Screen(s.layout_id, s.zones, comment=s.title) for s in gallery]
-        m2_name = "GPVKTh%s2" % code
+        m2_name = _firmware_model_name("GPVKTh%s2" % code)
         m2_file = "model%d.yml" % next(file_counter)
         driver.stop()
         write_model(defs, os.path.join(SD_DIR, "MODELS", m2_file),
                     m2_name, model_screens2)
         set_current_model(m2_file)
-        driver.start(model_marker=m2_name)
+        _start_model(driver, m2_name)
+        previous_sha = None
         for i, s in enumerate(gallery):
             fname = "%s__%s.png" % (s.key, slug)
             out = os.path.join(SHOTS_DIR, fname)
-            ok = driver.capture(out, settle_s=1.5 if i == 0 else 0.5)
+            ok, digest = _capture_distinct_page(
+                driver, out, settle_s=1.5 if i == 0 else 0.5,
+                previous_sha=previous_sha)
             status = "PASS" if ok else "FAIL"
             present = {family for _zi, family, _opts in s.zones}
             families = [family for family in ("dial", "bar") if family in present]
@@ -553,6 +624,7 @@ def _run_theme_subset(driver, defs, t1_screens, gallery, runlog, file_counter, s
                        status=status, theme=theme, title="%s [%s]" % (s.title, theme),
                        family=family_label, widget=widget_label)
             print("  [%s] theme=%s %s" % (status, theme, s.key))
+            previous_sha = digest
             seq += 1
             if i < len(gallery) - 1:
                 driver.page_down()
